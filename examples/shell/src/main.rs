@@ -234,7 +234,13 @@ impl Render for TopBar {
                                 .py_1()
                                 .rounded_md()
                                 .child(div().text_color(rgb(0xf5c2e7)).child("\u{f00e}"))
-                                .child(div().text_color(rgb(0xcdd6f4)).child(label))
+                                .child(
+                                    div()
+                                        .text_color(rgb(0xcdd6f4))
+                                        .max_w(px(MPRIS_LABEL_MAX_WIDTH))
+                                        .truncate()
+                                        .child(label),
+                                )
                                 .child(
                                     div()
                                         .id("wk-mpris-toggle")
@@ -369,6 +375,14 @@ impl Render for TopBar {
 // ---------------------------------------------------------------------------
 // Tray context menu
 // ---------------------------------------------------------------------------
+
+/// Max width of the media title in the topbar, in logical pixels.
+///
+/// The bar's right block is laid out after the left one, so an unbounded
+/// title pushes the battery and the wifi pill off the screen. Truncation is
+/// done by the layout (`truncate()`), not by slicing the string: slicing by
+/// byte index splits UTF-8 (accents, emoji) and would panic or corrupt it.
+const MPRIS_LABEL_MAX_WIDTH: f32 = 260.0;
 
 /// Context menu of a tray icon, rendered in the `traymenu` window.
 ///

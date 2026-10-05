@@ -1,6 +1,13 @@
 use gpui::prelude::*;
 use widgetkit::prelude::*;
 
+/// Max width of the media title, in logical pixels. The bar's right block is
+/// laid out after the left one, so an unbounded title pushes the battery and
+/// wifi pills off the right edge.
+const MPRIS_LABEL_MAX_WIDTH: f32 = 260.0;
+/// Same idea for the active window title.
+const WINDOW_TITLE_MAX_WIDTH: f32 = 220.0;
+
 fn main() {
     WidgetKit::new()
         .service::<Clock>()
@@ -134,16 +141,16 @@ impl Render for TopBar {
                     )
                     // Active Window Title
                     .when_some(comp.active_window(), |this, win| {
-                        let truncated = if win.title.len() > 40 {
-                            format!("{}...", &win.title[..37])
-                        } else {
-                            win.title.clone()
-                        };
+                        // Truncated by the layout, not by slicing the string:
+                        // `&title[..37]` splits UTF-8 on accented or emoji
+                        // titles.
                         this.child(
                             div()
                                 .text_color(rgb(0xa6adc8))
                                 .px_2()
-                                .child(format!("• {}", truncated)),
+                                .max_w(px(WINDOW_TITLE_MAX_WIDTH))
+                                .truncate()
+                                .child(format!("• {}", win.title)),
                         )
                     }),
             )
@@ -179,11 +186,6 @@ impl Render for TopBar {
                         let mpris_next_entity = mpris_entity.clone();
                         let status_icon = mpris.status().icon();
                         let display_label = mpris.display_label();
-                        let truncated = if display_label.len() > 30 {
-                            format!("{}...", &display_label[..27])
-                        } else {
-                            display_label
-                        };
 
                         this.child(
                             div()
@@ -195,7 +197,13 @@ impl Render for TopBar {
                                 .py_1()
                                 .rounded_md()
                                 .child(div().text_color(rgb(0xf5c2e7)).child("󰎆"))
-                                .child(div().text_color(rgb(0xcdd6f4)).child(truncated))
+                                .child(
+                                    div()
+                                        .text_color(rgb(0xcdd6f4))
+                                        .max_w(px(MPRIS_LABEL_MAX_WIDTH))
+                                        .truncate()
+                                        .child(display_label),
+                                )
                                 .child(
                                     div()
                                         .id("wk-mpris-toggle")
