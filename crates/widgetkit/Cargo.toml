@@ -15,6 +15,7 @@ wk-compositor = { workspace = true }
 wk-ipc = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 async-channel = { workspace = true }
 
 [features]

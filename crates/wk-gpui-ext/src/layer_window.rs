@@ -50,6 +50,9 @@ pub struct LayerWindow {
     pub height: Option<f32>,
     /// Whether window background supports transparency (for blur and custom styling).
     pub transparent: bool,
+    /// Open with no surface: the window is created on demand by `show` and
+    /// destroyed by `hide`, so a popup never reserves input area while closed.
+    pub start_hidden: bool,
 }
 
 impl LayerWindow {
@@ -68,6 +71,7 @@ impl LayerWindow {
             width: None,
             height: Some(DEFAULT_HEIGHT),
             transparent: true,
+            start_hidden: false,
         }
     }
 
@@ -126,6 +130,13 @@ impl LayerWindow {
         self
     }
 
+    /// Start with no surface; the window appears on `show` and is destroyed
+    /// by `hide`. For popups (tray menu) that must not reserve input area
+    /// while closed.
+    pub fn start_hidden(mut self, hidden: bool) -> Self {
+        self.start_hidden = hidden;
+        self
+    }
     /// Set width shorthand.
     pub fn width(mut self, width: f32) -> Self {
         self.width = Some(width);

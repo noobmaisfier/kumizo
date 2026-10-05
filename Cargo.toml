@@ -53,9 +53,16 @@ thiserror = "1.0"
 anyhow = "1.0"
 log = "0.4"
 tracing = "0.1"
+tracing-subscriber = "0.3"
 bitflags = "2.6"
 time = { version = "0.3", features = ["formatting", "macros", "local-offset"] }
 libc = "0.2"
+
+# Raw pixel decoding (tray icons) and small-vector storage for image frames.
+# `image` is decode-only PNG here; gpui already enables the format, so no new
+# native dependencies are pulled in.
+image = { version = "0.25", default-features = false, features = ["png"] }
+smallvec = "1"
 
 # Internal workspace crates
 widgetkit = { path = "crates/widgetkit" }

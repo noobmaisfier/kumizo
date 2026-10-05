@@ -482,12 +482,64 @@ parsing de texte humain et pas d'événements : le natif D-Bus donne les
 mêmes chiffres (`Station.State`, `ConnectedNetwork → Network.Name`,
 `StationDiagnostic.GetDiagnostics.RSSI`) avec des événements.
 iwd n'a pas d'`ObjectManager` : la station est trouvée en parcourant
-l'arbre `Introspect` (profondeur ≤ 4). Icônes en blocs `▂▄▆█`
-(convention `nmcli`, toute police) plutôt qu'en codepoints Nerd Font
-devinés ; `display_label()` retourne un `String` car un `&str` emprunté
-au guard de `read(cx)` ne peut pas s'échapper de `render` (E0521).
+l'arbre `Introspect` (profondeur ≤ 4). Icônes : arcs MDI `wifi-strength-1..4`
+(`U+F091F/F0922/F0925/F0928`) + `wifi-off` (`U+F05AA`), choisis par
+l'utilisateur. Les codepoints **Nerd Font ne se devinent pas** : ils ont été
+vérifiés en deux temps — rendu réel avec `pango-view` dans
+`JetBrainsMono Nerd Font`, puis relecture des octets du fichier source
+(`U+Fxxxx`) pour écarter toute substitution de caractère.
+`display_label()` retourne un `String` car un `&str` emprunté au guard de
+`read(cx)` ne peut pas s'échapper de `render` (E0521).
 Backend NM compilé mais **non testé live** (pas de NM sur cette machine),
 donc en polling défensif assumé, pas en événements.
+
+### Tray SNI : watcher, pixmaps, dbusmenu — et le double déballage
+
+Le daemon est l'hôte (`org.kde.StatusNotifierWatcher`) : il reçoit les
+`RegisterStatusNotifierItem` et suit les items (titre, statut, icône, menu).
+Icônes décodées depuis `IconPixmap` (`(i, i, ay)` en **ARGB**) vers le BGRA
+attendu par GPUI, puis `img(RenderImage)`.
+
+Trois pièges, tous rencontrés en vrai :
+
+1. **Un item déjà lancé ne se ré-enregistre pas.** Au démarrage il faut
+   scanner le bus pour les noms exposant l'interface, sinon Telegram/MEGAsync
+   présents avant le shell restent invisibles.
+2. **Ne pas partager la boucle `rx.recv()` avec l'écoute
+   `NameOwnerChanged`.** Les deux sont des flux infinis ; les mettre dans le
+   même `select!`/`while` parqué les enregistrements derrière un flux qui ne
+   se réveille qu'à la mort d'un item. Deux tâches séparées.
+3. **Le double déballage des enfants dbusmenu.** `av` (les enfants) est un
+   tableau de variantes : selon que le nœud vient d'être déballé par
+   `deserialize` (racine) ou reçu encore boxé (enfant), `TryFrom<Value>`
+   reçoit `Value::Structure` **ou** `Value::Value(Structure)`. Ne gérer que le
+   second cas faisait passer 3 enfants → **0 entrée** : la fenêtre s'ouvrait
+   avec le titre et rien dedans. Le `TryFrom` accepte maintenant les deux.
+
+**Symptôme à retenir :** menu vide avec le bon titre = parsing du layout à
+zéro, pas un bug de l'application. Le layout brut se lit sans outil maison :
+
+```sh
+busctl --user get-property <bus> /StatusNotifierItem org.kde.StatusNotifierItem Menu
+busctl --user call <bus> /MenuBar com.canonical.dbusmenu GetLayout iias 0 1 0
+```
+
+(`icon-data` est un **PNG encodé**, pas des pixels : `137 80 78 71` = `\x89PNG`.)
+
+**Toujours pas implémenté : `ContextMenu(x, y)`.** La spec SNI prévoit que le
+panneau appelle cette méthode et laisse l'appli décider, en plus de la
+propriété `Menu`. On lit `Menu` directement, ce qui marche pour Qt
+(MEGAsync) et Telegram, mais une appli qui n'honore que `ContextMenu` ne
+montrera rien.
+
+### Les logs ne partaient nulle part
+
+`tracing` était utilisé partout (`warn!`, `info!`) mais **aucun subscriber
+n'était installé** : tout était silencieusement jeté. Deux diagnostics ont
+été faits à l'aveugle à cause de ça. `WidgetKit::run` installe désormais
+`tracing_subscriber::fmt().with_max_level(level)` ; `RUST_LOG=debug` monte le
+niveau. C'est ce qui a permis de lire `Tray: menu …: 3 child(ren), 3 visible`
+et de trancher le bogue ci-dessus en une minute.
 
 ---
 

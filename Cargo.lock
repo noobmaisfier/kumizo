@@ -6311,6 +6311,7 @@ dependencies = [
  "gpui",
  "gpui_platform",
  "tracing",
+ "tracing-subscriber",
  "wk-compositor",
  "wk-gpui-ext",
  "wk-ipc",
@@ -6825,11 +6826,14 @@ dependencies = [
  "futures-lite",
  "futures-util",
  "gpui",
+ "image",
  "log",
  "serde",
+ "smallvec",
  "thiserror 1.0.69",
  "time",
  "tracing",
+ "wk-ipc",
  "zbus 4.4.0",
 ]
 

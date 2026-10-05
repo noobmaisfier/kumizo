@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 use futures_util::{FutureExt, StreamExt};
 use gpui::Context;
-use tracing::{debug, warn};
+use tracing::warn;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 use zbus::Connection;
 use crate::service::Service;
@@ -311,20 +311,20 @@ impl Service for Network {
                     .unwrap_or(false);
 
             if has_nm {
-                debug!("Network backend: NetworkManager");
+                tracing::info!("Network backend: NetworkManager");
                 set_backend(&this, cx, WifiBackend::NetworkManager);
                 nm_loop(&conn, &this, cx).await;
                 return;
             }
 
             if has_iwd {
-                debug!("Network backend: iwd");
+                tracing::info!("Network backend: iwd");
                 set_backend(&this, cx, WifiBackend::Iwd);
                 iwd_loop(&conn, &this, cx).await;
                 return;
             }
 
-            debug!("Network backend: /proc/net/wireless fallback");
+            tracing::info!("Network backend: /proc/net/wireless fallback");
             fallback_loop(this, cx).await;
         })
         .detach();

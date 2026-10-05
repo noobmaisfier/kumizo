@@ -62,7 +62,7 @@ pub mod app;
 pub mod prelude;
 pub mod registry;
 
-pub use app::WidgetKit;
+pub use app::{WidgetKit, WindowControlGlobal};
 pub use registry::{AppContextServiceExt, ServiceContextExt, ServiceRegistry};
 pub use wk_compositor as compositor;
 pub use wk_gpui_ext as ext;

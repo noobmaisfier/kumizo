@@ -38,6 +38,7 @@ fn main() {
         .service::<Clock>()
         .service::<Battery>()
         .service::<Network>()
+        .service::<Tray>()
         .service::<Audio>()
         .service::<Mpris>()
         .service::<Compositor>()
@@ -46,6 +47,7 @@ fn main() {
         })
         .window(dock_window(), |cx: &mut gpui::App| cx.new(Dock::new))
         .window(osd_window(), |cx: &mut gpui::App| cx.new(VolumeOsd::new))
+        .window(traymenu_window(), |cx: &mut gpui::App| cx.new(TrayMenu::new))
         .run();
 }
 
@@ -83,6 +85,21 @@ fn osd_window() -> LayerWindow {
         .namespace("wk-osd")
 }
 
+/// Context menu of a tray icon. Starts with no surface (`start_hidden`) so
+/// it never reserves input area while closed; the `Tray` service shows and
+/// hides it through `WindowControl` as menus open and close.
+fn traymenu_window() -> LayerWindow {
+    LayerWindow::new("traymenu")
+        .layer(Layer::Overlay)
+        .anchor(Anchor::TOP | Anchor::RIGHT)
+        .exclusive_zone(0)
+        .width(300.0)
+        .height(420.0)
+        .margins(Margins::new(44, 12, 0, 0))
+        .namespace("wk-traymenu")
+        .start_hidden(true)
+}
+
 // ---------------------------------------------------------------------------
 // Top bar
 // ---------------------------------------------------------------------------
@@ -91,6 +108,7 @@ struct TopBar {
     clock: Entity<Clock>,
     battery: Entity<Battery>,
     network: Entity<Network>,
+    tray: Entity<Tray>,
     audio: Entity<Audio>,
     mpris: Entity<Mpris>,
     compositor: Entity<Compositor>,
@@ -98,10 +116,20 @@ struct TopBar {
 
 impl TopBar {
     fn new(cx: &mut Context<Self>) -> Self {
+        let tray = cx.service::<Tray>();
+        // Hand the window control to the tray service so right-clicks can
+        // open the context menu window without going through IPC.
+        if let Some(control) = cx
+            .try_global::<WindowControlGlobal>()
+            .map(|g| g.0.clone())
+        {
+            tray.update(cx, |t, _| t.set_control(control));
+        }
         Self {
             clock: cx.service::<Clock>(),
             battery: cx.service::<Battery>(),
             network: cx.service::<Network>(),
+            tray,
             audio: cx.service::<Audio>(),
             mpris: cx.service::<Mpris>(),
             compositor: cx.service::<Compositor>(),
@@ -114,6 +142,7 @@ impl Render for TopBar {
         let clock = self.clock.read(cx);
         let battery = self.battery.read(cx);
         let network = self.network.read(cx);
+        let tray = self.tray.read(cx);
         let audio = self.audio.read(cx);
         let mpris = self.mpris.read(cx);
         let comp = self.compositor.read(cx);
@@ -184,7 +213,7 @@ impl Render for TopBar {
                             .child(clock.time_hms()),
                     ),
             )
-            // MPRIS, volume and battery.
+            // MPRIS, tray, volume and battery.
             .child(
                 div()
                     .flex()
@@ -218,6 +247,43 @@ impl Render for TopBar {
                                 ),
                         )
                     })
+                    // Tray icons: left-click activates, right-click opens the menu.
+                    .children(tray.items().into_iter().map(|item| {
+                        let activate_id = item.id.clone();
+                        let menu_id = item.id.clone();
+                        let tray_entity = self.tray.clone();
+                        let tray_entity2 = self.tray.clone();
+                        let icon = item.icon.clone();
+                        let title = item.title.clone();
+
+                        div()
+                            .id(format!("tray-{}", item.id))
+                            .px_2()
+                            .py_1()
+                            .rounded_sm()
+                            .cursor_pointer()
+                            .hover(|h| h.bg(rgb(0x313244)))
+                            .when(icon.is_some(), |this| {
+                                this.child(
+                                    gpui::img(icon.clone().unwrap())
+                                        .w(px(20.0))
+                                        .h(px(20.0)),
+                                )
+                            })
+                            .when(icon.is_none(), |this| {
+                                this.child(
+                                    div()
+                                        .text_color(rgb(0xf38ba8))
+                                        .child(title.chars().next().map(|c| c.to_string()).unwrap_or_else(|| "?".to_string())),
+                                )
+                            })
+                            .on_click(move |_, _, cx| {
+                                tray_entity.update(cx, |t, _| t.activate(&activate_id));
+                            })
+                            .on_mouse_down(gpui::MouseButton::Right, move |_, _, cx| {
+                                tray_entity2.update(cx, |t, _| t.open_menu(&menu_id));
+                            })
+                    }))
                     .child({
                         let audio_entity = self.audio.clone();
                         let icon = audio.icon();
@@ -296,6 +362,125 @@ impl Render for TopBar {
                             )
                             .child(format!("{}%", percent))
                     }),
+            )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tray context menu
+// ---------------------------------------------------------------------------
+
+/// Context menu of a tray icon, rendered in the `traymenu` window.
+///
+/// The window has no surface while closed (`start_hidden`); the whole window
+/// is a click-catcher that closes the menu, so no surface lingers.
+struct TrayMenu {
+    tray: Entity<Tray>,
+}
+
+impl TrayMenu {
+    fn new(cx: &mut Context<Self>) -> Self {
+        Self {
+            tray: cx.service::<Tray>(),
+        }
+    }
+}
+
+/// Render menu entries recursively. Submenus appear expanded and indented;
+/// separators become hairlines; disabled rows are dimmed and inert.
+fn render_menu_items(
+    items: &[TrayMenuItem],
+    tray: &Entity<Tray>,
+) -> Vec<gpui::AnyElement> {
+    let mut out = Vec::new();
+    for item in items {
+        if item.separator {
+            out.push(
+                div()
+                    .h(px(1.0))
+                    .my_1()
+                    .bg(rgb(0x313244))
+                    .w_full()
+                    .into_any_element(),
+            );
+            continue;
+        }
+        let id = item.id;
+        let mut row = div()
+            .id(format!("traymenu-item-{id}"))
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_2()
+            .px_3()
+            .py_1p5()
+            .rounded_md()
+            .text_color(if item.enabled {
+                rgb(0xcdd6f4)
+            } else {
+                rgb(0x6c7086)
+            });
+        if item.enabled {
+            let tray_entity = tray.clone();
+            row = row
+                .hover(|h| h.bg(rgb(0x313244)))
+                .cursor_pointer()
+                .on_click(move |_, _, cx| {
+                    tray_entity.update(cx, |t, _| t.click_menu_item(id));
+                });
+        }
+        let check = match item.toggle {
+            Some(true) => "✓ ",
+            Some(false) => "○ ",
+            None => "",
+        };
+        row = row.child(format!("{}{}", check, item.label));
+        out.push(row.into_any_element());
+        if !item.children.is_empty() {
+            out.push(
+                div()
+                    .pl_4()
+                    .flex()
+                    .flex_col()
+                    .children(render_menu_items(&item.children, tray))
+                    .into_any_element(),
+            );
+        }
+    }
+    out
+}
+
+impl Render for TrayMenu {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let tray_entity = self.tray.clone();
+        let Some(menu) = self.tray.read(cx).menu() else {
+            return div().id("traymenu-empty").w_full().h_full();
+        };
+        div()
+            .id("traymenu-backdrop")
+            .w_full()
+            .h_full()
+            .on_click(move |_, _, cx| {
+                tray_entity.update(cx, |t, _| t.close_menu());
+            })
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .bg(rgb(0x1e1e2e))
+                    .border_1()
+                    .border_color(rgba(0x31324488))
+                    .rounded_lg()
+                    .p_2()
+                    .child(
+                        div()
+                            .px_3()
+                            .py_1()
+                            .text_color(rgb(0x89b4fa))
+                            .child(menu.title.clone()),
+                    )
+                    .child(div().h(px(1.0)).my_1().bg(rgb(0x313244)).w_full())
+                    .children(render_menu_items(&menu.items, &self.tray)),
             )
     }
 }

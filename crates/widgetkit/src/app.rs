@@ -1,11 +1,11 @@
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use async_channel::{Receiver, Sender};
-use gpui::{AnyWindowHandle, App, AppContext, Bounds, Entity, Pixels, QuitMode, Render};
+use gpui::{AnyWindowHandle, App, AppContext, Bounds, Entity, Global, Pixels, QuitMode, Render};
 use tracing::{info, warn};
 use wk_gpui_ext::LayerWindow;
-use wk_ipc::{IpcServer, Request, Response};
+use wk_ipc::{IpcServer, Request, Response, WindowCmd, WindowControl, WindowSender};
 use wk_services::Service;
 
 use crate::registry::ServiceRegistry;
@@ -13,12 +13,12 @@ use crate::registry::ServiceRegistry;
 /// How long the IPC thread waits for the GPUI main thread to answer.
 const IPC_REPLY_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// A request forwarded to the main thread, plus the channel to answer on.
-type WindowCmd = (Request, mpsc::Sender<Response>);
-type WindowSender = Sender<WindowCmd>;
+/// Shared window control, also visible to in-process users (services) as a
+/// GPUI global. Views read it to offer programmatic show/hide without IPC.
+#[derive(Clone)]
+pub struct WindowControlGlobal(pub WindowControl);
 
-/// Window name -> control channel, shared between the IPC thread and the main thread.
-type WindowRegistry = Arc<Mutex<Vec<(String, WindowSender)>>>;
+impl Global for WindowControlGlobal {}
 
 /// Trait abstracting different ways to build a root window view.
 pub trait IntoWindowView<V: 'static + Render> {
@@ -48,7 +48,7 @@ pub struct WidgetKit {
     service_names: Vec<String>,
     windows: Vec<WindowInitFn>,
     window_names: Vec<String>,
-    window_registry: WindowRegistry,
+    window_registry: WindowControl,
     name: Option<String>,
     ipc_enabled: bool,
     start_time: Instant,
@@ -62,7 +62,7 @@ impl WidgetKit {
             service_names: Vec::new(),
             windows: Vec::new(),
             window_names: Vec::new(),
-            window_registry: Arc::new(Mutex::new(Vec::new())),
+            window_registry: WindowControl::new(),
             name: None,
             ipc_enabled: true,
             start_time: Instant::now(),
@@ -106,10 +106,7 @@ impl WidgetKit {
         let id = config.id.clone();
         let (tx, rx) = async_channel::bounded::<WindowCmd>(16);
 
-        self.window_registry
-            .lock()
-            .expect("window registry poisoned")
-            .push((id.clone(), tx));
+        self.window_registry.register(id.clone(), tx);
         self.window_names.push(id.clone());
 
         let cfg = config.clone();
@@ -130,15 +127,28 @@ impl WidgetKit {
             let root = entity.clone();
 
             match cx.open_window(options, move |_window, _cx| root) {
-                Ok(handle) => spawn_window_control::<V>(
-                    cx,
-                    id.clone(),
-                    cfg.clone(),
-                    entity,
-                    handle.into(),
-                    display_bounds,
-                    rx,
-                ),
+                Ok(handle) => {
+                    // A popup (e.g. the tray menu) starts with no surface:
+                    // it is created on demand by `show` and destroyed by
+                    // `hide`, so it never reserves input area while closed.
+                    let initial = if cfg.start_hidden {
+                        let _ = cx.update_window(handle.into(), |_, window, _| {
+                            window.remove_window();
+                        });
+                        None
+                    } else {
+                        Some(handle.into())
+                    };
+                    spawn_window_control::<V>(
+                        cx,
+                        id.clone(),
+                        cfg.clone(),
+                        entity,
+                        initial,
+                        display_bounds,
+                        rx,
+                    )
+                }
                 Err(err) => warn!("WidgetKit: failed to open window '{}': {:#}", id, err),
             }
         }));
@@ -157,6 +167,18 @@ impl WidgetKit {
     /// This initializes all background services, binds the IPC server, opens
     /// configured LayerShell windows, and executes with Zero Idle CPU.
     pub fn run(mut self) {
+        // Logs previously went nowhere: no subscriber was ever installed, so
+        // every `warn!`/`info!` in the services was silently dropped (this
+        // cost two blind diagnoses). Stderr lands in the daemon's log file.
+        // `RUST_LOG=debug` raises the level; anything else stays at info.
+        // (No EnvFilter on purpose: it would pull regex, unverified offline.)
+        let level = match std::env::var("RUST_LOG").as_deref() {
+            Ok("debug") | Ok("trace") => tracing::Level::DEBUG,
+            Ok("warn") => tracing::Level::WARN,
+            Ok("error") => tracing::Level::ERROR,
+            _ => tracing::Level::INFO,
+        };
+        let _ = tracing_subscriber::fmt().with_max_level(level).try_init();
         let start_time = self.start_time;
 
         let name = self
@@ -168,7 +190,7 @@ impl WidgetKit {
 
         let window_names = self.window_names.clone();
         let service_names = self.service_names.clone();
-        let window_registry = Arc::clone(&self.window_registry);
+        let window_registry = self.window_registry.clone();
 
         // Service actions are dispatched by a single generic task: services are
         // type-erased in the registry, so one task can serve them all.
@@ -178,7 +200,7 @@ impl WidgetKit {
         // the whole run, which it does because `run` below never returns.
         let _ipc_server = if self.ipc_enabled {
             match IpcServer::bind(&socket_path, {
-                let window_registry = Arc::clone(&window_registry);
+                let window_registry = window_registry.clone();
                 move |req| handle_ipc_request(req, &window_registry, &service_tx, &start_time, &window_names, &service_names)
             }) {
                 Ok(srv) => Some(srv),
@@ -205,6 +227,9 @@ impl WidgetKit {
             .with_quit_mode(QuitMode::Explicit)
             .run(move |cx: &mut App| {
                 cx.set_global(ServiceRegistry::new());
+                // In-process window control for services (tray menu, ...).
+                // Set before services start so views can hand it to them.
+                cx.set_global(WindowControlGlobal(window_registry.clone()));
 
                 for init_service in self.services {
                     init_service(cx);
@@ -298,12 +323,12 @@ fn spawn_window_control<V: 'static + Render>(
     window_name: String,
     config: LayerWindow,
     entity: Entity<V>,
-    handle: AnyWindowHandle,
+    initial: Option<AnyWindowHandle>,
     display_bounds: Option<Bounds<Pixels>>,
     rx: Receiver<WindowCmd>,
 ) {
     // `None` means the window is currently destroyed/hidden.
-    let mut current: Option<AnyWindowHandle> = Some(handle);
+    let mut current: Option<AnyWindowHandle> = initial;
 
     cx.spawn(async move |cx| {
         while let Ok((req, reply)) = rx.recv().await {
@@ -412,7 +437,7 @@ async fn reload_window(
 /// Route an IPC request to the right main-thread task and wait for its answer.
 fn handle_ipc_request(
     req: Request,
-    window_registry: &WindowRegistry,
+    window_registry: &WindowControl,
     service_tx: &Sender<WindowCmd>,
     start_time: &Instant,
     window_names: &[String],
@@ -423,12 +448,7 @@ fn handle_ipc_request(
 
         Request::Status => {
             // Report live window visibility rather than the static registration list.
-            let guard = window_registry.lock().expect("window registry poisoned");
-            let windows: Vec<String> = guard
-                .iter()
-                .map(|(name, _)| name.clone())
-                .collect::<Vec<_>>();
-            drop(guard);
+            let windows = window_registry.names();
 
             Response::Status {
                 uptime_secs: start_time.elapsed().as_secs(),
@@ -442,21 +462,8 @@ fn handle_ipc_request(
         }
 
         Request::ShowWindow { ref name } | Request::HideWindow { ref name } | Request::ToggleWindow { ref name } => {
-            let sender = {
-                let guard = window_registry.lock().expect("window registry poisoned");
-                guard
-                    .iter()
-                    .find(|(registered, _)| registered == name)
-                    .map(|(_, tx)| tx.clone())
-            };
-
-            let Some(tx) = sender else {
-                let known = window_registry
-                    .lock()
-                    .expect("window registry poisoned")
-                    .iter()
-                    .map(|(name, _)| name.clone())
-                    .collect::<Vec<_>>();
+            let Some(tx) = window_registry.lookup(name) else {
+                let known = window_registry.names();
                 return Response::Error {
                     message: format!(
                         "unknown window '{}' (available: {})",
@@ -470,10 +477,7 @@ fn handle_ipc_request(
         }
 
         Request::Reload => {
-            let senders: Vec<WindowSender> = {
-                let guard = window_registry.lock().expect("window registry poisoned");
-                guard.iter().map(|(_, tx)| tx.clone()).collect()
-            };
+            let senders = window_registry.senders();
 
             if senders.is_empty() {
                 return Response::Error {
