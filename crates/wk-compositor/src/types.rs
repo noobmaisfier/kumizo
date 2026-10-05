@@ -59,8 +59,19 @@ pub enum CompositorKind {
 /// Unified event stream from compositor IPC sockets.
 #[derive(Debug, Clone)]
 pub enum CompositorEvent {
-    /// Workspaces list was updated or workspace focus changed.
+    /// The active workspace changed to the given workspace number.
+    ///
+    /// This only moves the highlight: it says nothing about workspaces having
+    /// been created or removed, since a compositor is free to keep a workspace
+    /// that no longer holds windows.
     WorkspaceActivated(i32),
+    /// The workspace list changed (creation, removal, rename, move to another
+    /// output). The payload is the new list, already normalised.
+    ///
+    /// The compositor is the only authority on this, so the event carries the
+    /// fresh list rather than a delta that would have to be replayed in the
+    /// right order.
+    WorkspacesChanged(Vec<Workspace>),
     /// Active focused window changed.
     WindowFocused(ActiveWindow),
     /// Full workspace layout refresh needed.

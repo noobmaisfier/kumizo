@@ -27,6 +27,15 @@ impl SwayIpc {
         }
     }
 
+    /// Build a client for an already resolved socket path.
+    ///
+    /// The event listener needs this to re-query the compositor for the current
+    /// workspace list, since a long-lived subscription cannot report a list it
+    /// never received in full.
+    fn new(socket_path: PathBuf) -> Option<Self> {
+        socket_path.exists().then_some(Self { socket_path })
+    }
+
     /// Send a framed IPC message to Sway.
     pub fn send_message(&self, msg_type: u32, payload: &[u8]) -> anyhow::Result<Vec<u8>> {
         let mut stream = UnixStream::connect(&self.socket_path)?;
@@ -85,6 +94,16 @@ impl SwayIpc {
     }
 
     /// Start listening for Sway workspace and window events.
+    ///
+    /// Sway multiplexes `workspace` and `window` events on one subscription, and
+    /// both carry a `change` field. A `window` focus event also has a `current`,
+    /// so filtering on the object type is mandatory: decoding a window event as a
+    /// workspace event yields a bogus activation with `num = 0`.
+    ///
+    /// The `init` / `empty` changes are what create and remove workspaces. The
+    /// listener cannot patch its own copy of the list incrementally without
+    /// replaying ordering, so it re-asks the compositor for the authoritative
+    /// list whenever the set of workspaces may have changed.
     pub fn start_event_loop(&self, tx: async_channel::Sender<CompositorEvent>) -> anyhow::Result<()> {
         let mut stream = UnixStream::connect(&self.socket_path)?;
         let sub_payload = serde_json::to_vec(&vec!["workspace", "window"])?;
@@ -102,9 +121,16 @@ impl SwayIpc {
         let mut initial_body = vec![0u8; len];
         stream.read_exact(&mut initial_body)?;
 
+        let socket_path = self.socket_path.clone();
+
         std::thread::spawn(move || {
             let mut hdr = [0u8; 14];
-            while stream.read_exact(&mut hdr).is_ok() {
+            loop {
+                // `read_exact` on a shared buffer would leave partial data behind
+                // when a read is interrupted; start from a clean header each time.
+                if stream.read_exact(&mut hdr).is_err() {
+                    break;
+                }
                 let msg_len = u32::from_ne_bytes([hdr[6], hdr[7], hdr[8], hdr[9]]) as usize;
                 let mut body = vec![0u8; msg_len];
                 if stream.read_exact(&mut body).is_err() {
@@ -112,17 +138,60 @@ impl SwayIpc {
                 }
 
                 #[derive(serde::Deserialize)]
-                struct WsEvent {
-                    current: Option<CurrentWs>,
-                }
-                #[derive(serde::Deserialize)]
-                struct CurrentWs {
-                    num: i32,
+                struct SwayEvent {
+                    change: Option<String>,
+                    /// Present for both `workspace` and `window` focus events.
+                    current: Option<SwayNode>,
+                    /// Present for window focus events only.
+                    container: Option<SwayNode>,
                 }
 
-                if let Ok(ev) = serde_json::from_slice::<WsEvent>(&body) {
-                    if let Some(c) = ev.current {
-                        let _ = tx.send_blocking(CompositorEvent::WorkspaceActivated(c.num));
+                #[derive(serde::Deserialize)]
+                struct SwayNode {
+                    #[serde(rename = "type")]
+                    kind: String,
+                    num: Option<i32>,
+                }
+
+                let Ok(ev) = serde_json::from_slice::<SwayEvent>(&body) else {
+                    continue;
+                };
+
+                // A window event carries `container`, and its `current` is null.
+                // Never treat it as a workspace event.
+                if ev.container.is_some() {
+                    continue;
+                }
+
+                let change = ev.change.as_deref().unwrap_or("");
+                let Some(current) = ev.current.as_ref() else {
+                    continue;
+                };
+                if current.kind != "workspace" {
+                    continue;
+                }
+
+                // `init` and `empty` mean the workspace appeared or disappeared.
+                // `focus` only moves the highlight. `destroy` also removes it.
+                let structure_changed = matches!(change, "init" | "empty" | "destroy");
+
+                if structure_changed {
+                    if let Some(client) = SwayIpc::new(socket_path.clone()) {
+                        if let Ok(list) = client.fetch_workspaces() {
+                            let _ = tx.send_blocking(CompositorEvent::WorkspacesChanged(list));
+                        }
+                    }
+                }
+
+                // The `change` field is the authority on what happened, not the
+                // `focused` flag on the node snapshot: Sway observably emits
+                // `focus` with `focused: false` when the switch also destroys a
+                // workspace (captured live: `focus` 1 with `focused=false`
+                // followed by `empty` 8). Requiring the flag drops the
+                // activation and leaves no workspace highlighted.
+                if change == "focus" {
+                    if let Some(num) = current.num {
+                        let _ = tx.send_blocking(CompositorEvent::WorkspaceActivated(num));
                     }
                 }
             }

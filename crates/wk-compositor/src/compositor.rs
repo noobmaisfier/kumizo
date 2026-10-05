@@ -53,29 +53,30 @@ impl Compositor {
     }
 
     /// Switch workspace by ID.
+    ///
+    /// The highlight is updated optimistically on every backend. Waiting for the
+    /// compositor to echo a `focus` event would leave the click feeling dead,
+    /// since the round trip includes a compositor round trip; if the command
+    /// fails or the workspace does not exist, the next event corrects it.
     pub fn switch_workspace(&mut self, id: i32) {
-        match self.kind {
-            CompositorKind::Hyprland => {
-                if let Some(hypr) = HyprlandIpc::try_new() {
-                    let _ = hypr.switch_workspace(id);
-                }
-            }
-            CompositorKind::Sway => {
-                if let Some(sway) = SwayIpc::try_new() {
-                    let _ = sway.switch_workspace(id);
-                }
-            }
-            CompositorKind::Niri => {
-                if let Some(niri) = NiriIpc::try_new() {
-                    let _ = niri.switch_workspace(id);
-                }
-            }
-            CompositorKind::Fallback => {
-                // Update local state for testing
-                self.active_workspace_id = id;
-                for w in &mut self.workspaces {
-                    w.is_active = w.id == id;
-                }
+        let dispatched = match self.kind {
+            CompositorKind::Hyprland => HyprlandIpc::try_new()
+                .map(|hypr| hypr.switch_workspace(id).is_ok())
+                .unwrap_or(false),
+            CompositorKind::Sway => SwayIpc::try_new()
+                .map(|sway| sway.switch_workspace(id).is_ok())
+                .unwrap_or(false),
+            CompositorKind::Niri => NiriIpc::try_new()
+                .map(|niri| niri.switch_workspace(id).is_ok())
+                .unwrap_or(false),
+            // Nothing to dispatch to; the local update below is all there is.
+            CompositorKind::Fallback => true,
+        };
+
+        if dispatched {
+            self.active_workspace_id = id;
+            for w in &mut self.workspaces {
+                w.is_active = w.id == id;
             }
         }
     }
@@ -149,6 +150,27 @@ impl Service for Compositor {
                                 w.is_active = w.id == id;
                             }
                             cx.notify();
+                        }
+                        // A workspace was created, removed or moved: replace the
+                        // list outright rather than patching it, so a stale entry
+                        // can never survive. The fetched flags come from a
+                        // synchronous GET_WORKSPACES, so they are the
+                        // compositor's truth at fetch time; adopt them and sync
+                        // the active id. Only when nothing is marked (transient
+                        // fetch mid-switch) keep the previous active id, so the
+                        // highlight flickers rather than vanishes.
+                        CompositorEvent::WorkspacesChanged(mut workspaces) => {
+                            if !workspaces.is_empty() {
+                                if let Some(focused) = workspaces.iter().find(|w| w.is_active) {
+                                    comp.active_workspace_id = focused.id;
+                                } else {
+                                    for w in &mut workspaces {
+                                        w.is_active = w.id == comp.active_workspace_id;
+                                    }
+                                }
+                                comp.workspaces = workspaces;
+                                cx.notify();
+                            }
                         }
                         CompositorEvent::WindowFocused(win) => {
                             comp.active_window = Some(win);

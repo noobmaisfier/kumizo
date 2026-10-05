@@ -421,7 +421,47 @@ au sens strict — c'est 1 Hz.
 
 ---
 
-## 9. Checklist avant de déclarer un changement fonctionnel
+## 9. Workspaces Sway : la liste doit suivre le compositeur
+
+Deux bogues réels, trouvés parce que l'utilisateur a demandé si `1 2 8 10`
+était toujours juste (ça ne l'était pas : Sway avait `1 2 3 4 9 10`).
+
+**Bogue 1 — liste figée au démarrage.** `fetch_workspaces()` n'était appelé
+qu'une fois, et `WorkspaceActivated` ne re-cochait que l'actif. Créer ou
+détruire un workspace ne changeait rien à l'affichage. Le `8` affiché
+n'existait plus : le chiffre venait du démarrage, pas du fallback (`1-5`).
+
+**Fix (option a) :** `CompositorEvent::WorkspacesChanged(Vec<Workspace>)`
+(`types.rs`). Le listener Sway ré-interroge le compositeur (`GET_WORKSPACES`)
+sur `init`/`empty`/`destroy` et envoie la liste fraîche ; `compositor.rs`
+**remplace** la liste au lieu de la patcher. Les flags `is_active` du fetch
+sont adoptés (vérité synchrone du compositeur) et `active_workspace_id` est
+re-synchronisé ; repli sur l'ancien id seulement si rien n'est marqué.
+
+**Bogue 2 — le piège `focused: false` sur un événement `focus`.** Séquence
+capturée en direct pour un retour `8 → 1` :
+
+```
+focus  name='1' focused=False   <- le quirk : ignoré par l'ancien code
+window focus (container set)    <- à filtrer, sinon activation num=0
+empty  name='8' focused=False
+```
+
+Sway émet `focus` avec `focused: false` quand le switch détruit aussi un
+workspace. L'ancien code exigeait `focused == true` → activation perdue →
+**plus aucun workspace surligné**. Règle : **le champ `change` est
+l'autorité, pas le flag `focused` du snapshot.** Tout `change == "focus"`
+avec `current.type == "workspace"` active `current.num`. Le filtre
+`container.is_some()` (événements window) et `kind != "workspace"` restent
+obligatoires — sans eux, un focus de fenêtre fabrique une activation `num=0`.
+
+**Vérification (pixel, pas à l'œil) :** cycle `1 → 8 → 1` avec pilule bleue
+(`b>180, b>r+40`) : base x=33-56 (le `1`), après création x=89-112 (le `8`),
+après destruction x=33-56 (le `1`). Les trois états sont exacts.
+
+---
+
+## 10. Checklist avant de déclarer un changement fonctionnel
 
 - [ ] `cargo check --workspace --all-targets` : 0 erreur, **0 warning**
 - [ ] `cargo test --doc` passe (les exemples `no_run` compilent vraiment)
