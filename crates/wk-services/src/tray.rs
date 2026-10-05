@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use gpui::{Context, RenderImage};
 use image::{Frame, ImageBuffer};
 use smallvec::smallvec;
@@ -178,18 +179,47 @@ impl Tray {
     }
 
     /// Right-click: fetch the dbusmenu layout and open the menu window.
+    ///
+    /// Spec flow: `ContextMenu(x, y)` first (the item may populate or reveal
+    /// its menu on demand), then re-read `Menu`, then `AboutToShow` +
+    /// `GetLayout`. Skipping the call works for Qt/Telegram but an item that
+    /// only honors `ContextMenu` would show nothing.
     pub fn open_menu(&mut self, id: &str) {
         let key = self.resolve_key(id);
         let Some(it) = key.as_ref().and_then(|k| self.items.get(k)) else {
             return;
         };
-        if it.menu_path.is_none() {
-            return;
-        }
-        let (bus, path, title) = (it.bus.clone(), it.menu_path.clone().unwrap(), it.title.clone());
-        let items = async_io::block_on(fetch_menu(&bus, &path));
+        let (bus, item_path, title) = (it.bus.clone(), it.path.clone(), it.title.clone());
+        let bus_warn = bus.clone();
+        let items = async_io::block_on(async move {
+            let Ok(conn) = session_conn().await else {
+                return None;
+            };
+            let Ok(item) = zbus::Proxy::new(
+                &conn,
+                bus.as_str(),
+                item_path.as_str(),
+                "org.kde.StatusNotifierItem",
+            )
+            .await
+            else {
+                return None;
+            };
+            // Hint, fire-and-forget: unknown method on items that ignore it.
+            let _ = item.call_method("ContextMenu", &(0i32, 0i32)).await;
+            let menu_path: Option<String> = item
+                .get_property::<OwnedObjectPath>("Menu")
+                .await
+                .ok()
+                .map(|p| p.to_string())
+                .filter(|p| p != "/");
+            let Some(menu_path) = menu_path else {
+                return None;
+            };
+            fetch_menu(&bus, &menu_path).await
+        });
         let Some(items) = items else {
-            warn!("Tray: no menu layout from {bus} {path}");
+            warn!("Tray: no menu layout from {bus_warn}");
             return;
         };
         self.open_menu = Some(OpenMenu {
@@ -241,9 +271,12 @@ impl Tray {
             else {
                 return;
             };
-            let _ = proxy
+            let result = proxy
                 .call_method("Event", &(item_id, "clicked", Value::I32(0), 0u32))
                 .await;
+            if let Err(err) = result {
+                warn!("Tray: Event({item_id}) to {bus} {path} failed: {err}");
+            }
         });
         self.close_menu();
     }
@@ -299,7 +332,6 @@ async fn fetch_menu(bus: &str, path: &str) -> Option<Vec<TrayMenuItem>> {
             return None;
         }
     };
-    let raw_children = layout.children.len();
     let items: Vec<TrayMenuItem> = layout
         .children
         .into_iter()
@@ -313,8 +345,12 @@ async fn fetch_menu(bus: &str, path: &str) -> Option<Vec<TrayMenuItem>> {
         .filter_map(TrayMenuItem::from_node)
         .collect();
     tracing::info!(
-        "Tray: menu {bus} {path}: {raw_children} child(ren), {} visible",
-        items.len()
+        "Tray: menu {bus} {path}: {}",
+        items
+            .iter()
+            .map(|it| format!("{}:{}{}", it.id, it.label, if it.enabled { "" } else { " (off)" }))
+            .collect::<Vec<_>>()
+            .join(", ")
     );
     Some(items)
 }
@@ -713,18 +749,26 @@ impl Service for Tray {
                 return;
             }
 
-            // Items already present never re-register: scan the bus for
-            // well-known item names exposing the interface.
+            // Items already present never re-register: scan the bus for names
+            // exposing the item interface. Well-known `...StatusNotifierItem`
+            // names cover fresh registrations, but an app that was already
+            // running (unique `:1.x` name) stays silent after a shell
+            // restart, so unique names are probed too. Only
+            // `/StatusNotifierItem` is checked and failures are instant
+            // (unknown path on a live name), so the sweep is fast.
             if let Ok(dbus) = zbus::fdo::DBusProxy::new(&conn).await {
                 if let Ok(names) = dbus.list_names().await {
                     for name in names {
                         let name = name.to_string();
-                        if !name.starts_with("org.kde.StatusNotifierItem")
-                            && !name.starts_with("org.ayatana.StatusNotifierItem")
-                        {
+                        if name == "org.freedesktop.DBus" {
                             continue;
                         }
-                        track_if_item(&conn, &this, cx, &name, "/StatusNotifierItem").await;
+                        if name.starts_with(':')
+                            || name.starts_with("org.kde.StatusNotifierItem")
+                            || name.starts_with("org.ayatana.StatusNotifierItem")
+                        {
+                            track_if_item(&conn, &this, cx, &name, "/StatusNotifierItem").await;
+                        }
                     }
                 }
             }
@@ -785,6 +829,21 @@ impl Service for Tray {
     }
 }
 
+/// Run `fut`, giving up after `dur`. A dead or wedged peer would otherwise
+/// park the caller for the full 25 s D-Bus method timeout — and with it the
+/// whole membership task. Both futures are boxed so `select` gets `Unpin`.
+async fn with_timeout<T>(dur: Duration, fut: impl std::future::Future<Output = T>) -> Option<T> {
+    use futures_util::future::{select, Either};
+    let timer = Box::pin(async move {
+        async_io::Timer::after(dur).await;
+    });
+    let fut = Box::pin(fut);
+    match select(fut, timer).await {
+        Either::Left((value, _)) => Some(value),
+        Either::Right(_) => None,
+    }
+}
+
 /// Verify the path really is an item, then fetch and store it.
 async fn track_if_item(
     conn: &Connection,
@@ -794,21 +853,24 @@ async fn track_if_item(
     path: &str,
 ) {
     // Confirm the interface exists before tracking (a bus name alone
-    // proves nothing).
-    let Ok(proxy) = zbus::Proxy::new(
-        conn,
-        bus,
-        path,
-        "org.freedesktop.DBus.Introspectable",
-    )
+    // proves nothing). Bounded: a wedged peer answers Introspect with the
+    // 25 s bus timeout, and parking here would stall all membership traffic
+    // (measured on a Qt helper connection that never answers).
+    let xml = with_timeout(Duration::from_secs(3), async {
+        let proxy = zbus::Proxy::new(
+            conn,
+            bus,
+            path,
+            "org.freedesktop.DBus.Introspectable",
+        )
+        .await
+        .ok()?;
+        let reply = proxy.call_method("Introspect", &()).await.ok()?;
+        reply.body().deserialize::<String>().ok()
+    })
     .await
-    else {
-        return;
-    };
-    let Ok(reply) = proxy.call_method("Introspect", &()).await else {
-        return;
-    };
-    let Ok(xml): Result<String, _> = reply.body().deserialize() else {
+    .flatten();
+    let Some(xml) = xml else {
         return;
     };
     if !xml.contains("org.kde.StatusNotifierItem") {

@@ -526,11 +526,27 @@ busctl --user call <bus> /MenuBar com.canonical.dbusmenu GetLayout iias 0 1 0
 
 (`icon-data` est un **PNG encodé**, pas des pixels : `137 80 78 71` = `\x89PNG`.)
 
-**Toujours pas implémenté : `ContextMenu(x, y)`.** La spec SNI prévoit que le
-panneau appelle cette méthode et laisse l'appli décider, en plus de la
-propriété `Menu`. On lit `Menu` directement, ce qui marche pour Qt
-(MEGAsync) et Telegram, mais une appli qui n'honore que `ContextMenu` ne
-montrera rien.
+**`ContextMenu(x, y)` est implémenté.** La spec SNI prévoit que le panneau
+appelle cette méthode avant de lire `Menu` (l'appli peut peupler son menu à
+la demande). `open_menu` suit le flux complet : `ContextMenu` (ignoré si
+inconnu), relecture de `Menu`, `AboutToShow`, `GetLayout`.
+
+4. **Le scan de démarrage peut se geler sur une connexion morte.** Pour
+   rattraper les items déjà lancés au démarrage, il faut sonder les noms
+   uniques `:1.x` (une appli déjà en cours ne se ré-enregistre pas). Or
+   **une seule connexion Qt qui ne répond jamais suffit à bloquer le scan** :
+   `Introspect` attend le timeout D-Bus complet, soit **25 s mesurés**, et
+   comme la boucle est séquentielle sur ~89 noms, les items suivants ne
+   sont jamais atteints. Symptôme : plus aucune icône après un redémarrage
+   du shell alors que les applies tournent. Fix : `with_timeout(3s, …)`
+   autour de l'`Introspect` (`select` sur `async_io::Timer`).
+
+**`AddMatch` ne suffit pas pour observer le bus.** Pour voir le trafic des
+autres clients D-Bus il faut `BecomeMonitor`, pas seulement `AddMatch` —
+j'ai perdu du temps sur cette piste. Et **un `Event` vers un id de menu
+inexistant ne remonte aucune erreur** : Qt le traite sans valider l'id, donc
+« aucune erreur » ne prouve pas que l'action a eu un effet visible. Ne pas
+s'en servir comme test.
 
 ### Les logs ne partaient nulle part
 
