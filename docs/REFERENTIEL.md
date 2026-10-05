@@ -459,6 +459,19 @@ obligatoires — sans eux, un focus de fenêtre fabrique une activation `num=0`.
 (`b>180, b>r+40`) : base x=33-56 (le `1`), après création x=89-112 (le `8`),
 après destruction x=33-56 (le `1`). Les trois états sont exacts.
 
+### Batterie : écouter `State`, pas seulement `Percentage`
+
+L'icône ne suivait pas le branchement du chargeur. Cause : `battery.rs`
+n'écoutait que les changements UPower de `Percentage`. Brancher/débrancher
+change `State` (1↔2), pas le niveau — donc aucun `cx.notify()`, icône figée,
+alors que le widget (`battery.read(cx)` dans le render) était bien abonné.
+De plus la boucle sysfs de secours (30 s) était inatteignable tant que le
+flux D-Bus vivait. Fix : deux flux `receive_property_changed`
+(`Percentage: f64`, `State: u32`) multiplexés par `select!`, avec
+`BatteryState::from_upower` partagé entre lecture initiale et temps réel.
+Vérifié : débranchement vu par l'utilisateur + retour à `Charging`
+(capture et sysfs concordants, 38 % vert).
+
 ---
 
 ## 10. Checklist avant de déclarer un changement fonctionnel

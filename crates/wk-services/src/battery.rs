@@ -1,6 +1,6 @@
 use std::path::Path;
 use std::time::Duration;
-use futures_util::StreamExt;
+use futures_util::{FutureExt, StreamExt};
 use gpui::Context;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
@@ -28,6 +28,22 @@ pub enum BatteryState {
 }
 
 impl BatteryState {
+    /// Map the numeric UPower device state to `BatteryState`.
+    ///
+    /// Shared by the initial read and the live update path so the two can
+    /// never disagree on what a value means.
+    fn from_upower(value: u32) -> Self {
+        match value {
+            1 => BatteryState::Charging,
+            2 => BatteryState::Discharging,
+            3 => BatteryState::Empty,
+            4 => BatteryState::FullyCharged,
+            5 => BatteryState::PendingCharge,
+            6 => BatteryState::PendingDischarge,
+            _ => BatteryState::Unknown,
+        }
+    }
+
     /// Friendly display string for UI widgets.
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -181,32 +197,51 @@ impl Service for Battery {
                         let pct_res: zbus::Result<f64> = proxy.get_property("Percentage").await;
                         let state_res: zbus::Result<u32> = proxy.get_property("State").await;
 
-                        let mut current_pct = pct_res.map(|p| p.round() as u8).unwrap_or(100);
-                        let current_state = match state_res.unwrap_or(0) {
-                            1 => BatteryState::Charging,
-                            2 => BatteryState::Discharging,
-                            3 => BatteryState::Empty,
-                            4 => BatteryState::FullyCharged,
-                            5 => BatteryState::PendingCharge,
-                            6 => BatteryState::PendingDischarge,
-                            _ => BatteryState::Unknown,
-                        };
+                        let initial_pct = pct_res.map(|p| p.round() as u8).unwrap_or(100);
+                        let initial_state =
+                            BatteryState::from_upower(state_res.unwrap_or(0));
 
                         let _ = this.update(cx, |bat, cx| {
-                            bat.percentage = current_pct;
-                            bat.state = current_state;
+                            bat.percentage = initial_pct;
+                            bat.state = initial_state;
                             cx.notify();
                         });
 
-                        // Zero idle CPU: listen for PropertiesChanged signal stream
-                        let mut changes = proxy.receive_property_changed::<f64>("Percentage").await;
-                        while let Some(change) = changes.next().await {
-                            if let Ok(new_val) = change.get().await {
-                                current_pct = new_val.round() as u8;
-                                let _ = this.update(cx, |bat, cx| {
-                                    bat.percentage = current_pct;
-                                    cx.notify();
-                                });
+                        // Zero idle CPU: listen for property changes. Plugging
+                        // or unplugging the charger changes `State`, not
+                        // `Percentage` — subscribing to the level alone leaves
+                        // the icon frozen on charger events while the number
+                        // still moves. Both streams must be watched.
+                        let mut pct_changes =
+                            proxy.receive_property_changed::<f64>("Percentage").await;
+                        let mut state_changes =
+                            proxy.receive_property_changed::<u32>("State").await;
+                        loop {
+                            futures_util::select! {
+                                pct = pct_changes.next().fuse() => {
+                                    let Some(change) = pct else { break };
+                                    if let Ok(new_val) = change.get().await {
+                                        let new_pct = new_val.round() as u8;
+                                        let _ = this.update(cx, |bat, cx| {
+                                            if bat.percentage != new_pct {
+                                                bat.percentage = new_pct;
+                                                cx.notify();
+                                            }
+                                        });
+                                    }
+                                }
+                                st = state_changes.next().fuse() => {
+                                    let Some(change) = st else { break };
+                                    if let Ok(new_val) = change.get().await {
+                                        let new_state = BatteryState::from_upower(new_val);
+                                        let _ = this.update(cx, |bat, cx| {
+                                            if bat.state != new_state {
+                                                bat.state = new_state;
+                                                cx.notify();
+                                            }
+                                        });
+                                    }
+                                }
                             }
                         }
                     }
