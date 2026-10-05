@@ -548,6 +548,12 @@ inexistant ne remonte aucune erreur** : Qt le traite sans valider l'id, donc
 « aucune erreur » ne prouve pas que l'action a eu un effet visible. Ne pas
 s'en servir comme test.
 
+**Effet réel des entrées de menu : vérifié par l'utilisateur.** « Show
+status » ouvre bien la page status de MEGAsync, « Settings » ouvre bien les
+réglages. C'est la seule preuve fiable : un clic depuis l'interface, observé
+par la personne, pas un log. Le parcours complet fonctionne donc — icône,
+menu, `Event`, action.
+
 ### Les logs ne partaient nulle part
 
 `tracing` était utilisé partout (`warn!`, `info!`) mais **aucun subscriber
