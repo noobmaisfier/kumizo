@@ -472,6 +472,23 @@ flux D-Bus vivait. Fix : deux flux `receive_property_changed`
 Vérifié : débranchement vu par l'utilisateur + retour à `Charging`
 (capture et sysfs concordants, 38 % vert).
 
+### Wi-Fi : pas de lib unificatrice, deux backends natifs
+
+Aucun crate Rust n'abstrait NetworkManager + iwd (`zbus` n'est que le
+transport). Donc `WifiBackend { NetworkManager, Iwd, Fallback }` avec
+auto-détection sur les noms D-Bus — même pattern que `CompositorKind`.
+La méthode `iwctl ... | grep RSSI` d'un ami marchait, mais fork+exec,
+parsing de texte humain et pas d'événements : le natif D-Bus donne les
+mêmes chiffres (`Station.State`, `ConnectedNetwork → Network.Name`,
+`StationDiagnostic.GetDiagnostics.RSSI`) avec des événements.
+iwd n'a pas d'`ObjectManager` : la station est trouvée en parcourant
+l'arbre `Introspect` (profondeur ≤ 4). Icônes en blocs `▂▄▆█`
+(convention `nmcli`, toute police) plutôt qu'en codepoints Nerd Font
+devinés ; `display_label()` retourne un `String` car un `&str` emprunté
+au guard de `read(cx)` ne peut pas s'échapper de `render` (E0521).
+Backend NM compilé mais **non testé live** (pas de NM sur cette machine),
+donc en polling défensif assumé, pas en événements.
+
 ---
 
 ## 10. Checklist avant de déclarer un changement fonctionnel

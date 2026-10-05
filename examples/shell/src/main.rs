@@ -37,6 +37,7 @@ fn main() {
         // ticks once per second for the whole shell, not once per widget.
         .service::<Clock>()
         .service::<Battery>()
+        .service::<Network>()
         .service::<Audio>()
         .service::<Mpris>()
         .service::<Compositor>()
@@ -89,6 +90,7 @@ fn osd_window() -> LayerWindow {
 struct TopBar {
     clock: Entity<Clock>,
     battery: Entity<Battery>,
+    network: Entity<Network>,
     audio: Entity<Audio>,
     mpris: Entity<Mpris>,
     compositor: Entity<Compositor>,
@@ -99,6 +101,7 @@ impl TopBar {
         Self {
             clock: cx.service::<Clock>(),
             battery: cx.service::<Battery>(),
+            network: cx.service::<Network>(),
             audio: cx.service::<Audio>(),
             mpris: cx.service::<Mpris>(),
             compositor: cx.service::<Compositor>(),
@@ -110,6 +113,7 @@ impl Render for TopBar {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let clock = self.clock.read(cx);
         let battery = self.battery.read(cx);
+        let network = self.network.read(cx);
         let audio = self.audio.read(cx);
         let mpris = self.mpris.read(cx);
         let comp = self.compositor.read(cx);
@@ -244,6 +248,28 @@ impl Render for TopBar {
                             .on_click(move |_, _window, cx| {
                                 audio_entity.update(cx, |a, _| a.toggle_mute());
                             })
+                    })
+                    .child({
+                        let connected = network.is_connected();
+
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_1p5()
+                            .bg(rgb(0x1e1e2e))
+                            .px_3()
+                            .py_1()
+                            .rounded_md()
+                            .child(
+                                div()
+                                    .text_color(if connected {
+                                        rgb(0x89b4fa)
+                                    } else {
+                                        rgb(0xf38ba8)
+                                    })
+                                    .child(network.icon()),
+                            )
+                            .child(network.display_label())
                     })
                     .child({
                         let percent = battery.percent();
