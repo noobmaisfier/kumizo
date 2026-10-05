@@ -1,0 +1,10 @@
+# Artefacts de compilation Rust
+/target/
+
+# Sauvegardes d'éditeur
+**/*.rs.bk
+*.rs.bk
+*~
+
+# Fichiers de verrouillage : Cargo.lock est versionné volontairement
+# (projet applicatif : builds reproductibles)

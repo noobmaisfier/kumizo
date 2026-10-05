@@ -1,0 +1,26 @@
+[package]
+name = "widgetkit"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "High-performance, pure-Rust, GPU-accelerated Wayland desktop shell SDK"
+
+[dependencies]
+gpui = { workspace = true }
+gpui_platform = { workspace = true }
+wk-gpui-ext = { workspace = true }
+wk-services = { workspace = true }
+wk-compositor = { workspace = true }
+wk-ipc = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+async-channel = { workspace = true }
+
+[features]
+default = ["layer-shell"]
+# Create real `wlr-layer-shell` surfaces so anchors, exclusive zone and margins
+# are honoured by the compositor. This is the whole point of a layer-shell SDK,
+# so it is on by default. Requires Linux + Wayland; elsewhere (and with
+# `--no-default-features`) windows fall back to `WindowKind::PopUp`.
+layer-shell = ["wk-gpui-ext/layer-shell-variant"]

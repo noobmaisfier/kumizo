@@ -1,0 +1,15 @@
+[package]
+name = "topbar-example"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Modern Wayland topbar example built with WidgetKit and GPUI"
+
+[[bin]]
+name = "topbar"
+path = "src/main.rs"
+
+[dependencies]
+widgetkit = { path = "../../crates/widgetkit" }
+gpui = { workspace = true }

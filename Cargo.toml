@@ -1,0 +1,65 @@
+[workspace]
+members = [
+    "crates/widgetkit",
+    "crates/wk-gpui-ext",
+    "crates/wk-services",
+    "crates/wk-compositor",
+    "crates/wk-ipc",
+    "crates/wk-ctl",
+    "examples/topbar",
+    "examples/dock",
+    "examples/osd",
+    "examples/shell",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["WidgetKit Contributors"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/widgetkit/widgetkit"
+readme = "README.md"
+keywords = ["wayland", "gpui", "status-bar", "desktop", "widgets"]
+categories = ["gui", "os::unix-apis"]
+
+[workspace.dependencies]
+# Upstream GPUI main branch (zero fork)
+gpui = { git = "https://github.com/zed-industries/zed", default-features = true }
+
+# Platform bootstrap. GPUI no longer exposes `Application::new()`, so an
+# `Application` has to be built from a concrete `Platform`; `gpui_platform` is
+# the upstream convenience crate that provides `application()` for the host OS.
+# Same git source as `gpui` above, so both resolve to the same commit.
+gpui_platform = { git = "https://github.com/zed-industries/zed", default-features = false, features = [
+    "font-kit",
+    "wayland",
+    "x11",
+] }
+
+# Asynchronous runtime and D-Bus integration
+zbus = { version = "4.4", default-features = false, features = ["async-io"] }
+async-io = "2.3"
+async-channel = "2.3"
+futures-lite = "2.3"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+
+# Serialization & IPC
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling and utilities
+thiserror = "1.0"
+anyhow = "1.0"
+log = "0.4"
+tracing = "0.1"
+bitflags = "2.6"
+time = { version = "0.3", features = ["formatting", "macros", "local-offset"] }
+libc = "0.2"
+
+# Internal workspace crates
+widgetkit = { path = "crates/widgetkit" }
+wk-gpui-ext = { path = "crates/wk-gpui-ext" }
+wk-services = { path = "crates/wk-services" }
+wk-compositor = { path = "crates/wk-compositor" }
+wk-ipc = { path = "crates/wk-ipc" }

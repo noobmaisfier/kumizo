@@ -1,0 +1,20 @@
+[package]
+name = "wk-services"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Asynchronous system services for WidgetKit (Clock, Battery, Audio, MPRIS)"
+
+[dependencies]
+gpui = { workspace = true }
+zbus = { workspace = true }
+async-io = { workspace = true }
+async-channel = { workspace = true }
+futures-lite = { workspace = true }
+futures-util = { workspace = true }
+serde = { workspace = true }
+time = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+log = { workspace = true }
