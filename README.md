@@ -20,6 +20,8 @@ Unlike existing web- or interpreted-based solutions (AGS, Eww, Waybar), WidgetKi
 
 **Before touching this codebase, read [`docs/REFERENTIEL.md`](docs/REFERENTIEL.md).** GPUI has no stable API and this project tracks its `main` branch, so the diff between one working commit and the next is large. The reference documents the API traps, the mistakes not to repeat, and how to verify a change actually works.
 
+**To create a widget, read [`docs/CREER-UN-WIDGET.md`](docs/CREER-UN-WIDGET.md).** It is self-sufficient: recipe, exact signatures, services, verification. No widget example inside — the `examples/` directory holds the running code.
+
 ---
 
 ## Workspace Architecture

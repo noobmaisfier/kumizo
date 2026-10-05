@@ -472,6 +472,39 @@ flux D-Bus vivait. Fix : deux flux `receive_property_changed`
 Vérifié : débranchement vu par l'utilisateur + retour à `Charging`
 (capture et sysfs concordants, 38 % vert).
 
+### Luminosité : service dédié, et le mute qui n'allumait pas l'OSD
+
+**Le mute ne montrait aucun OSD.** L'observateur de `VolumeOsd` ne comparait
+que le niveau (`volume == last_volume → return`) : un mute à volume
+constant ne déclenchait rien. Fix : comparer aussi `is_muted`, et factoriser
+le réveal + auto-hide (1,8 s) dans `reveal_osd()`. Vérifié en capture :
+« Muted » rouge avec barre au clic.
+
+**Pas de luminosité dans le dépôt** (juste un commentaire aspiratif
+« volume/brightness OSD »). Nouveau service `Brightness`
+(`crates/wk-services/src/brightness.rs`) sur le modèle `Audio` : lecture
+sysfs (`/sys/class/backlight`, premier périphérique trié), écriture via
+`brightnessctl set <pct>%` (permissions udev OK ici, sinon `warn!`), mise
+à jour optimiste comme `switch_workspace`, sondage sysfs toutes les 2 s
+(aucun événement n'existe pour le rétroéclairage — assumé et commenté).
+Actions IPC : `up` / `down` (±5) / `set <pct>`.
+
+L'OSD est partagé : `OsdKind { Volume, Brightness }`, la carte affiche
+l'icône, le libellé, le % et la barre du dernier changement. Pas de pastille
+topbar pour la luminosité (aucun toggle sensé au clic — ne pas mettre un
+clic mort).
+
+**Glyphes : la preuve par le rendu, encore.** Les codepoints MDI 7.4
+`brightness-1..7` (`U+F00DA..F00E0`, CSS officiel) rendent des **phases de
+lune** dans la Nerd Font installée (MDI plus ancien) — vérifié avec
+`pango-view`. Icône unique `weather-sunny` (`U+F0599`, soleil confirmé au
+rendu), le niveau étant porté par le % et la barre. Règle rappelée :
+**la CSS officielle ne fait pas foi pour la police locale.**
+
+Vérifié : `down` 33424 → 30146 sur le matériel, OSD « Brightness » soleil +
+56 % + barre en capture, niveau restauré après test. Le binaire `osd`
+autonome reçoit le même traitement (service + observateur + rendu).
+
 ### Wi-Fi : pas de lib unificatrice, deux backends natifs
 
 Aucun crate Rust n'abstrait NetworkManager + iwd (`zbus` n'est que le

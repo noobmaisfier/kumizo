@@ -40,6 +40,7 @@ fn main() {
         .service::<Network>()
         .service::<Tray>()
         .service::<Audio>()
+        .service::<Brightness>()
         .service::<Mpris>()
         .service::<Compositor>()
         .window(topbar_window(), |cx: &mut gpui::App| {
@@ -610,41 +611,79 @@ impl Render for Dock {
 
 struct VolumeOsd {
     audio: Entity<Audio>,
+    brightness: Entity<Brightness>,
     visible: bool,
+    shown: OsdKind,
     last_volume: u8,
+    last_muted: bool,
+    last_brightness: u8,
+}
+
+/// What the OSD currently displays. Volume and brightness share one surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OsdKind {
+    Volume,
+    Brightness,
+}
+
+/// Reveal the OSD for `kind` and schedule its auto-hide.
+fn reveal_osd(osd: &mut VolumeOsd, cx: &mut Context<VolumeOsd>, kind: OsdKind) {
+    osd.shown = kind;
+    osd.visible = true;
+    cx.notify();
+
+    cx.spawn(async move |this, cx| {
+        async_io::Timer::after(Duration::from_millis(1800)).await;
+        let _ = this.update(cx, |osd, cx| {
+            osd.visible = false;
+            cx.notify();
+        });
+    })
+    .detach();
 }
 
 impl VolumeOsd {
     fn new(cx: &mut Context<Self>) -> Self {
         let audio = cx.service::<Audio>();
+        let brightness = cx.service::<Brightness>();
         let last_volume = audio.read(cx).volume();
+        let last_muted = audio.read(cx).is_muted();
+        let last_brightness = brightness.read(cx).percent();
 
         let osd = Self {
             audio,
+            brightness,
             visible: false,
+            shown: OsdKind::Volume,
             last_volume,
+            last_muted,
+            last_brightness,
         };
 
-        // React to volume changes coming from the shared Audio service: each
-        // change reveals the OSD and schedules its auto-hide.
+        // React to volume AND mute changes: mute alone used to stay silent
+        // because only the level was compared.
         let watched = osd.audio.clone();
         cx.observe(&watched, |this, audio, cx| {
             let volume = audio.read(cx).volume();
-            if volume == this.last_volume {
+            let muted = audio.read(cx).is_muted();
+            if volume == this.last_volume && muted == this.last_muted {
                 return;
             }
             this.last_volume = volume;
-            this.visible = true;
-            cx.notify();
+            this.last_muted = muted;
+            reveal_osd(this, cx, OsdKind::Volume);
+        })
+        .detach();
 
-            cx.spawn(async move |this, cx| {
-                async_io::Timer::after(Duration::from_millis(1800)).await;
-                let _ = this.update(cx, |osd, cx| {
-                    osd.visible = false;
-                    cx.notify();
-                });
-            })
-            .detach();
+        // Brightness shares the same surface, shown with its own label.
+        let watched_brightness = osd.brightness.clone();
+        cx.observe(&watched_brightness, |this, brightness, cx| {
+            let level = brightness.read(cx).percent();
+            if level == this.last_brightness {
+                return;
+            }
+            this.last_brightness = level;
+            reveal_osd(this, cx, OsdKind::Brightness);
         })
         .detach();
 
@@ -659,9 +698,27 @@ impl Render for VolumeOsd {
             return div().w_full().h_full();
         }
 
-        let audio = self.audio.read(cx);
-        let volume = audio.volume();
-        let muted = audio.is_muted();
+        let (icon, label, pct, accent) = match self.shown {
+            OsdKind::Volume => {
+                let audio = self.audio.read(cx);
+                let muted = audio.is_muted();
+                (
+                    audio.icon(),
+                    if muted { "Muted" } else { "Volume" },
+                    audio.volume(),
+                    if muted { rgb(0xf38ba8) } else { rgb(0x89b4fa) },
+                )
+            }
+            OsdKind::Brightness => {
+                let brightness = self.brightness.read(cx);
+                (
+                    brightness.icon(),
+                    "Brightness",
+                    brightness.percent(),
+                    rgb(0x89b4fa),
+                )
+            }
+        };
 
         div()
             .flex()
@@ -696,26 +753,22 @@ impl Render for VolumeOsd {
                                     .flex()
                                     .items_center()
                                     .gap_2()
-                                    .text_color(if muted {
-                                        rgb(0xf38ba8)
-                                    } else {
-                                        rgb(0x89b4fa)
-                                    })
+                                    .text_color(accent)
                                     .text_size(px(18.0))
-                                    .child(audio.icon())
+                                    .child(icon)
                                     .child(
                                         div()
                                             .text_size(px(14.0))
                                             .font_weight(gpui::FontWeight::BOLD)
                                             .text_color(rgb(0xcdd6f4))
-                                            .child(if muted { "Muted" } else { "Volume" }),
+                                            .child(label),
                                     ),
                             )
                             .child(
                                 div()
                                     .text_size(px(14.0))
                                     .text_color(rgb(0xa6adc8))
-                                    .child(format!("{}%", volume)),
+                                    .child(format!("{}%", pct)),
                             ),
                     )
                     // Progress bar.
@@ -729,12 +782,8 @@ impl Render for VolumeOsd {
                             .child(
                                 div()
                                     .h_full()
-                                    .w(gpui::DefiniteLength::Fraction(volume as f32 / 100.0))
-                                    .bg(if muted {
-                                        rgb(0xf38ba8)
-                                    } else {
-                                        rgb(0x89b4fa)
-                                    })
+                                    .w(gpui::DefiniteLength::Fraction(pct as f32 / 100.0))
+                                    .bg(accent)
                                     .rounded_full(),
                             ),
                     ),
