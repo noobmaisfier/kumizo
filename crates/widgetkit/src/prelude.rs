@@ -1,6 +1,6 @@
 //! Convenient prelude re-exporting essential types and traits for building WidgetKit apps.
 
-pub use crate::app::{WidgetKit, WindowControlGlobal};
+pub use crate::app::{WidgetKit, WindowControlExt, WindowControlGlobal};
 pub use crate::registry::{AppContextServiceExt, ServiceContextExt};
 
 // LayerShell configuration

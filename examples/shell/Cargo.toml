@@ -14,3 +14,4 @@ path = "src/main.rs"
 widgetkit = { path = "../../crates/widgetkit" }
 gpui = { workspace = true }
 async-io = { workspace = true }
+time = { workspace = true }

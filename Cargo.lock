@@ -1341,14 +1341,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dock-example"
-version = "0.1.0"
-dependencies = [
- "gpui",
- "widgetkit",
-]
-
-[[package]]
 name = "document-features"
 version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3827,15 +3819,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "osd-example"
-version = "0.1.0"
-dependencies = [
- "async-io",
- "gpui",
- "widgetkit",
-]
-
-[[package]]
 name = "parking"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4912,6 +4895,7 @@ version = "0.1.0"
 dependencies = [
  "async-io",
  "gpui",
+ "time",
  "widgetkit",
 ]
 
@@ -5592,14 +5576,6 @@ name = "toml_writer"
 version = "1.1.2+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d56353a2a665ad0f41a421187180aab746c8c325620617ad883a99a1cbe66d2"
-
-[[package]]
-name = "topbar-example"
-version = "0.1.0"
-dependencies = [
- "gpui",
- "widgetkit",
-]
 
 [[package]]
 name = "tracing"
@@ -6846,6 +6822,7 @@ dependencies = [
  "futures-util",
  "gpui",
  "image",
+ "libc",
  "log",
  "serde",
  "smallvec",

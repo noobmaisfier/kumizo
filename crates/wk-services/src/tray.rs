@@ -120,12 +120,6 @@ impl Tray {
         self.open_menu.clone()
     }
 
-    /// Give the service the window control (called once by the topbar view,
-    /// which reads the `WindowControlGlobal` the builder publishes).
-    pub fn set_control(&mut self, control: WindowControl) {
-        self.control = Some(control);
-    }
-
     /// Short human-readable inventory, for `widgetctl service tray list`.
     fn describe(&self) -> String {
         if self.items.is_empty() {
@@ -721,7 +715,13 @@ impl Service for Tray {
     }
 
     fn init(cx: &mut Context<Self>) -> Self {
-        let initial = Tray::default();
+        // The builder publishes the window control before starting services.
+        let initial = Tray {
+            control: cx
+                .try_global::<crate::window::WindowControlGlobal>()
+                .map(|g| g.0.clone()),
+            ..Tray::default()
+        };
         let (tx, rx) = async_channel::unbounded::<TrayBusEvent>();
 
         cx.spawn(async move |this, cx| {

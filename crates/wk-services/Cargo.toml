@@ -18,6 +18,7 @@ time = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 log = { workspace = true }
+libc = { workspace = true }
 image = { workspace = true }
 smallvec = { workspace = true }
 wk-ipc = { workspace = true }

@@ -5,14 +5,16 @@
 [![GPUI](https://img.shields.io/badge/render-GPUI%20(wgpu)-green.svg)](https://github.com/zed-industries/zed)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-lightgrey.svg)](LICENSE)
 
-**WidgetKit** is a high-performance, pure-Rust SDK dedicated to crafting modern Wayland desktop environments (status bars, docks, on-screen displays, notifications).
+**WidgetKit** is a high-performance, pure-Rust SDK for building your own Wayland desktop shell (status bars, docks, OSDs, popups, panels) as **one single process**.
 
-Unlike existing web- or interpreted-based solutions (AGS, Eww, Waybar), WidgetKit is powered by the **GPUI** rendering engine (Vulkan/wgpu GPU acceleration) and embraces a pure **"Headless"** philosophy:
-- **Zero Idle CPU**: Interfaces never redraw unless explicitly requested via `cx.notify()`.
-- **100% GPU Rendering**: Direct rendering pipeline via Vulkan/wgpu.
-- **Unified Event Loop**: GPUI's native async executor drives both UI layout and background D-Bus/IPC requests (via `zbus` and `async-io`).
+Unlike existing web- or interpreted-based solutions (AGS, Eww, Waybar, QuickShell), WidgetKit is powered by the **GPUI** rendering engine (Vulkan/wgpu GPU acceleration):
+- **Single instance**: one process, one GPU/font stack, one socket. Every window and every widget of your shell lives in it. ~89 MB instead of ~210 MB for three separate processes.
+- **You write the widgets**: a widget is a plain Rust struct implementing `gpui::Render`. Total layout freedom, no imposed UI kit.
+- **Zero Idle CPU**: services are event-driven (D-Bus signals, compositor sockets, `pactl subscribe`); nothing redraws unless `cx.notify()` is called.
+- **Unified Event Loop**: GPUI's native async executor drives both UI layout and background D-Bus/IPC requests.
 - **Zero Fork**: Depends on upstream `gpui` directly.
-- **Bring Your Own UI**: No bloated or restrictive UI widget kit — you design your interface freely with GPUI primitives (`div()`, `text()`, `svg()`, `rgb()`, `px()`).
+
+> **Mental model.** A *widget* is a GPUI view. A *window* (`LayerWindow`) is a Wayland layer-shell surface that hosts one root view. The *shell* is your `main()`: it registers services and windows once, in one process. Windows talk to each other in-memory (`cx.toggle_window("calendar")`), never through IPC.
 
 ---
 
@@ -20,7 +22,7 @@ Unlike existing web- or interpreted-based solutions (AGS, Eww, Waybar), WidgetKi
 
 **Before touching this codebase, read [`docs/REFERENTIEL.md`](docs/REFERENTIEL.md).** GPUI has no stable API and this project tracks its `main` branch, so the diff between one working commit and the next is large. The reference documents the API traps, the mistakes not to repeat, and how to verify a change actually works.
 
-**To create a widget, read [`docs/CREER-UN-WIDGET.md`](docs/CREER-UN-WIDGET.md).** It is self-sufficient: recipe, exact signatures, services, verification. No widget example inside — the `examples/` directory holds the running code.
+**To create a widget, read [`docs/CREER-UN-WIDGET.md`](docs/CREER-UN-WIDGET.md).** It is self-sufficient: recipe, exact signatures, services, verification. The running reference is [`examples/shell`](examples/shell/src/main.rs).
 
 ---
 
@@ -30,17 +32,19 @@ Unlike existing web- or interpreted-based solutions (AGS, Eww, Waybar), WidgetKi
 widgetkit-workspace/
 ├── Cargo.toml                # Workspace manifest
 ├── crates/
-│   ├── widgetkit/            # Public façade (Builder API, prelude, service registry)
-│   ├── wk-gpui-ext/          # LayerShellOptions, Anchor, Layer, Margins builder
-│   ├── wk-services/          # Asynchronous system services (Clock, Battery, Audio, MPRIS)
+│   ├── widgetkit/            # Public façade (Builder API, prelude, service registry, window control)
+│   ├── wk-gpui-ext/          # LayerWindow, Anchor, Layer, Margins builder
+│   ├── wk-services/          # Event-driven system services (Clock, Battery, Audio, Brightness, Network, Tray, MPRIS)
 │   ├── wk-compositor/        # Native IPC sockets for Hyprland, Sway, and Niri
-│   ├── wk-ipc/               # UNIX domain socket daemon server & client protocol
+│   ├── wk-ipc/               # Single UNIX socket: protocol, server, client, window control
+│   ├── wk-pam/               # PAM FFI for the lockscreen
 │   └── wk-ctl/               # widgetctl command-line utility
 └── examples/
-    ├── topbar/               # Production-ready status bar (Workspaces, Clock, MPRIS, Audio, Battery)
-    ├── dock/                 # Interactive macOS/iOS-style application dock with running indicators
-    └── osd/                  # Low-latency, zero-idle volume/brightness On-Screen Display
+    ├── shell/                # THE reference shell: topbar + dock + OSD + tray menu in ONE process
+    └── lockscreen/           # PAM locker; deliberately a separate process with no IPC (security)
 ```
+
+The lockscreen is the only intentional second binary: it handles passwords and takes exclusive keyboard focus, so it must not share a process, a socket or a service registry with the shell.
 
 ---
 
@@ -149,27 +153,37 @@ for ws in comp_ref.workspaces() {
 
 ---
 
-## Daemon Control CLI (`widgetctl`)
+## Opening and closing windows from your widgets
 
-WidgetKit embeds a lightweight UNIX domain socket daemon (`wk-ipc`). You can inspect and control running widgets from scripts or keybindings using `widgetctl`:
+Popups, calendars, control centers: declare them once in `main()` (usually with `.start_hidden(true)`), then drive them **in-memory** from any click handler. No IPC, no globals to plumb:
+
+```rust
+use widgetkit::prelude::*; // brings in WindowControlExt
+
+div()
+    .id("clock")
+    .on_click(|_, _window, cx| {
+        cx.toggle_window("calendar"); // also: cx.show_window(..), cx.hide_window(..)
+    })
+```
+
+Inside a `Context<V>` the same methods work (`Context` derefs to `App`).
+
+---
+
+## Control CLI (`widgetctl`)
+
+WidgetKit is **single-instance**: exactly one process owns exactly one socket, `$XDG_RUNTIME_DIR/widgetkit.sock` (override with `$WIDGETKIT_SOCKET`). Launching the shell a second time exits immediately with an error instead of starting a second GPU stack; a stale socket left by a crash is detected and replaced.
+
+Use `widgetctl` from scripts or compositor keybindings. There is no `--socket` option, there is only one target:
 
 ```bash
-# Check daemon connectivity
-widgetctl ping
-
-# Inspect status, uptime, active windows, and services
-widgetctl status
-
-# Toggle window visibility (e.g. bind to a hotkey in hyprland.conf)
-widgetctl toggle topbar
-widgetctl toggle dock
-
-# Trigger service actions
-widgetctl service audio toggle_mute
+widgetctl ping                        # check the shell responds
+widgetctl status                      # uptime, windows, services
+widgetctl toggle dock                 # show/hide a window (hotkey in hyprland.conf / sway)
+widgetctl service audio toggle_mute   # trigger a service action
 widgetctl service mpris next
-
-# Reload daemon configuration
-widgetctl reload
+widgetctl reload                      # re-render every window
 ```
 
 ---
@@ -185,28 +199,26 @@ layerrule = ignorealpha 0.2, wk-topbar
 layerrule = blur, wk-dock
 layerrule = blur, wk-osd
 
-# Keybinding to toggle dock or status bar
-bind = $mainMod, B, exec, widgetctl toggle topbar
+# Keybinding to toggle the dock
+bind = $mainMod, B, exec, widgetctl toggle dock
 ```
 
 ---
 
-## Running Examples
+## Running the Examples
 
 ```bash
-# Run the complete topbar
-cargo run --package topbar-example
+# The whole shell (topbar + dock + OSD + tray menu) in a single process
+cargo run --release --package shell-example
 
-# Run the dock
-cargo run --package dock-example
-
-# Run the volume OSD
-cargo run --package osd-example
+# The PAM lockscreen (separate process on purpose, no IPC)
+cargo run --release --package lockscreen-example
 ```
 
 ---
 
 ## Roadmap
 
-- [x] **V1**: Headless architecture, GPUI wgpu backend, Zero Idle CPU, LayerShell wrappers, UPower/Audio/MPRIS services, Hyprland/Sway/Niri IPC, UNIX socket daemon & CLI.
-- [ ] **V2**: `widgetkit-components` (reusable popovers, complex sliders, calendar dialogs) and dynamic CSS/JSON theme variable engines.
+- [x] **V1**: GPUI wgpu backend, Zero Idle CPU, LayerShell wrappers, event-driven UPower/Audio/MPRIS/Tray/Network services, Hyprland/Sway/Niri IPC, **single-instance shell** with a single control socket and CLI, in-process `cx.toggle_window(..)`.
+- [ ] **V2**: ergonomic helpers to build *your own* event-driven data sources (stream a process' stdout, watch a file, listen on a socket) without writing a full `Service`. No UI components: layout stays entirely yours.
+

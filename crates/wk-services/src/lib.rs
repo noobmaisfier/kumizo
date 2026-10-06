@@ -19,6 +19,7 @@ pub mod mpris;
 pub mod network;
 pub mod service;
 pub mod tray;
+pub mod window;
 
 pub use audio::Audio;
 pub use battery::{Battery, BatteryState};

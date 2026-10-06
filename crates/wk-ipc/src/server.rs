@@ -29,6 +29,16 @@ impl IpcServer {
         let socket_path = path.as_ref().to_path_buf();
 
         if socket_path.exists() {
+            // Single-instance guard. `UnixListener::bind` needs the path to be
+            // free, so a leftover file has to go, but only a *stale* one: if
+            // something answers, another instance owns it and we must not
+            // steal its socket.
+            if crate::client::IpcClient::new(&socket_path).is_alive() {
+                anyhow::bail!(
+                    "another WidgetKit instance is already running on {}",
+                    socket_path.display()
+                );
+            }
             let _ = std::fs::remove_file(&socket_path);
         }
 

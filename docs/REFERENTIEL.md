@@ -310,11 +310,25 @@ pub struct IpcServer {
 }
 ```
 
-### Un socket par daemon
+### Un seul socket, une seule instance
 
-`UnixListener::bind` **unlink** le fichier existant avant de lier. Deux daemons
-non nommés sur le même chemin se volent donc le socket : seul le dernier lancé
-répond, silencieusement. D'où `socket_path(nom)` et un nom de daemon explicite.
+Le shell est **mono-instance** : un processus, un socket
+(`$XDG_RUNTIME_DIR/widgetkit.sock`, surchargeable avec `WIDGETKIT_SOCKET`).
+Historique du piège : `UnixListener::bind` **unlink** le fichier existant
+avant de lier, donc deux daemons sur le même chemin se volaient le socket et
+seul le dernier lancé répondait, silencieusement. L'ancienne parade
+(`socket_path(nom)` + nom de daemon explicite) est supprimée.
+
+Garde actuelle dans `IpcServer::bind` : si le fichier existe, on envoie un
+`Ping`. Une réponse = une instance vivante → `bind` échoue (« already
+running ») et `WidgetKit::run` quitte avec un message. Pas de réponse =
+socket périmé (crash) → il est supprimé puis recréé. Ne jamais supprimer à
+la main `widgetkit.sock` d'un shell qui tourne : il continuerait de vivre sans
+être joignable.
+
+Le lockscreen reste hors de ce schéma (`.ipc(false)`) : il ne lie aucun
+socket, donc ne peut ni entrer en conflit avec le shell ni être piloté à
+distance.
 
 ### zbus : se méfier de docs.rs
 
@@ -391,8 +405,8 @@ PY
 awk '/Pss/{s+=$2} END{printf "PSS total: %.0f MB\n", s/1024}' /proc/*/smaps_rollup
 
 # test hide/show par différence de pixels
-./target/release/widgetctl --socket topbar hide topbar; grim a.png
-./target/release/widgetctl --socket topbar show topbar; grim b.png
+./target/release/widgetctl hide topbar; grim a.png
+./target/release/widgetctl show topbar; grim b.png
 ```
 
 ---

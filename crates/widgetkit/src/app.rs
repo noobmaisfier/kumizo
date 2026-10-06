@@ -2,7 +2,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use async_channel::{Receiver, Sender};
-use gpui::{AnyWindowHandle, App, AppContext, Bounds, Entity, Global, Pixels, QuitMode, Render};
+use gpui::{AnyWindowHandle, App, AppContext, Bounds, Entity, Pixels, QuitMode, Render};
 use tracing::{info, warn};
 use wk_gpui_ext::LayerWindow;
 use wk_ipc::{IpcServer, Request, Response, WindowCmd, WindowControl, WindowSender};
@@ -13,12 +13,7 @@ use crate::registry::ServiceRegistry;
 /// How long the IPC thread waits for the GPUI main thread to answer.
 const IPC_REPLY_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Shared window control, also visible to in-process users (services) as a
-/// GPUI global. Views read it to offer programmatic show/hide without IPC.
-#[derive(Clone)]
-pub struct WindowControlGlobal(pub WindowControl);
-
-impl Global for WindowControlGlobal {}
+pub use wk_services::window::{WindowControlExt, WindowControlGlobal};
 
 /// Trait abstracting different ways to build a root window view.
 pub trait IntoWindowView<V: 'static + Render> {
@@ -49,7 +44,6 @@ pub struct WidgetKit {
     windows: Vec<WindowInitFn>,
     window_names: Vec<String>,
     window_registry: WindowControl,
-    name: Option<String>,
     ipc_enabled: bool,
     start_time: Instant,
 }
@@ -63,21 +57,9 @@ impl WidgetKit {
             windows: Vec::new(),
             window_names: Vec::new(),
             window_registry: WindowControl::new(),
-            name: None,
             ipc_enabled: true,
             start_time: Instant::now(),
         }
-    }
-
-    /// Name this daemon, which determines its IPC socket.
-    ///
-    /// Defaults to the id of the first registered window, so a single-widget
-    /// binary needs no configuration. Each daemon needs a distinct name,
-    /// otherwise two binaries fight over the same socket and only the last one
-    /// started answers.
-    pub fn name(mut self, name: impl Into<String>) -> Self {
-        self.name = Some(name.into());
-        self
     }
 
     /// Register an asynchronous system service (e.g. `Clock`, `Battery`, `Audio`, `Mpris`, `Compositor`).
@@ -181,12 +163,7 @@ impl WidgetKit {
         let _ = tracing_subscriber::fmt().with_max_level(level).try_init();
         let start_time = self.start_time;
 
-        let name = self
-            .name
-            .clone()
-            .or_else(|| self.window_names.first().cloned())
-            .unwrap_or_else(|| "widgetkit".to_string());
-        let socket_path = wk_ipc::socket_path(&name);
+        let socket_path = wk_ipc::socket_path();
 
         let window_names = self.window_names.clone();
         let service_names = self.service_names.clone();
@@ -205,6 +182,12 @@ impl WidgetKit {
             }) {
                 Ok(srv) => Some(srv),
                 Err(err) => {
+                    // Single instance: if one is alive, starting a second GPU
+                    // stack would only duplicate every surface. Leave quietly.
+                    if wk_ipc::IpcClient::new(&socket_path).is_alive() {
+                        eprintln!("WidgetKit is already running ({}).", socket_path.display());
+                        std::process::exit(1);
+                    }
                     warn!("WidgetKit: failed to bind IPC server on {}: {:#}", socket_path.display(), err);
                     None
                 }
@@ -214,8 +197,7 @@ impl WidgetKit {
         };
 
         info!(
-            "Starting WidgetKit desktop shell '{}' with {} window(s) and {} service(s)",
-            name,
+            "Starting WidgetKit desktop shell with {} window(s) and {} service(s)",
             self.windows.len(),
             self.services.len()
         );

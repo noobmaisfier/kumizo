@@ -90,6 +90,13 @@ impl WindowControl {
         });
     }
 
+    /// Show the window if hidden, hide it if shown.
+    pub fn toggle(&self, name: &str) {
+        self.send(Request::ToggleWindow {
+            name: name.to_string(),
+        });
+    }
+
     fn send(&self, req: Request) {
         let Some(tx) = self.lookup(request_window_name(&req)) else {
             warn!("WindowControl: unknown window for internal request");

@@ -39,36 +39,36 @@ dans la fermeture passée à `update`, ou émis par un service observé).
 
 ---
 
-## 2. Recette pas à pas : nouveau widget = nouveau binaire
+## 2. Recette pas à pas : un widget = une vue dans le shell unique
 
-### Étape 1 — Déclarer le binaire dans le workspace
+WidgetKit est **mono-instance** : un seul processus (un seul init GPU, une
+seule pile de polices, un seul socket) héberge toutes les fenêtres et tous les
+widgets. **Ne jamais créer un binaire par widget.** Un widget est une struct
+Rust qui implémente `Render`, ajoutée au shell existant.
 
-Les membres du workspace sont **explicites** (pas de glob). Créer
-`examples/<nom>/Cargo.toml` :
+Séparer les rôles :
 
-```toml
-[package]
-name = "<nom>-example"
-version.workspace = true
-edition.workspace = true
-authors.workspace = true
-license.workspace = true
-description = "..."
+- **Widget** = vue GPUI (`impl Render`). Réutilisable, composable.
+- **Fenêtre** = surface layer-shell (`LayerWindow`) qui héberge *une* vue
+  racine. Une vue racine peut contenir autant de widgets que voulu.
+- **Shell** = le `main()` : il déclare services et fenêtres, une seule fois.
 
-[[bin]]
-name = "<nom>"
-path = "src/main.rs"
+Exception volontaire : le **lockscreen** reste un binaire séparé (mots de
+passe, clavier exclusif, aucun IPC). Ne pas le fusionner dans le shell.
 
-[dependencies]
-widgetkit = { path = "../../crates/widgetkit" }
-gpui = { workspace = true }
-# Ajouter SEULEMENT si besoin :
-# async-io = { workspace = true }   # timers dans la vue (Timer::after)
-```
+### Étape 1 — Choisir où vit le widget
 
-Puis ajouter `"examples/<nom>"` au tableau `members` du `Cargo.toml`
-racine. Sans ça, `cargo check --workspace` ignore le binaire et la CI
-ment.
+- Widget dans une fenêtre existante (ex : une pastille dans la barre) :
+  écrire la vue et l'ajouter comme `.child(...)` de la vue racine de cette
+  fenêtre. Aucune nouvelle fenêtre.
+- Nouvelle surface (popup, panneau, OSD) : écrire la vue racine et déclarer
+  une nouvelle fenêtre dans le `main()` du shell (étape 2).
+
+Le shell de référence est `examples/shell/src/main.rs`. Pour démarrer un
+shell personnel, copier ce crate (`examples/shell/Cargo.toml` donne les
+dépendances) ; pour ajouter un widget au dépôt, modifier ce crate. Seule
+dépendance nécessaire en plus si une vue utilise des timers :
+`async-io = { workspace = true }`.
 
 Dépendances disponibles au workspace (réutiliser, ne rien ajouter sans
 raison) : `gpui`, `gpui_platform`, `zbus` (4.4, `async-io` uniquement),
@@ -77,7 +77,7 @@ raison) : `gpui`, `gpui_platform`, `zbus` (4.4, `async-io` uniquement),
 `smallvec`, `time`, `thiserror`, `anyhow`, `tracing`, `log`, `bitflags`,
 `libc`.
 
-### Étape 2 — Le `main()` : services puis fenêtre(s) puis `run()`
+### Étape 2 — Le `main()` : services, fenêtres, `run()`
 
 ```rust
 use gpui::prelude::*;
@@ -90,6 +90,10 @@ fn main() {
             LayerWindow::new("<id>")...,
             |cx: &mut gpui::App| cx.new(MaVue::new),
         )
+        .window(                // autant de fenêtres que nécessaire, même processus
+            LayerWindow::new("<popup>")....start_hidden(true),
+            |cx: &mut gpui::App| cx.new(MonPopup::new),
+        )
         .run();
 }
 ```
@@ -101,15 +105,19 @@ recommandé :
 - `.service::<S>()` — enregistre un service (`S: Service`). Appeler pour
   **chaque** service que les vues consomment, sinon `cx.service::<S>()`
   panique au démarrage avec un message explicite. L'ordre est indifférent.
+  Les services sont instanciés **une fois** et partagés par toutes les
+  fenêtres.
 - `.window(config, builder)` — déclare une fenêtre nommée (`config.id`).
   Le `builder` reçoit `&mut gpui::App` et retourne `Entity<V>`
   (`V: Render`), typiquement `|cx| cx.new(MaVue::new)`.
-- `.name("...")` — nom du daemon = nom du socket IPC. Par défaut, c'est
-  l'id de la **première** fenêtre. Deux daemons avec le même nom se volent
-  le socket : le dernier démarré répond seul.
-- `.ipc(true/false)` — serveur IPC (défaut : activé).
-- `.run()` — ne retourne jamais. Initialise les services, lie le socket,
-  ouvre les fenêtres une fois qu'un écran est annoncé.
+- `.ipc(true/false)` — serveur IPC (défaut : activé). Désactivé seulement
+  pour le lockscreen.
+- `.run()` — ne retourne jamais. Initialise les services, lie le **socket
+  unique** (`$XDG_RUNTIME_DIR/widgetkit.sock`), ouvre les fenêtres une fois
+  qu'un écran est annoncé. Si une instance répond déjà sur ce socket, le
+  second lancement affiche une erreur et **quitte** (pas de double shell).
+  Un socket périmé après un crash est détecté et remplacé.
+
 
 ### Étape 3 — Configurer la fenêtre (`LayerWindow`)
 
@@ -192,7 +200,7 @@ Règles :
 - Timers dans une vue : `cx.spawn(async move |vue, cx| {
   async_io::Timer::after(Duration::from_...(..)).await;
   let _ = vue.update(cx, |v, cx| { ...; cx.notify(); }); }).detach();`
-  (nécessite `async-io` dans le `Cargo.toml` du binaire).
+  (nécessite `async-io` dans le `Cargo.toml` du crate du shell).
 - Les fermetures (`move ||`) prennent chaque `Entity` par clone séparé :
   cloner un `Entity` est gratuit, le compilateur l'exige par capture.
 - `render` retourne **un seul type** : deux branches qui construisent des
@@ -357,14 +365,21 @@ Contrat (voir `crates/wk-services/src/service.rs`) :
 
 ### Étape 10 — Fenêtres : afficher, cacher, contrôler
 
-- Runtime : `widgetctl --socket <nom> show|hide|toggle <fenêtre>`,
-  `reload`, `status`. Le socket par défaut porte le nom de la première
-  fenêtre (`widgetkit-<nom>.sock` dans `XDG_RUNTIME_DIR`).
-- Depuis le code (popup piloté par un service) : lire le global
-  `WindowControlGlobal` dans la vue (`cx.try_global::<WindowControlGlobal>()`
+- Depuis un widget (cas général) : appel direct en mémoire, sans IPC,
+  via le trait `WindowControlExt` du prelude :
+  `.on_click(|_, _, cx| { cx.toggle_window("calendar"); })`, ou
+  `cx.show_window("..")` / `cx.hide_window("..")`. `Context<V>` déréférence
+  vers `App`, donc les mêmes méthodes marchent dans une vue. Les appels ne
+  bloquent jamais l'appelant (thread dédié + timeout 5 s) ; un nom de fenêtre
+  inconnu est journalisé en `warn!`.
+- Depuis un service (popup piloté par un service, ex. le menu du tray) : lire
+  le global `WindowControlGlobal` dans la vue (`cx.try_global::<WindowControlGlobal>()`
   puis `.0.clone()`), le remettre au service via `set_control`-équivalent,
-  puis `control.show("traymenu")` / `control.hide("traymenu")`. Ces méthodes
-  ne bloquent jamais l'appelant (thread dédié + timeout 5 s).
+  puis `control.show("traymenu")` / `control.hide("traymenu")` /
+  `control.toggle("..")`.
+- Runtime (scripts, raccourcis du compositeur) :
+  `widgetctl show|hide|toggle <fenêtre>`, `reload`, `status`. Un seul socket :
+  `widgetkit.sock` dans `XDG_RUNTIME_DIR`.
 - `hide` détruit la surface mais garde l'état (`Entity` + config) :
   `show` la recrée. `toggle` alterne selon l'état réel (handle vérifié
   contre les fenêtres vivantes, pas de succès fantôme).
@@ -386,9 +401,12 @@ Dans l'ordre, tout doit passer :
    conversions, seuils). Les fonctions pures se testent sans matériel.
 3. `cargo build --workspace --release` (les binaires debug font ~600 Mo,
    les release ~40 Mo).
-4. Redémarrer le daemon : tuer l'ancien (`pkill -x <nom>` ou PID exact —
-   **jamais** `pkill -f` avec un motif présent dans sa propre ligne de
-   commande, ça se suicide), supprimer les vieux sockets, relancer en
+4. Redémarrer le shell (un seul processus) : tuer l'ancien
+   (`pkill -x shell` ou PID exact — **jamais** `pkill -f` avec un motif
+   présent dans sa propre ligne de commande, ça se suicide). Pas besoin de
+   supprimer le socket : une instance morte est détectée et son socket
+   remplacé, tandis qu'une instance vivante fait quitter le nouveau
+   lancement (vérifier `widgetctl ping` avant de relancer). Relancer en
    détaché (`setsid ... &` + `disown`, pas un simple `&` qui meurt entre
    deux appels), attendre ~12 s (GPU + `wl_output`).
 5. Capturer (`grim out.png`) et **regarder l'image** : vérifier que le
@@ -408,15 +426,19 @@ Dans l'ordre, tout doit passer :
 
 ## 4. Référence rapide
 
-**Builder** : `new → service* → window* → [name] → [ipc] → run`.
+**Builder** : `new → service* → window* → [ipc] → run`.
 
 **`LayerWindow`** : `new(id) → layer → anchor → exclusive_zone →
 margins → width/height → namespace → keyboard_interactivity → monitor →
 transparent → start_hidden`.
 
-**`widgetctl`** : `status`, `show|hide|toggle <fenêtre>`, `reload`,
-`service <nom> <action> [payload]`, `list`. Toujours `--socket <nom>` quand
-plusieurs daemons tournent.
+**Contrôle de fenêtres depuis le code** : `cx.show_window(id)`,
+`cx.hide_window(id)`, `cx.toggle_window(id)` (trait `WindowControlExt`,
+dans le prelude).
+
+**`widgetctl`** : `ping`, `status`, `show|hide|toggle <fenêtre>`, `reload`,
+`service <nom> <action> [payload]`. Une seule instance, un seul socket :
+aucune option `--socket`.
 
 **Couleurs du dépôt** : fond `0x1e1e2e`, texte `0xcdd6f4`, accent
 `0x89b4fa`, vert `0xa6e3a1`, rouge `0xf38ba8`, jaune `0xf9e2af`.

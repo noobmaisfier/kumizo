@@ -30,6 +30,9 @@ const DOCK_HEIGHT: f32 = 58.0;
 /// Size of the volume/brightness OSD.
 const OSD_WIDTH: f32 = 280.0;
 const OSD_HEIGHT: f32 = 80.0;
+/// Size of the calendar popup.
+const CALENDAR_WIDTH: f32 = 300.0;
+const CALENDAR_HEIGHT: f32 = 290.0;
 
 fn main() {
     WidgetKit::new()
@@ -49,6 +52,7 @@ fn main() {
         .window(dock_window(), |cx: &mut gpui::App| cx.new(Dock::new))
         .window(osd_window(), |cx: &mut gpui::App| cx.new(VolumeOsd::new))
         .window(traymenu_window(), |cx: &mut gpui::App| cx.new(TrayMenu::new))
+        .window(calendar_window(), |cx: &mut gpui::App| cx.new(Calendar::new))
         .run();
 }
 
@@ -101,6 +105,21 @@ fn traymenu_window() -> LayerWindow {
         .start_hidden(true)
 }
 
+/// Month calendar popup, toggled in-memory by a click on the clock
+/// (`cx.toggle_window("calendar")`). Like the tray menu it has no surface
+/// while closed.
+fn calendar_window() -> LayerWindow {
+    LayerWindow::new("calendar")
+        .layer(Layer::Overlay)
+        .anchor(Anchor::TOP)
+        .exclusive_zone(0)
+        .width(CALENDAR_WIDTH)
+        .height(CALENDAR_HEIGHT)
+        .margins(Margins::new(44, 0, 0, 0))
+        .namespace("wk-calendar")
+        .start_hidden(true)
+}
+
 // ---------------------------------------------------------------------------
 // Top bar
 // ---------------------------------------------------------------------------
@@ -118,14 +137,6 @@ struct TopBar {
 impl TopBar {
     fn new(cx: &mut Context<Self>) -> Self {
         let tray = cx.service::<Tray>();
-        // Hand the window control to the tray service so right-clicks can
-        // open the context menu window without going through IPC.
-        if let Some(control) = cx
-            .try_global::<WindowControlGlobal>()
-            .map(|g| g.0.clone())
-        {
-            tray.update(cx, |t, _| t.set_control(control));
-        }
         Self {
             clock: cx.service::<Clock>(),
             battery: cx.service::<Battery>(),
@@ -196,16 +207,20 @@ impl Render for TopBar {
                             })
                     })),
             )
-            // Date and time.
+            // Date and time. Click toggles the calendar popup, in memory.
             .child(
                 div()
+                    .id("wk-clock")
                     .flex()
                     .items_center()
                     .gap_2()
                     .bg(rgb(0x1e1e2e))
+                    .hover(|s| s.bg(rgb(0x313244)))
+                    .cursor_pointer()
                     .px_3()
                     .py_1()
                     .rounded_md()
+                    .on_click(|_, _window, cx| cx.toggle_window("calendar"))
                     .child(div().text_color(rgb(0xb4befe)).child(clock.date_formatted()))
                     .child(
                         div()
@@ -496,6 +511,161 @@ impl Render for TrayMenu {
                     )
                     .child(div().h(px(1.0)).my_1().bg(rgb(0x313244)).w_full())
                     .children(render_menu_items(&menu.items, &self.tray)),
+            )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Calendar popup
+// ---------------------------------------------------------------------------
+
+struct Calendar {
+    clock: Entity<Clock>,
+}
+
+impl Calendar {
+    fn new(cx: &mut Context<Self>) -> Self {
+        Self {
+            clock: cx.service::<Clock>(),
+        }
+    }
+}
+
+impl Render for Calendar {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let clock = self.clock.read(cx);
+        let dt = clock.datetime();
+        let year = dt.year();
+        let month = dt.month();
+        let today = dt.day();
+
+        let month_name = match month {
+            time::Month::January => "January",
+            time::Month::February => "February",
+            time::Month::March => "March",
+            time::Month::April => "April",
+            time::Month::May => "May",
+            time::Month::June => "June",
+            time::Month::July => "July",
+            time::Month::August => "August",
+            time::Month::September => "September",
+            time::Month::October => "October",
+            time::Month::November => "November",
+            time::Month::December => "December",
+        };
+
+        let days_in_month = time::util::days_in_month(month, year);
+        let first_day_weekday = time::Date::from_calendar_date(year, month, 1)
+            .map(|d| d.weekday().number_from_monday())
+            .unwrap_or(1);
+
+        let weekdays = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+
+        div()
+            .id("calendar-backdrop")
+            .w_full()
+            .h_full()
+            .on_click(|_, _, cx| {
+                cx.hide_window("calendar");
+            })
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .bg(rgb(0x1e1e2e))
+                    .border_1()
+                    .border_color(rgba(0x31324488))
+                    .rounded_xl()
+                    .p_3()
+                    .gap_2()
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .px_2()
+                            .py_1()
+                            .child(
+                                div()
+                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .text_color(rgb(0x89b4fa))
+                                    .text_size(px(15.0))
+                                    .child(format!("{month_name} {year}")),
+                            )
+                            .child(
+                                div()
+                                    .id("calendar-close-btn")
+                                    .cursor_pointer()
+                                    .text_color(rgb(0x6c7086))
+                                    .hover(|s| s.text_color(rgb(0xf38ba8)))
+                                    .child("✕")
+                                    .on_click(|_, _, cx| {
+                                        cx.hide_window("calendar");
+                                    }),
+                            ),
+                    )
+                    .child(div().h(px(1.0)).bg(rgb(0x313244)).w_full())
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .justify_between()
+                            .px_1()
+                            .children(weekdays.iter().map(|day| {
+                                div()
+                                    .w(px(34.0))
+                                    .flex()
+                                    .justify_center()
+                                    .text_size(px(12.0))
+                                    .text_color(rgb(0xa6adc8))
+                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .child(*day)
+                            })),
+                    )
+                    .child({
+                        let leading_blanks = (first_day_weekday - 1) as usize;
+                        let total_slots = leading_blanks + days_in_month as usize;
+                        let rows = (total_slots + 6) / 7;
+
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            .children((0..rows).map(|row| {
+                                div()
+                                    .flex()
+                                    .flex_row()
+                                    .justify_between()
+                                    .px_1()
+                                    .children((0..7).map(|col| {
+                                        let slot_idx = row * 7 + col;
+                                        if slot_idx < leading_blanks || slot_idx >= total_slots {
+                                            div().w(px(34.0)).h(px(28.0))
+                                        } else {
+                                            let day_num = (slot_idx - leading_blanks + 1) as u8;
+                                            let is_today = day_num == today;
+                                            div()
+                                                .w(px(34.0))
+                                                .h(px(28.0))
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .rounded_md()
+                                                .text_size(px(13.0))
+                                                .when(is_today, |s| {
+                                                    s.bg(rgb(0x89b4fa))
+                                                        .text_color(rgb(0x11111b))
+                                                        .font_weight(gpui::FontWeight::BOLD)
+                                                })
+                                                .when(!is_today, |s| {
+                                                    s.text_color(rgb(0xcdd6f4))
+                                                        .hover(|h| h.bg(rgb(0x313244)))
+                                                })
+                                                .child(format!("{day_num}"))
+                                        }
+                                    }))
+                            }))
+                    }),
             )
     }
 }
