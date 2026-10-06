@@ -159,6 +159,11 @@ Configurations par cas (adapter les chiffres, garder la structure) :
   = centré horizontalement ; `TOP | RIGHT` = coin haut-droit),
   `exclusive_zone(0)`, `width` + `height` explicites, marges de dégagement,
   `start_hidden(true)` pour un popup.
+- Overlay / Modal plein écran (Launcher, Powermenu) : `layer(Overlay)`,
+  `anchor(Anchor::FULLSCREEN)`, `exclusive_zone(0)`,
+  `keyboard_interactivity(KeyboardInteractivity::Exclusive)`,
+  `.size(None, None)` (**indispensable** pour annuler le `DEFAULT_HEIGHT` de 32 px
+  et s'étendre sur la totalité de l'écran), `start_hidden(true)`.
 - Panneau latéral : `LEFT_BAR` ou `RIGHT_BAR` + `width` explicite.
 
 ### Étape 4 — La vue : struct + `new` + `Render`
@@ -250,9 +255,12 @@ GPUI peint des images via `gpui::img(source)`. Pour des pixels en mémoire :
   `Arc::new(RenderImage::new(smallvec![frame]))` (`gpui::RenderImage`,
   `smallvec::smallvec!`). Afficher : `gpui::img(mon_arc.clone())`
   (dimensionner avec `.w()` / `.h()`, ex. 20 px pour une icône de barre).
-- PNG déjà encodé (fichier, `icon-data` dbusmenu) : `image::open(chemin)`
-  puis `to_rgba8()`, même conversion ensuite. Seul le PNG est décodable
-  (dépendance `image` limitée à ce format) ; le SVG est hors scope.
+- PNG et SVG :
+  - **PNG** (fichier, `icon-data` dbusmenu) : `image::open(chemin)` puis `to_rgba8()`,
+    inverser RGBA en BGRA.
+  - **SVG** (icônes FreeDesktop) : parsé et rendu à la volée via `resvg` vers un
+    `tiny_skia::Pixmap`, converti en BGRA, puis emballé dans un `RenderImage`.
+    Mis en cache mémoire pour zéro coût lors des re-rendus.
 - Glyphes d'icônes (police Nerd Font présente : JetBrainsMono) : utiliser
   **uniquement** des codepoints vérifiés — rendus une fois avec `pango-view`
   dans la police locale, puis relus en hexadécimal dans le source
@@ -317,6 +325,17 @@ auto-détection, même pattern que `WifiBackend`). Méthodes :
 `close_window()`. `Workspace` : `id`, `name`, `is_active`, `is_urgent`,
 `window_count`, `monitor`. `ActiveWindow` : `title`, `class`,
 `workspace_id`.
+
+**`Brightness`** — luminosité d'écran 100% pilotée par événements noyau
+(`sysfs_notify` sur `actual_brightness` + `NETLINK_KOBJECT_UEVENT`, zéro polling).
+Méthodes : `percent()`, `icon()`, `device()`, `set_percent(pct)`, `increase(step)`,
+`decrease(step)`.
+
+**`Apps`** — catalogue d'applications FreeDesktop (`.desktop` de `/usr/share/applications`
+et `~/.local/share/applications`). Résout et décode les icônes PNG et SVG vers le GPU.
+Méthodes : `apps() -> &[AppInfo]`, `search(query) -> Vec<AppInfo>` (recherche
+fuzzy avec scoring en temps réel), `launch(app)`. `AppInfo` : `id`, `name`, `comment`,
+`exec`, `icon: Option<Arc<RenderImage>>`, `categories`, `keywords`.
 
 ### Étape 9 — Écrire un service sur mesure
 

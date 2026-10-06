@@ -612,7 +612,70 @@ et de trancher le bogue ci-dessus en une minute.
 
 ---
 
-## 10. Checklist avant de déclarer un changement fonctionnel
+## 10. Pièges de fenêtrage Wayland, UX et PAM
+
+### `DEFAULT_HEIGHT` bride les surfaces `Anchor::FULLSCREEN`
+
+**Symptôme.** Un Launcher ou un Powermenu déclaré en `Anchor::FULLSCREEN`
+est invisible à l'écran, même si Wayland indique que la fenêtre est créée.
+
+**Cause.** `LayerWindow::new()` initialise par défaut `height: Some(32.0)`.
+Dans `to_gpui_options_with_display()`, un `Some(h)` explicite prend la priorité
+sur le redimensionnement automatique des ancres opposées. La surface Wayland
+ne mesure donc que 32 pixels de haut tout en haut de l'écran, et tout contenu
+décalé plus bas (ex. `.pt(px(140.0))`) est tronqué hors de la surface.
+
+**Règle.** Pour tout overlay plein écran (Launcher, Powermenu, Locker), appeler
+impérativement `.size(None, None)` pour libérer la largeur et la hauteur :
+
+```rust
+LayerWindow::new("launcher")
+    .layer(Layer::Overlay)
+    .anchor(Anchor::FULLSCREEN)
+    .size(None, None) // <- Indispensable pour annuler le 32px par défaut
+    .start_hidden(true)
+```
+
+### Le debounce de l'auto-masquage OSD (Tokens de génération)
+
+**Symptôme.** L'OSD de volume ou luminosité clignote ou disparaît brusquement
+au milieu d'ajustements consécutifs au clavier.
+
+**Cause.** Lancer un `Timer::after(...)` asynchrone à chaque appui sans annuler
+le précédent fait que le premier timer expire à `t=2s` et masque la fenêtre,
+même si l'utilisateur a appuyé à `t=1.8s`.
+
+**Règle.** Utiliser un jeton de génération (`generation: u64`) incrémenté à chaque
+ajustement. Le timer ne masque la fenêtre que si sa génération est toujours la plus
+récente :
+
+```rust
+osd.generation = osd.generation.wrapping_add(1);
+let current_gen = osd.generation;
+cx.spawn(async move |this, cx| {
+    async_io::Timer::after(Duration::from_millis(2000)).await;
+    let _ = this.update(cx, |osd, cx| {
+        if osd.generation == current_gen {
+            osd.visible = false;
+            cx.notify();
+        }
+    });
+}).detach();
+```
+
+### Codes et sémantique Linux-PAM (`<security/pam_appl.h>`)
+
+- `PAM_CRED_EXPIRED` = 16, `PAM_CRED_ERR` = 17, `PAM_CONV_ERR` = 19 (18 est
+  `PAM_NO_MODULE_DATA`).
+- `PAM_CRED_INSUFFICIENT` (8) indique un manque de privilèges du processus
+  appelant (ex. lecture de `/etc/shadow`), jamais un mauvais mot de passe
+  utilisateur.
+- Mémoire `pam_conv(3)` : les réponses doivent être allouées via `libc::calloc`
+  et `libc::strdup` car PAM les libère lui-même avec `free(3)`.
+
+---
+
+## 11. Checklist avant de déclarer un changement fonctionnel
 
 - [ ] `cargo check --workspace --all-targets` : 0 erreur, **0 warning**
 - [ ] `cargo test --doc` passe (les exemples `no_run` compilent vraiment)

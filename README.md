@@ -121,13 +121,17 @@ All services are built with reactive event streaming for **Zero Idle CPU**:
 | `Clock` | Monotonic Timer | Nanosecond-precise, zero-drift scheduler waking up exactly on second or minute boundaries. |
 | `Battery` | UPower D-Bus / sysfs | Subscribes to `org.freedesktop.UPower` signal stream; falls back to `/sys/class/power_supply`. |
 | `Audio` | WirePlumber / PulseAudio | Tracks sink volume, mute state, and device descriptions via `wpctl`/`pactl` event streams. |
+| `Brightness` | Kernel Uevents / sysfs | 100% event-driven backlight monitor via `sysfs_notify` + `NETLINK_KOBJECT_UEVENT` (zero busy-polling). |
+| `Network` | NM / iwd / sysfs | Auto-detecting Wi-Fi signal, connection status, and SSID with multi-backend fallback. |
+| `Tray` | StatusNotifierItem / D-Bus | Complete SNI system tray host with dbusmenu layout tree and GPU icon texture rendering. |
 | `Mpris` | `org.mpris.MediaPlayer2` | Manages media player state (Spotify, Firefox, mpv): title, artist, playback status, controls. |
+| `Apps` | FreeDesktop `.desktop` | Application discovery, instant fuzzy search, background launch, and GPU icon loading (PNG & SVG via `resvg`). |
 
 Access any registered service inside any view with:
 ```rust
 let clock = cx.service::<Clock>();
 let audio = cx.service::<Audio>();
-let mpris = cx.service::<Mpris>();
+let apps = cx.service::<Apps>();
 ```
 Views are automatically re-rendered when services notify updates.
 
@@ -208,7 +212,7 @@ bind = $mainMod, B, exec, widgetctl toggle dock
 ## Running the Examples
 
 ```bash
-# The whole shell (topbar + dock + OSD + tray menu) in a single process
+# The whole shell (topbar + dock + OSD + tray menu + calendar + app launcher + powermenu) in a single process
 cargo run --release --package shell-example
 
 # The PAM lockscreen (separate process on purpose, no IPC)
