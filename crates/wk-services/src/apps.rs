@@ -285,6 +285,11 @@ fn sanitize_exec(exec: &str) -> String {
     parts.join(" ")
 }
 
+/// Public helper to load an icon by name or absolute path.
+pub(crate) fn load_icon_pub(name: &str) -> Option<Arc<RenderImage>> {
+    load_icon(name)
+}
+
 /// Resolve and load an icon by name or absolute path (supports PNG and SVG).
 fn load_icon(name: &str) -> Option<Arc<RenderImage>> {
     let path = find_icon_path(name)?;

@@ -48,6 +48,7 @@ fn main() {
         .service::<Mpris>()
         .service::<Compositor>()
         .service::<Apps>()
+        .service::<Notifications>()
         .window(topbar_window(), |cx: &mut gpui::App| {
             cx.new(TopBar::new)
         })
@@ -57,6 +58,8 @@ fn main() {
         .window(calendar_window(), |cx: &mut gpui::App| cx.new(Calendar::new))
         .window(launcher_window(), |cx: &mut gpui::App| cx.new(AppLauncher::new))
         .window(powermenu_window(), |cx: &mut gpui::App| cx.new(PowerMenu::new))
+        .window(notifications_window(), |cx: &mut gpui::App| cx.new(NotificationToasts::new))
+        .window(notification_center_window(), |cx: &mut gpui::App| cx.new(NotificationCenter::new))
         .run();
 }
 
@@ -148,6 +151,32 @@ fn powermenu_window() -> LayerWindow {
         .start_hidden(true)
 }
 
+/// Ephemeral notification toasts displayed in the top-right corner.
+fn notifications_window() -> LayerWindow {
+    LayerWindow::new("notifications")
+        .layer(Layer::Overlay)
+        .anchor(Anchor::TOP | Anchor::RIGHT)
+        .exclusive_zone(0)
+        .width(360.0)
+        .height(600.0)
+        .margins(Margins::new(44, 12, 0, 0))
+        .namespace("wk-notifications")
+        .start_hidden(true)
+}
+
+/// Notification history center / drawer toggled by the bell icon.
+fn notification_center_window() -> LayerWindow {
+    LayerWindow::new("notification_center")
+        .layer(Layer::Overlay)
+        .anchor(Anchor::TOP | Anchor::RIGHT)
+        .exclusive_zone(0)
+        .width(380.0)
+        .height(520.0)
+        .margins(Margins::new(44, 12, 0, 0))
+        .namespace("wk-notification-center")
+        .start_hidden(true)
+}
+
 // ---------------------------------------------------------------------------
 // Top bar
 // ---------------------------------------------------------------------------
@@ -160,6 +189,7 @@ struct TopBar {
     audio: Entity<Audio>,
     mpris: Entity<Mpris>,
     compositor: Entity<Compositor>,
+    notifications: Entity<Notifications>,
 }
 
 impl TopBar {
@@ -173,6 +203,7 @@ impl TopBar {
             audio: cx.service::<Audio>(),
             mpris: cx.service::<Mpris>(),
             compositor: cx.service::<Compositor>(),
+            notifications: cx.service::<Notifications>(),
         }
     }
 }
@@ -186,6 +217,9 @@ impl Render for TopBar {
         let audio = self.audio.read(cx);
         let mpris = self.mpris.read(cx);
         let comp = self.compositor.read(cx);
+        let notifs = self.notifications.read(cx);
+        let unread = notifs.unread_count();
+        let dnd = notifs.is_dnd();
 
         div()
             .flex()
@@ -434,6 +468,41 @@ impl Render for TopBar {
                             )
                             .child(format!("{}%", percent))
                     })
+                    .child(
+                        div()
+                            .id("wk-notif-bell")
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .bg(rgb(0x1e1e2e))
+                            .hover(|s| s.bg(rgb(0x313244)))
+                            .cursor_pointer()
+                            .px_2p5()
+                            .py_1()
+                            .rounded_md()
+                            .text_color(if dnd {
+                                rgb(0x6c7086)
+                            } else if unread > 0 {
+                                rgb(0xf9e2af)
+                            } else {
+                                rgb(0x89b4fa)
+                            })
+                            .child(if dnd { "\u{f1f6}" } else { "\u{f0f3}" })
+                            .when(unread > 0, |this| {
+                                this.child(
+                                    div()
+                                        .bg(rgb(0xf38ba8))
+                                        .text_color(rgb(0x11111b))
+                                        .text_size(px(10.0))
+                                        .font_weight(gpui::FontWeight::BOLD)
+                                        .px_1p5()
+                                        .py_0p5()
+                                        .rounded_full()
+                                        .child(format!("{unread}")),
+                                )
+                            })
+                            .on_click(|_, _window, cx| cx.toggle_window("notification_center")),
+                    )
                     .child(
                         div()
                             .id("wk-power-btn")
@@ -1609,6 +1678,439 @@ impl Render for PowerMenu {
                             .text_color(rgb(0x585b70))
                             .child("Press Esc or click backdrop to cancel"),
                     ),
+            )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Notification Toasts (Ephemeral popups in top-right)
+// ---------------------------------------------------------------------------
+
+struct NotificationToasts {
+    notifications: Entity<Notifications>,
+}
+
+impl NotificationToasts {
+    fn new(cx: &mut Context<Self>) -> Self {
+        Self {
+            notifications: cx.service::<Notifications>(),
+        }
+    }
+}
+
+impl Render for NotificationToasts {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let notifs = self.notifications.read(cx);
+        let toasts = notifs.toasts().to_vec();
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_2p5()
+            .w_full()
+            .children(toasts.into_iter().map(|notif| {
+                let notif_id = notif.id;
+                let notifs_entity = self.notifications.clone();
+                let notifs_entity_close = self.notifications.clone();
+                let urgency_color = match notif.urgency {
+                    Urgency::Critical => rgb(0xf38ba8),
+                    Urgency::Low => rgb(0x6c7086),
+                    Urgency::Normal => rgb(0x89b4fa),
+                };
+
+                div()
+                    .id(format!("toast-{}", notif.id))
+                    .flex()
+                    .flex_row()
+                    .w_full()
+                    .rounded_xl()
+                    .bg(rgba(0x181825f2))
+                    .border_1()
+                    .border_color(rgba(0x313244cc))
+                    .shadow_lg()
+                    // Urgency accent left bar
+                    .child(
+                        div()
+                            .w(px(4.0))
+                            .rounded_l_xl()
+                            .bg(urgency_color),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .gap_1p5()
+                            .p_3()
+                            // Header: App icon / name + summary + close button
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .justify_between()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_2()
+                                    .when(notif.app_icon.is_some(), |this| {
+                                        this.child(
+                                            gpui::img(notif.app_icon.clone().unwrap())
+                                                .w(px(18.0))
+                                                .h(px(18.0))
+                                                .rounded_sm(),
+                                        )
+                                    })
+                                    .when(notif.app_icon.is_none(), |this| {
+                                        this.child(
+                                            div()
+                                                .text_color(rgb(0x89b4fa))
+                                                .text_size(px(14.0))
+                                                .child("\u{f0f3}"),
+                                        )
+                                    })
+                                    .child(
+                                        div()
+                                            .text_size(px(11.0))
+                                            .font_weight(gpui::FontWeight::BOLD)
+                                            .text_color(rgb(0xa6adc8))
+                                            .truncate()
+                                            .child(if notif.app_name.is_empty() {
+                                                "Notification".to_string()
+                                            } else {
+                                                notif.app_name.clone()
+                                            }),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .id(format!("toast-close-{}", notif_id))
+                                    .cursor_pointer()
+                                    .px_1p5()
+                                    .py_0p5()
+                                    .rounded_md()
+                                    .text_color(rgb(0x6c7086))
+                                    .hover(|h| h.bg(rgb(0x313244)).text_color(rgb(0xf38ba8)))
+                                    .child("✕")
+                                    .on_click(move |_, _, cx| {
+                                        notifs_entity_close.update(cx, |n, _| n.dismiss_toast(notif_id));
+                                    }),
+                            ),
+                    )
+                    // Summary (title)
+                    .child(
+                        div()
+                            .text_size(px(13.0))
+                            .font_weight(gpui::FontWeight::BOLD)
+                            .text_color(rgb(0xcdd6f4))
+                            .child(notif.summary.clone()),
+                    )
+                    // Body (optional)
+                    .when(!notif.body.is_empty(), |this| {
+                        this.child(
+                            div()
+                                .text_size(px(12.0))
+                                .text_color(rgb(0xa6adc8))
+                                .line_height(px(16.0))
+                                .child(notif.body.clone()),
+                        )
+                    })
+                    // Action buttons (if any)
+                    .when(!notif.actions.is_empty(), |this| {
+                        this.child(
+                            div()
+                                .flex()
+                                .flex_row()
+                                .gap_2()
+                                .pt_1()
+                                .children(notif.actions.into_iter().map(|action| {
+                                    let notifs_act = notifs_entity.clone();
+                                    let act_key = action.key.clone();
+                                    div()
+                                        .id(format!("toast-act-{}-{}", notif_id, action.key))
+                                        .cursor_pointer()
+                                        .px_2p5()
+                                        .py_1()
+                                        .rounded_md()
+                                        .bg(rgb(0x313244))
+                                        .hover(|h| h.bg(rgb(0x45475a)))
+                                        .text_size(px(11.0))
+                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                        .text_color(rgb(0xcdd6f4))
+                                        .child(action.label)
+                                        .on_click(move |_, _, cx| {
+                                            notifs_act.update(cx, |n, _| {
+                                                n.invoke_action(notif_id, &act_key);
+                                                n.dismiss_toast(notif_id);
+                                            });
+                                        })
+                                })),
+                        )
+                    }),
+                    )
+            }))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Notification Center (Drawer toggled by topbar bell icon)
+// ---------------------------------------------------------------------------
+
+struct NotificationCenter {
+    notifications: Entity<Notifications>,
+}
+
+impl NotificationCenter {
+    fn new(cx: &mut Context<Self>) -> Self {
+        Self {
+            notifications: cx.service::<Notifications>(),
+        }
+    }
+}
+
+impl Render for NotificationCenter {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let notifs = self.notifications.read(cx);
+        let history = notifs.history().to_vec();
+        let dnd = notifs.is_dnd();
+        let notifs_entity = self.notifications.clone();
+        let notifs_entity2 = self.notifications.clone();
+
+        div()
+            .flex()
+            .flex_col()
+            .w_full()
+            .h_full()
+            .bg(rgba(0x181825f8))
+            .border_1()
+            .border_color(rgba(0x313244aa))
+            .rounded_2xl()
+            .p_4()
+            .gap_3()
+            .shadow_xl()
+            // Header: Title + DND button + Clear All button + Close button
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .justify_between()
+                    .pb_2()
+                    .border_color(rgba(0x31324488))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .text_size(px(15.0))
+                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .text_color(rgb(0xcdd6f4))
+                                    .child("Notifications"),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(12.0))
+                                    .text_color(rgb(0x6c7086))
+                                    .child(format!("({})", history.len())),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            // DND Toggle
+                            .child(
+                                div()
+                                    .id("nc-toggle-dnd")
+                                    .flex()
+                                    .items_center()
+                                    .gap_1p5()
+                                    .px_2p5()
+                                    .py_1()
+                                    .rounded_md()
+                                    .cursor_pointer()
+                                    .when(dnd, |s| s.bg(rgb(0xf38ba8)).text_color(rgb(0x11111b)))
+                                    .when(!dnd, |s| {
+                                        s.bg(rgb(0x313244))
+                                            .text_color(rgb(0xa6adc8))
+                                            .hover(|h| h.bg(rgb(0x45475a)))
+                                    })
+                                    .text_size(px(11.0))
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .child(if dnd { "\u{f1f6} DND On" } else { "\u{f0f3} DND Off" })
+                                    .on_click(move |_, _, cx| {
+                                        notifs_entity.update(cx, |n, _| n.toggle_dnd());
+                                    }),
+                            )
+                            // Clear All button
+                            .when(!history.is_empty(), |this| {
+                                this.child(
+                                    div()
+                                        .id("nc-clear-all")
+                                        .px_2()
+                                        .py_1()
+                                        .rounded_md()
+                                        .bg(rgb(0x313244))
+                                        .hover(|h| h.bg(rgb(0x45475a)).text_color(rgb(0xf38ba8)))
+                                        .cursor_pointer()
+                                        .text_size(px(11.0))
+                                        .text_color(rgb(0xa6adc8))
+                                        .child("Clear")
+                                        .on_click(move |_, _, cx| {
+                                            notifs_entity2.update(cx, |n, _| n.clear_history());
+                                        }),
+                                )
+                            })
+                            // Close drawer button
+                            .child(
+                                div()
+                                    .id("nc-close")
+                                    .px_2()
+                                    .py_1()
+                                    .rounded_md()
+                                    .hover(|h| h.bg(rgb(0x313244)))
+                                    .cursor_pointer()
+                                    .text_size(px(13.0))
+                                    .text_color(rgb(0x6c7086))
+                                    .child("✕")
+                                    .on_click(|_, _, cx| cx.hide_window("notification_center")),
+                            ),
+                    ),
+            )
+            // Body: List or Empty placeholder
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .gap_2()
+                    .overflow_hidden()
+                    .when(history.is_empty(), |this| {
+                        this.child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .items_center()
+                                .justify_center()
+                                .h_full()
+                                .gap_2()
+                                .py_12()
+                                .child(
+                                    div()
+                                        .text_size(px(32.0))
+                                        .text_color(rgb(0x45475a))
+                                        .child("\u{f0f3}"),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(px(13.0))
+                                        .text_color(rgb(0x6c7086))
+                                        .child("No notifications"),
+                                ),
+                        )
+                    })
+                    .children(history.into_iter().take(10).map(|notif| {
+                        let notif_id = notif.id;
+                        let notifs_remove = self.notifications.clone();
+                        let urgency_color = match notif.urgency {
+                            Urgency::Critical => rgb(0xf38ba8),
+                            Urgency::Low => rgb(0x6c7086),
+                            Urgency::Normal => rgb(0x89b4fa),
+                        };
+
+                        div()
+                            .id(format!("hist-{}", notif.id))
+                            .flex()
+                            .flex_row()
+                            .rounded_xl()
+                            .bg(rgb(0x1e1e2e))
+                            .border_1()
+                            .border_color(rgba(0x31324466))
+                            .hover(|h| h.bg(rgb(0x242438)))
+                            .child(
+                                div()
+                                    .w(px(3.0))
+                                    .rounded_l_xl()
+                                    .bg(urgency_color),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .flex_1()
+                                    .gap_1()
+                                    .p_3()
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_row()
+                                    .items_center()
+                                    .justify_between()
+                                    .gap_2()
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .gap_2()
+                                            .when(notif.app_icon.is_some(), |this| {
+                                                this.child(
+                                                    gpui::img(notif.app_icon.clone().unwrap())
+                                                        .w(px(16.0))
+                                                        .h(px(16.0))
+                                                        .rounded_sm(),
+                                                )
+                                            })
+                                            .child(
+                                                div()
+                                                    .text_size(px(11.0))
+                                                    .font_weight(gpui::FontWeight::BOLD)
+                                                    .text_color(rgb(0xa6adc8))
+                                                    .truncate()
+                                                    .child(if notif.app_name.is_empty() {
+                                                        "System".to_string()
+                                                    } else {
+                                                        notif.app_name.clone()
+                                                    }),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .id(format!("hist-del-{}", notif_id))
+                                            .cursor_pointer()
+                                            .px_1p5()
+                                            .py_0p5()
+                                            .rounded_md()
+                                            .text_color(rgb(0x585b70))
+                                            .hover(|h| h.bg(rgb(0x313244)).text_color(rgb(0xf38ba8)))
+                                            .child("✕")
+                                            .on_click(move |_, _, cx| {
+                                                notifs_remove.update(cx, |n, _| n.remove_history(notif_id));
+                                            }),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(13.0))
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .text_color(rgb(0xcdd6f4))
+                                    .child(notif.summary.clone()),
+                            )
+                            .when(!notif.body.is_empty(), |this| {
+                                this.child(
+                                    div()
+                                        .text_size(px(12.0))
+                                        .text_color(rgb(0xa6adc8))
+                                        .line_height(px(16.0))
+                                        .child(notif.body.clone()),
+                                )
+                            }),
+                            )
+                    })),
             )
     }
 }

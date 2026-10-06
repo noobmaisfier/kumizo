@@ -337,6 +337,15 @@ Méthodes : `apps() -> &[AppInfo]`, `search(query) -> Vec<AppInfo>` (recherche
 fuzzy avec scoring en temps réel), `launch(app)`. `AppInfo` : `id`, `name`, `comment`,
 `exec`, `icon: Option<Arc<RenderImage>>`, `categories`, `keywords`.
 
+**`Notifications`** — serveur natif de notifications de bureau FreeDesktop (`org.freedesktop.Notifications`).
+Remplace les démons externes (dunst, mako, swaync) dans le même processus.
+Méthodes : `toasts() -> &[Notification]`, `history() -> &[Notification]`, `unread_count() -> usize`,
+`is_dnd() -> bool`, `toggle_dnd()`, `dismiss_toast(id)`, `remove_history(id)`, `clear_history()`,
+`invoke_action(id, key)`. `Notification` : `id`, `app_name`, `summary`, `body`,
+`app_icon: Option<Arc<RenderImage>>`, `urgency: Urgency`, `actions: Vec<NotificationAction>`.
+Contrôle automatiquement la fenêtre `notifications` (`show_window`/`hide_window`) lors de l'arrivée et
+de l'expiration des toasts éphémères.
+
 ### Étape 9 — Écrire un service sur mesure
 
 Quand aucune source existante ne convient (nouveau capteur, nouveau
