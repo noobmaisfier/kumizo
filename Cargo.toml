@@ -5,11 +5,13 @@ members = [
     "crates/wk-services",
     "crates/wk-compositor",
     "crates/wk-ipc",
+    "crates/wk-pam",
     "crates/wk-ctl",
     "examples/topbar",
     "examples/dock",
     "examples/osd",
     "examples/shell",
+    "examples/lockscreen",
 ]
 resolver = "2"
 

@@ -2959,6 +2959,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "lockscreen-example"
+version = "0.1.0"
+dependencies = [
+ "async-io",
+ "gpui",
+ "image",
+ "smallvec",
+ "widgetkit",
+ "wk-pam",
+]
+
+[[package]]
 name = "log"
 version = "0.4.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6815,6 +6827,13 @@ dependencies = [
  "serde_json",
  "thiserror 1.0.69",
  "tracing",
+]
+
+[[package]]
+name = "wk-pam"
+version = "0.1.0"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

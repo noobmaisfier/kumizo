@@ -1,0 +1,19 @@
+[package]
+name = "lockscreen-example"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Fullscreen PAM lockscreen running as a separate locker process"
+
+[[bin]]
+name = "lockscreen"
+path = "src/main.rs"
+
+[dependencies]
+widgetkit = { path = "../../crates/widgetkit" }
+gpui = { workspace = true }
+async-io = { workspace = true }
+smallvec = { workspace = true }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+wk-pam = { path = "../../crates/wk-pam" }
