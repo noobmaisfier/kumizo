@@ -787,6 +787,7 @@ struct VolumeOsd {
     last_volume: u8,
     last_muted: bool,
     last_brightness: u8,
+    generation: u64,
 }
 
 /// What the OSD currently displays. Volume and brightness share one surface.
@@ -796,17 +797,25 @@ enum OsdKind {
     Brightness,
 }
 
-/// Reveal the OSD for `kind` and schedule its auto-hide.
+/// Reveal the OSD for `kind` and reset its 2-second auto-hide timer.
+///
+/// Each adjustment increments `generation`. Any previous timer that wakes
+/// up sees an outdated generation and does nothing; only the latest timer
+/// (2s after the *last* user adjustment) will dismiss the OSD.
 fn reveal_osd(osd: &mut VolumeOsd, cx: &mut Context<VolumeOsd>, kind: OsdKind) {
     osd.shown = kind;
     osd.visible = true;
+    osd.generation = osd.generation.wrapping_add(1);
+    let current_gen = osd.generation;
     cx.notify();
 
     cx.spawn(async move |this, cx| {
-        async_io::Timer::after(Duration::from_millis(1800)).await;
+        async_io::Timer::after(Duration::from_millis(2000)).await;
         let _ = this.update(cx, |osd, cx| {
-            osd.visible = false;
-            cx.notify();
+            if osd.generation == current_gen {
+                osd.visible = false;
+                cx.notify();
+            }
         });
     })
     .detach();
@@ -828,6 +837,7 @@ impl VolumeOsd {
             last_volume,
             last_muted,
             last_brightness,
+            generation: 0,
         };
 
         // React to volume AND mute changes: mute alone used to stay silent
