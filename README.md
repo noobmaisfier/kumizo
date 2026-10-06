@@ -127,6 +127,7 @@ All services are built with reactive event streaming for **Zero Idle CPU**:
 | `Mpris` | `org.mpris.MediaPlayer2` | Manages media player state (Spotify, Firefox, mpv): title, artist, playback status, controls. |
 | `Apps` | FreeDesktop `.desktop` | Application discovery, instant fuzzy search, background launch, and GPU icon loading (PNG & SVG via `resvg`). |
 | `Notifications` | `org.freedesktop.Notifications` | In-process D-Bus notification daemon replacing dunst/mako/swaync: toasts, action handling, history, and DND. |
+| `Clipboard` | Wayland `wl-clipboard` | In-memory clipboard manager: history streaming, fuzzy search, deduplication and fast pasteback. |
 
 Access any registered service inside any view with:
 ```rust
@@ -134,6 +135,7 @@ let clock = cx.service::<Clock>();
 let audio = cx.service::<Audio>();
 let apps = cx.service::<Apps>();
 let notifs = cx.service::<Notifications>();
+let clip = cx.service::<Clipboard>();
 ```
 Views are automatically re-rendered when services notify updates.
 

@@ -49,6 +49,7 @@ fn main() {
         .service::<Compositor>()
         .service::<Apps>()
         .service::<Notifications>()
+        .service::<Clipboard>()
         .window(topbar_window(), |cx: &mut gpui::App| {
             cx.new(TopBar::new)
         })
@@ -60,6 +61,7 @@ fn main() {
         .window(powermenu_window(), |cx: &mut gpui::App| cx.new(PowerMenu::new))
         .window(notifications_window(), |cx: &mut gpui::App| cx.new(NotificationToasts::new))
         .window(notification_center_window(), |cx: &mut gpui::App| cx.new(NotificationCenter::new))
+        .window(clipboard_window(), |cx: &mut gpui::App| cx.new(ClipboardManager::new))
         .run();
 }
 
@@ -174,6 +176,18 @@ fn notification_center_window() -> LayerWindow {
         .height(520.0)
         .margins(Margins::new(44, 12, 0, 0))
         .namespace("wk-notification-center")
+        .start_hidden(true)
+}
+
+/// Fullscreen overlay clipboard manager (history, fuzzy search, pasteback).
+fn clipboard_window() -> LayerWindow {
+    LayerWindow::new("clipboard")
+        .layer(Layer::Overlay)
+        .anchor(Anchor::FULLSCREEN)
+        .exclusive_zone(0)
+        .keyboard_interactivity(KeyboardInteractivity::Exclusive)
+        .size(None, None)
+        .namespace("wk-clipboard")
         .start_hidden(true)
 }
 
@@ -2111,6 +2125,326 @@ impl Render for NotificationCenter {
                             }),
                             )
                     })),
+            )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Clipboard Manager (Spotlight style popup modal)
+// ---------------------------------------------------------------------------
+
+struct ClipboardManager {
+    clipboard: Entity<Clipboard>,
+    query: String,
+    selected_index: usize,
+    focus: FocusHandle,
+}
+
+impl ClipboardManager {
+    fn new(cx: &mut Context<Self>) -> Self {
+        Self {
+            clipboard: cx.service::<Clipboard>(),
+            query: String::new(),
+            selected_index: 0,
+            focus: cx.focus_handle(),
+        }
+    }
+
+    fn on_key(&mut self, event: &KeyDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+        let key = event.keystroke.key.as_str();
+        let matches = self.clipboard.read(cx).search(&self.query);
+        let count = matches.len();
+
+        match key {
+            "escape" => {
+                self.query.clear();
+                self.selected_index = 0;
+                cx.hide_window("clipboard");
+            }
+            "enter" => {
+                if !matches.is_empty() {
+                    let idx = self.selected_index.min(count.saturating_sub(1));
+                    let item = &matches[idx];
+                    let item_id = item.id;
+                    self.clipboard.update(cx, |c, _| c.copy_item(item_id));
+                    self.query.clear();
+                    self.selected_index = 0;
+                    cx.hide_window("clipboard");
+                }
+            }
+            "delete" => {
+                if !matches.is_empty() {
+                    let idx = self.selected_index.min(count.saturating_sub(1));
+                    let item = &matches[idx];
+                    let item_id = item.id;
+                    self.clipboard.update(cx, |c, _| c.remove_item(item_id));
+                    if self.selected_index >= count.saturating_sub(1) {
+                        self.selected_index = self.selected_index.saturating_sub(1);
+                    }
+                    cx.notify();
+                }
+            }
+            "up" => {
+                if count > 0 {
+                    if self.selected_index == 0 {
+                        self.selected_index = count - 1;
+                    } else {
+                        self.selected_index -= 1;
+                    }
+                    cx.notify();
+                }
+            }
+            "down" | "tab" => {
+                if count > 0 {
+                    self.selected_index = (self.selected_index + 1) % count;
+                    cx.notify();
+                }
+            }
+            "backspace" => {
+                self.query.pop();
+                self.selected_index = 0;
+                cx.notify();
+            }
+            "space" => {
+                self.query.push(' ');
+                self.selected_index = 0;
+                cx.notify();
+            }
+            s if s.chars().count() == 1 => {
+                if let Some(c) = s.chars().next() {
+                    if !c.is_control() {
+                        self.query.push(c);
+                        self.selected_index = 0;
+                        cx.notify();
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+impl Render for ClipboardManager {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if !self.focus.is_focused(window) {
+            window.focus(&self.focus, cx);
+        }
+
+        let matches = self.clipboard.read(cx).search(&self.query);
+        let total = matches.len();
+        let selected = self.selected_index.min(total.saturating_sub(1));
+        let clipboard_service = self.clipboard.clone();
+        let clipboard_clear = self.clipboard.clone();
+
+        let max_visible = 6;
+        let start_idx = if selected >= max_visible {
+            selected - max_visible + 1
+        } else {
+            0
+        };
+        let visible_items: Vec<_> = matches
+            .iter()
+            .enumerate()
+            .skip(start_idx)
+            .take(max_visible)
+            .collect();
+
+        div()
+            .id("clipboard-backdrop")
+            .w_full()
+            .h_full()
+            .track_focus(&self.focus)
+            .on_key_down(cx.listener(Self::on_key))
+            .bg(rgba(0x11111b88))
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_start()
+            .pt(px(140.0))
+            .on_click(|_, _, cx| {
+                cx.hide_window("clipboard");
+            })
+            .child(
+                div()
+                    .id("clipboard-modal")
+                    .w(px(580.0))
+                    .bg(rgb(0x1e1e2e))
+                    .border_1()
+                    .border_color(rgba(0x45475a88))
+                    .rounded_2xl()
+                    .shadow_2xl()
+                    .p_4()
+                    .gap_3()
+                    .flex()
+                    .flex_col()
+                    .on_click(|_, _, _| {})
+                    // Header: Search bar + items count + clear button
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_3()
+                            .bg(rgb(0x181825))
+                            .border_1()
+                            .border_color(rgba(0x31324488))
+                            .rounded_xl()
+                            .px_3()
+                            .py_2p5()
+                            .child(
+                                div()
+                                    .text_size(px(18.0))
+                                    .text_color(rgb(0x89b4fa))
+                                    .child("\u{f0ea}"),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .flex_1()
+                                    .text_size(px(15.0))
+                                    .when(self.query.is_empty(), |s| {
+                                        s.text_color(rgb(0x6c7086))
+                                            .child("Search clipboard history...")
+                                    })
+                                    .when(!self.query.is_empty(), |s| {
+                                        s.text_color(rgb(0xcdd6f4))
+                                            .child(self.query.clone())
+                                            .child(
+                                                div()
+                                                    .text_color(rgb(0x89b4fa))
+                                                    .font_weight(gpui::FontWeight::BOLD)
+                                                    .child("|"),
+                                            )
+                                    }),
+                            )
+                            .child(
+                                div()
+                                    .px_2()
+                                    .py_0p5()
+                                    .rounded_md()
+                                    .bg(rgb(0x313244))
+                                    .text_size(px(11.0))
+                                    .text_color(rgb(0xa6adc8))
+                                    .child(format!("{total} items")),
+                            )
+                            .when(total > 0, |this| {
+                                this.child(
+                                    div()
+                                        .id("clip-clear-btn")
+                                        .px_2()
+                                        .py_0p5()
+                                        .rounded_md()
+                                        .bg(rgb(0x313244))
+                                        .hover(|h| h.bg(rgb(0x45475a)).text_color(rgb(0xf38ba8)))
+                                        .cursor_pointer()
+                                        .text_size(px(11.0))
+                                        .text_color(rgb(0xa6adc8))
+                                        .child("Clear")
+                                        .on_click(move |_, _, cx| {
+                                            clipboard_clear.update(cx, |c, _| c.clear());
+                                        }),
+                                )
+                            }),
+                    )
+                    // Results list
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_1p5()
+                            .when(total == 0, |s| {
+                                s.py_6()
+                                    .flex()
+                                    .flex_col()
+                                    .items_center()
+                                    .justify_center()
+                                    .text_color(rgb(0x6c7086))
+                                    .child("No clipboard history")
+                            })
+                            .children(visible_items.into_iter().map(|(idx, item)| {
+                                let is_selected = idx == selected;
+                                let item_id = item.id;
+                                let clip_ref = clipboard_service.clone();
+                                let clip_del = clipboard_service.clone();
+                                let preview = item.preview();
+                                let lines = item.line_count();
+                                let chars = item.char_count();
+
+                                div()
+                                    .id(format!("clip-item-{}", item.id))
+                                    .flex()
+                                    .items_center()
+                                    .justify_between()
+                                    .gap_3()
+                                    .p_2p5()
+                                    .rounded_xl()
+                                    .cursor_pointer()
+                                    .when(is_selected, |s| {
+                                        s.bg(rgb(0x313244))
+                                            .border_1()
+                                            .border_color(rgba(0x89b4fa66))
+                                    })
+                                    .when(!is_selected, |s| {
+                                        s.hover(|h| h.bg(rgb(0x181825)))
+                                    })
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .flex_col()
+                                            .flex_1()
+                                            .gap_0p5()
+                                            .child(
+                                                div()
+                                                    .text_size(px(13.0))
+                                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                                    .text_color(rgb(0xcdd6f4))
+                                                    .truncate()
+                                                    .child(preview),
+                                            )
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .items_center()
+                                                    .gap_2()
+                                                    .text_size(px(10.0))
+                                                    .text_color(rgb(0x6c7086))
+                                                    .child(format!("{lines} line{}", if lines > 1 { "s" } else { "" }))
+                                                    .child("•")
+                                                    .child(format!("{chars} chars")),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .id(format!("clip-del-{}", item_id))
+                                            .px_1p5()
+                                            .py_0p5()
+                                            .rounded_md()
+                                            .text_color(rgb(0x585b70))
+                                            .hover(|h| h.bg(rgb(0x45475a)).text_color(rgb(0xf38ba8)))
+                                            .child("✕")
+                                            .on_click(move |_, _, cx| {
+                                                clip_del.update(cx, |c, _| c.remove_item(item_id));
+                                            }),
+                                    )
+                                    .on_click(move |_, _, cx| {
+                                        clip_ref.update(cx, |c, _| c.copy_item(item_id));
+                                        cx.hide_window("clipboard");
+                                    })
+                            })),
+                    )
+                    // Footer hint
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .pt_2()
+                            .border_color(rgba(0x31324488))
+                            .text_size(px(11.0))
+                            .text_color(rgb(0x6c7086))
+                            .child("Enter to copy • Del to delete • Esc to close")
+                            .child(format!("{total} total entries")),
+                    ),
             )
     }
 }

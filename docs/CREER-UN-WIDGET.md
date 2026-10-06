@@ -346,6 +346,12 @@ Méthodes : `toasts() -> &[Notification]`, `history() -> &[Notification]`, `unre
 Contrôle automatiquement la fenêtre `notifications` (`show_window`/`hide_window`) lors de l'arrivée et
 de l'expiration des toasts éphémères.
 
+**`Clipboard`** — gestionnaire de presse-papier Wayland natif via `wl-clipboard`.
+Surveille les copies de texte, déduplique, conserve l'historique et gère la ré-injection.
+Méthodes : `items() -> &[ClipboardItem]`, `search(query) -> Vec<ClipboardItem>`,
+`copy_item(id)`, `copy_text(text)`, `remove_item(id)`, `clear()`.
+`ClipboardItem` : `id`, `text`, `timestamp`, `preview()`, `line_count()`, `char_count()`.
+
 ### Étape 9 — Écrire un service sur mesure
 
 Quand aucune source existante ne convient (nouveau capteur, nouveau
