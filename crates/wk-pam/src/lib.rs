@@ -22,8 +22,9 @@ const CRED_INSUFFICIENT: c_int = 8;
 const AUTHINFO_UNAVAIL: c_int = 9;
 const USER_UNKNOWN: c_int = 10;
 const MAXTRIES: c_int = 11;
-const CRED_ERR: c_int = 16;
-const CONV_ERR: c_int = 18;
+const CRED_EXPIRED: c_int = 16;
+const CRED_ERR: c_int = 17;
+const CONV_ERR: c_int = 19;
 
 const PROMPT_ECHO_OFF: c_int = 2;
 
@@ -86,13 +87,17 @@ fn classify(status: c_int) -> Option<AuthError> {
     match status {
         SUCCESS => None,
         // The password itself was rejected.
-        AUTH_ERR | CRED_INSUFFICIENT => Some(AuthError::WrongPassword),
+        AUTH_ERR => Some(AuthError::WrongPassword),
         USER_UNKNOWN => Some(AuthError::UnknownUser),
         MAXTRIES => Some(AuthError::LockedOut),
         // The backend could not answer — a directory socket that is down, a
         // name service timeout. Distinct from a rejected credential.
         AUTHINFO_UNAVAIL => Some(AuthError::Unavailable),
-        PERM_DENIED | CRED_ERR => Some(AuthError::System(status)),
+        // Insufficient credentials/privileges of the calling application,
+        // permission denied, or invalid/expired credentials.
+        CRED_INSUFFICIENT | PERM_DENIED | CRED_ERR | CRED_EXPIRED => {
+            Some(AuthError::System(status))
+        }
         other => Some(AuthError::System(other)),
     }
 }
@@ -168,8 +173,13 @@ extern "C" fn converse(
     let creds = unsafe { &*(appdata as *const Creds) };
     let n = count as usize;
 
-    // calloc: PAM reads every slot, and a zeroed slot is the correct
-    // "no answer" for informational messages.
+    // Memory lifecycle per Linux-PAM pam_conv(3):
+    // "It is the caller's responsibility to release both, this array and the
+    // responses themselves, using free(3)." On failure, converse must clean
+    // up its own partial allocations.
+    // We use libc::calloc and libc::strdup to ensure PAM can safely free(3) them.
+    // PAM reads every slot, and a zeroed slot is the correct "no answer" for
+    // informational messages.
     let responses =
         unsafe { libc::calloc(n, std::mem::size_of::<Response>()) as *mut Response };
     if responses.is_null() {
@@ -289,12 +299,16 @@ mod tests {
     fn status_mapping() {
         assert_eq!(classify(SUCCESS), None);
         assert_eq!(classify(AUTH_ERR), Some(AuthError::WrongPassword));
-        assert_eq!(classify(CRED_INSUFFICIENT), Some(AuthError::WrongPassword));
+        assert_eq!(
+            classify(CRED_INSUFFICIENT),
+            Some(AuthError::System(CRED_INSUFFICIENT))
+        );
         assert_eq!(classify(USER_UNKNOWN), Some(AuthError::UnknownUser));
         assert_eq!(classify(MAXTRIES), Some(AuthError::LockedOut));
         assert_eq!(classify(AUTHINFO_UNAVAIL), Some(AuthError::Unavailable));
         assert_eq!(classify(PERM_DENIED), Some(AuthError::System(PERM_DENIED)));
         assert_eq!(classify(CRED_ERR), Some(AuthError::System(CRED_ERR)));
+        assert_eq!(classify(CRED_EXPIRED), Some(AuthError::System(CRED_EXPIRED)));
         assert_eq!(classify(4242), Some(AuthError::System(4242)));
     }
 
