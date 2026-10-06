@@ -6824,6 +6824,7 @@ dependencies = [
  "image",
  "libc",
  "log",
+ "resvg",
  "serde",
  "smallvec",
  "thiserror 1.0.69",

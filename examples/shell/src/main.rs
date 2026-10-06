@@ -20,6 +20,7 @@
 use std::time::Duration;
 
 use gpui::prelude::*;
+use gpui::{AnyElement, FocusHandle, KeyDownEvent};
 use widgetkit::prelude::*;
 
 /// Height of the top bar, in logical pixels. Also used as its exclusive zone so
@@ -36,7 +37,7 @@ const CALENDAR_HEIGHT: f32 = 290.0;
 
 fn main() {
     WidgetKit::new()
-        // Services are declared once and shared by all three windows: the clock
+        // Services are declared once and shared by all windows: the clock
         // ticks once per second for the whole shell, not once per widget.
         .service::<Clock>()
         .service::<Battery>()
@@ -46,6 +47,7 @@ fn main() {
         .service::<Brightness>()
         .service::<Mpris>()
         .service::<Compositor>()
+        .service::<Apps>()
         .window(topbar_window(), |cx: &mut gpui::App| {
             cx.new(TopBar::new)
         })
@@ -53,6 +55,8 @@ fn main() {
         .window(osd_window(), |cx: &mut gpui::App| cx.new(VolumeOsd::new))
         .window(traymenu_window(), |cx: &mut gpui::App| cx.new(TrayMenu::new))
         .window(calendar_window(), |cx: &mut gpui::App| cx.new(Calendar::new))
+        .window(launcher_window(), |cx: &mut gpui::App| cx.new(AppLauncher::new))
+        .window(powermenu_window(), |cx: &mut gpui::App| cx.new(PowerMenu::new))
         .run();
 }
 
@@ -120,6 +124,30 @@ fn calendar_window() -> LayerWindow {
         .start_hidden(true)
 }
 
+/// Fullscreen overlay application launcher (Rofi/Spotlight style).
+fn launcher_window() -> LayerWindow {
+    LayerWindow::new("launcher")
+        .layer(Layer::Overlay)
+        .anchor(Anchor::FULLSCREEN)
+        .exclusive_zone(0)
+        .keyboard_interactivity(KeyboardInteractivity::Exclusive)
+        .size(None, None)
+        .namespace("wk-launcher")
+        .start_hidden(true)
+}
+
+/// Fullscreen overlay power menu (Lock, Suspend, Logout, Reboot, Shutdown).
+fn powermenu_window() -> LayerWindow {
+    LayerWindow::new("powermenu")
+        .layer(Layer::Overlay)
+        .anchor(Anchor::FULLSCREEN)
+        .exclusive_zone(0)
+        .keyboard_interactivity(KeyboardInteractivity::Exclusive)
+        .size(None, None)
+        .namespace("wk-powermenu")
+        .start_hidden(true)
+}
+
 // ---------------------------------------------------------------------------
 // Top bar
 // ---------------------------------------------------------------------------
@@ -173,39 +201,61 @@ impl Render for TopBar {
             .px_3()
             .text_size(px(13.0))
             .text_color(rgb(0xcdd6f4))
-            // Workspaces, from the live compositor connection.
+            // App Launcher and Workspaces
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap_1()
-                    .bg(rgb(0x1e1e2e))
-                    .px_2()
-                    .py_1()
-                    .rounded_md()
-                    .children(comp.workspaces().iter().map(|ws| {
-                        let is_active = ws.is_active;
-                        let ws_id = ws.id;
-                        let name = ws.name.clone();
-                        let compositor = self.compositor.clone();
-
+                    .gap_2()
+                    .child(
                         div()
-                            .id(format!("workspace-{}", ws_id))
-                            .px_2()
-                            .py_0p5()
-                            .rounded_sm()
+                            .id("wk-launcher-btn")
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .bg(rgb(0x1e1e2e))
+                            .hover(|s| s.bg(rgb(0x313244)))
                             .cursor_pointer()
-                            .when(is_active, |s| {
-                                s.bg(rgb(0x89b4fa))
-                                    .text_color(rgb(0x11111b))
-                                    .font_weight(gpui::FontWeight::BOLD)
-                            })
-                            .when(!is_active, |s| s.hover(|h| h.bg(rgb(0x313244))))
-                            .child(name)
-                            .on_click(move |_, _window, cx| {
-                                compositor.update(cx, |c, _| c.switch_workspace(ws_id));
-                            })
-                    })),
+                            .px_2p5()
+                            .py_1()
+                            .rounded_md()
+                            .text_color(rgb(0x89b4fa))
+                            .child("\u{f00a}")
+                            .on_click(|_, _window, cx| cx.toggle_window("launcher")),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .bg(rgb(0x1e1e2e))
+                            .px_2()
+                            .py_1()
+                            .rounded_md()
+                            .children(comp.workspaces().iter().map(|ws| {
+                                let is_active = ws.is_active;
+                                let ws_id = ws.id;
+                                let name = ws.name.clone();
+                                let compositor = self.compositor.clone();
+
+                                div()
+                                    .id(format!("workspace-{}", ws_id))
+                                    .px_2()
+                                    .py_0p5()
+                                    .rounded_sm()
+                                    .cursor_pointer()
+                                    .when(is_active, |s| {
+                                        s.bg(rgb(0x89b4fa))
+                                            .text_color(rgb(0x11111b))
+                                            .font_weight(gpui::FontWeight::BOLD)
+                                    })
+                                    .when(!is_active, |s| s.hover(|h| h.bg(rgb(0x313244))))
+                                    .child(name)
+                                    .on_click(move |_, _window, cx| {
+                                        compositor.update(cx, |c, _| c.switch_workspace(ws_id));
+                                    })
+                            })),
+                    ),
             )
             // Date and time. Click toggles the calendar popup, in memory.
             .child(
@@ -383,7 +433,23 @@ impl Render for TopBar {
                                     .child(battery.state().icon(percent)),
                             )
                             .child(format!("{}%", percent))
-                    }),
+                    })
+                    .child(
+                        div()
+                            .id("wk-power-btn")
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .bg(rgb(0x1e1e2e))
+                            .hover(|s| s.bg(rgb(0x313244)))
+                            .cursor_pointer()
+                            .px_2p5()
+                            .py_1()
+                            .rounded_md()
+                            .text_color(rgb(0xf38ba8))
+                            .child("\u{f011}")
+                            .on_click(|_, _window, cx| cx.toggle_window("powermenu")),
+                    ),
             )
     }
 }
@@ -731,7 +797,31 @@ impl Render for Dock {
                     .border_1()
                     .border_color(rgba(0x45475a88))
                     .rounded_2xl()
-                    .shadow_lg()
+                    .child(
+                        div()
+                            .id("dock-launcher")
+                            .flex()
+                            .flex_col()
+                            .items_center()
+                            .justify_center()
+                            .w(px(44.0))
+                            .h(px(44.0))
+                            .rounded_xl()
+                            .cursor_pointer()
+                            .bg(rgb(0x1e1e2e))
+                            .hover(|s| s.bg(rgb(0x313244)))
+                            .text_size(px(20.0))
+                            .text_color(rgb(0x89b4fa))
+                            .child("\u{f00a}")
+                            .on_click(|_, _window, cx| cx.toggle_window("launcher")),
+                    )
+                    .child(
+                        div()
+                            .w(px(1.0))
+                            .h(px(24.0))
+                            .bg(rgb(0x313244))
+                            .mx_1(),
+                    )
                     .children(self.items.iter().map(|item| {
                         let running = !active_class.is_empty()
                             && active_class.contains(&item.app_class);
@@ -966,6 +1056,558 @@ impl Render for VolumeOsd {
                                     .bg(accent)
                                     .rounded_full(),
                             ),
+                    ),
+            )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Application Launcher (Rofi / Spotlight style)
+// ---------------------------------------------------------------------------
+
+struct AppLauncher {
+    apps: Entity<Apps>,
+    query: String,
+    selected_index: usize,
+    focus: FocusHandle,
+}
+
+impl AppLauncher {
+    fn new(cx: &mut Context<Self>) -> Self {
+        Self {
+            apps: cx.service::<Apps>(),
+            query: String::new(),
+            selected_index: 0,
+            focus: cx.focus_handle(),
+        }
+    }
+
+    fn on_key(&mut self, event: &KeyDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+        let key = event.keystroke.key.as_str();
+        let matches = self.apps.read(cx).search(&self.query);
+        let count = matches.len();
+
+        match key {
+            "escape" => {
+                self.query.clear();
+                self.selected_index = 0;
+                cx.hide_window("launcher");
+            }
+            "enter" => {
+                if !matches.is_empty() {
+                    let idx = self.selected_index.min(count.saturating_sub(1));
+                    let app = &matches[idx];
+                    self.apps.read(cx).launch(app);
+                    self.query.clear();
+                    self.selected_index = 0;
+                    cx.hide_window("launcher");
+                }
+            }
+            "up" => {
+                if count > 0 {
+                    if self.selected_index == 0 {
+                        self.selected_index = count - 1;
+                    } else {
+                        self.selected_index -= 1;
+                    }
+                    cx.notify();
+                }
+            }
+            "down" | "tab" => {
+                if count > 0 {
+                    self.selected_index = (self.selected_index + 1) % count;
+                    cx.notify();
+                }
+            }
+            "backspace" => {
+                self.query.pop();
+                self.selected_index = 0;
+                cx.notify();
+            }
+            "space" => {
+                self.query.push(' ');
+                self.selected_index = 0;
+                cx.notify();
+            }
+            s if s.chars().count() == 1 => {
+                if let Some(c) = s.chars().next() {
+                    if !c.is_control() {
+                        self.query.push(c);
+                        self.selected_index = 0;
+                        cx.notify();
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+impl Render for AppLauncher {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if !self.focus.is_focused(window) {
+            window.focus(&self.focus, cx);
+        }
+
+        let matches = self.apps.read(cx).search(&self.query);
+        let total = matches.len();
+        let selected = self.selected_index.min(total.saturating_sub(1));
+        let apps_service = self.apps.clone();
+
+        let max_visible = 6;
+        let start_idx = if selected >= max_visible {
+            selected - max_visible + 1
+        } else {
+            0
+        };
+        let visible_items: Vec<_> = matches
+            .iter()
+            .enumerate()
+            .skip(start_idx)
+            .take(max_visible)
+            .collect();
+
+        div()
+            .id("launcher-backdrop")
+            .w_full()
+            .h_full()
+            .track_focus(&self.focus)
+            .on_key_down(cx.listener(Self::on_key))
+            .bg(rgba(0x11111b88))
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_start()
+            .pt(px(140.0))
+            .on_click(|_, _, cx| {
+                cx.hide_window("launcher");
+            })
+            .child(
+                div()
+                    .id("launcher-modal")
+                    .w(px(580.0))
+                    .bg(rgb(0x1e1e2e))
+                    .border_1()
+                    .border_color(rgba(0x45475a88))
+                    .rounded_2xl()
+                    .shadow_2xl()
+                    .p_4()
+                    .gap_3()
+                    .flex()
+                    .flex_col()
+                    .on_click(|_, _, _| {})
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_3()
+                            .bg(rgb(0x181825))
+                            .border_1()
+                            .border_color(rgba(0x31324488))
+                            .rounded_xl()
+                            .px_3()
+                            .py_2p5()
+                            .child(
+                                div()
+                                    .text_size(px(18.0))
+                                    .text_color(rgb(0x89b4fa))
+                                    .child("\u{f002}"),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .flex_1()
+                                    .text_size(px(15.0))
+                                    .when(self.query.is_empty(), |s| {
+                                        s.text_color(rgb(0x6c7086))
+                                            .child("Search applications...")
+                                    })
+                                    .when(!self.query.is_empty(), |s| {
+                                        s.text_color(rgb(0xcdd6f4))
+                                            .child(self.query.clone())
+                                            .child(
+                                                div()
+                                                    .text_color(rgb(0x89b4fa))
+                                                    .font_weight(gpui::FontWeight::BOLD)
+                                                    .child("|"),
+                                            )
+                                    }),
+                            )
+                            .child(
+                                div()
+                                    .px_2()
+                                    .py_0p5()
+                                    .rounded_md()
+                                    .bg(rgb(0x313244))
+                                    .text_size(px(11.0))
+                                    .text_color(rgb(0xa6adc8))
+                                    .child(format!("{total} apps")),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_1p5()
+                            .when(total == 0, |s| {
+                                s.py_6()
+                                    .flex()
+                                    .flex_col()
+                                    .items_center()
+                                    .justify_center()
+                                    .text_color(rgb(0x6c7086))
+                                    .child("No matching applications")
+                            })
+                            .children(visible_items.into_iter().map(|(idx, app)| {
+                                let is_selected = idx == selected;
+                                let app_item = app.clone();
+                                let apps_ref = apps_service.clone();
+
+                                let icon_el: AnyElement = if let Some(img) = &app.icon {
+                                    gpui::img(img.clone())
+                                        .w(px(32.0))
+                                        .h(px(32.0))
+                                        .into_any_element()
+                                } else {
+                                    let letter = app
+                                        .name
+                                        .chars()
+                                        .next()
+                                        .unwrap_or('?')
+                                        .to_uppercase()
+                                        .to_string();
+                                    div()
+                                        .w(px(32.0))
+                                        .h(px(32.0))
+                                        .rounded_lg()
+                                        .bg(rgb(0x313244))
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .text_size(px(16.0))
+                                        .font_weight(gpui::FontWeight::BOLD)
+                                        .text_color(rgb(0x89b4fa))
+                                        .child(letter)
+                                        .into_any_element()
+                                };
+
+                                let comment = if app.comment.is_empty() {
+                                    app.exec.clone()
+                                } else {
+                                    app.comment.clone()
+                                };
+
+                                div()
+                                    .id(format!("launcher-item-{}", app.id))
+                                    .flex()
+                                    .items_center()
+                                    .gap_3()
+                                    .p_2()
+                                    .rounded_xl()
+                                    .cursor_pointer()
+                                    .when(is_selected, |s| {
+                                        s.bg(rgb(0x313244))
+                                            .border_1()
+                                            .border_color(rgba(0x89b4fa66))
+                                    })
+                                    .when(!is_selected, |s| {
+                                        s.hover(|h| h.bg(rgb(0x181825)))
+                                    })
+                                    .child(icon_el)
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .flex_col()
+                                            .flex_1()
+                                            .child(
+                                                div()
+                                                    .text_size(px(14.0))
+                                                    .font_weight(gpui::FontWeight::BOLD)
+                                                    .text_color(if is_selected {
+                                                        rgb(0x89b4fa)
+                                                    } else {
+                                                        rgb(0xcdd6f4)
+                                                    })
+                                                    .child(app.name.clone()),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_size(px(11.0))
+                                                    .text_color(rgb(0x6c7086))
+                                                    .truncate()
+                                                    .child(comment),
+                                            ),
+                                    )
+                                    .when(is_selected, |s| {
+                                        s.child(
+                                            div()
+                                                .px_2()
+                                                .py_0p5()
+                                                .rounded_sm()
+                                                .bg(rgb(0x1e1e2e))
+                                                .text_size(px(10.0))
+                                                .text_color(rgb(0x89b4fa))
+                                                .child("↵ Enter"),
+                                        )
+                                    })
+                                    .on_click(move |_, _, cx| {
+                                        apps_ref.read(cx).launch(&app_item);
+                                        cx.hide_window("launcher");
+                                    })
+                            })),
+                    ),
+            )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Power Menu (Session actions: Lock, Suspend, Logout, Reboot, Shutdown)
+// ---------------------------------------------------------------------------
+
+struct PowerMenu {
+    focus: FocusHandle,
+}
+
+impl PowerMenu {
+    fn new(cx: &mut Context<Self>) -> Self {
+        Self {
+            focus: cx.focus_handle(),
+        }
+    }
+
+    fn action_lock(&self, cx: &mut Context<Self>) {
+        let _ = std::process::Command::new("loginctl").arg("lock-session").spawn();
+        cx.hide_window("powermenu");
+    }
+
+    fn action_suspend(&self, cx: &mut Context<Self>) {
+        let _ = std::process::Command::new("systemctl").arg("suspend").spawn();
+        cx.hide_window("powermenu");
+    }
+
+    fn action_logout(&self, cx: &mut Context<Self>) {
+        let _ = std::process::Command::new("swaymsg").arg("exit").spawn();
+        let _ = std::process::Command::new("loginctl").args(["terminate-session", ""]).spawn();
+        cx.hide_window("powermenu");
+    }
+
+    fn action_reboot(&self, cx: &mut Context<Self>) {
+        let _ = std::process::Command::new("systemctl").arg("reboot").spawn();
+        cx.hide_window("powermenu");
+    }
+
+    fn action_poweroff(&self, cx: &mut Context<Self>) {
+        let _ = std::process::Command::new("systemctl").arg("poweroff").spawn();
+        cx.hide_window("powermenu");
+    }
+
+    fn on_key(&mut self, event: &KeyDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+        match event.keystroke.key.as_str() {
+            "escape" | "q" => cx.hide_window("powermenu"),
+            "l" => self.action_lock(cx),
+            "s" => self.action_suspend(cx),
+            "e" => self.action_logout(cx),
+            "r" => self.action_reboot(cx),
+            "p" => self.action_poweroff(cx),
+            _ => {}
+        }
+    }
+}
+
+impl Render for PowerMenu {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if !self.focus.is_focused(window) {
+            window.focus(&self.focus, cx);
+        }
+
+        let user = std::env::var("USER").unwrap_or_else(|_| "User".to_string());
+
+        div()
+            .id("powermenu-backdrop")
+            .w_full()
+            .h_full()
+            .track_focus(&self.focus)
+            .on_key_down(cx.listener(Self::on_key))
+            .bg(rgba(0x11111bd0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .on_click(|_, _, cx| {
+                cx.hide_window("powermenu");
+            })
+            .child(
+                div()
+                    .id("powermenu-card")
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap_6()
+                    .p_8()
+                    .bg(rgb(0x1e1e2e))
+                    .border_1()
+                    .border_color(rgba(0x45475a88))
+                    .rounded_2xl()
+                    .shadow_2xl()
+                    .on_click(|_, _, _| {})
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .items_center()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .text_size(px(22.0))
+                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .text_color(rgb(0xcdd6f4))
+                                    .child(format!("Goodbye, {user}")),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(13.0))
+                                    .text_color(rgb(0x6c7086))
+                                    .child("Choose an action or press shortcut key"),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .gap_4()
+                            .child(
+                                div()
+                                    .id("pw-lock")
+                                    .flex()
+                                    .flex_col()
+                                    .items_center()
+                                    .justify_center()
+                                    .gap_2()
+                                    .w(px(88.0))
+                                    .h(px(96.0))
+                                    .rounded_xl()
+                                    .bg(rgb(0x181825))
+                                    .border_1()
+                                    .border_color(rgba(0x31324488))
+                                    .hover(|h| h.bg(rgb(0x313244)).border_color(rgb(0x89b4fa)))
+                                    .cursor_pointer()
+                                    .text_color(rgb(0x89b4fa))
+                                    .child(div().text_size(px(28.0)).child("\u{f023}"))
+                                    .child(div().text_size(px(12.0)).font_weight(gpui::FontWeight::BOLD).child("Lock"))
+                                    .child(div().text_size(px(10.0)).text_color(rgb(0x6c7086)).child("[L]"))
+                                    .on_click(|_, _, cx| {
+                                        let _ = std::process::Command::new("loginctl").arg("lock-session").spawn();
+                                        cx.hide_window("powermenu");
+                                    }),
+                            )
+                            .child(
+                                div()
+                                    .id("pw-suspend")
+                                    .flex()
+                                    .flex_col()
+                                    .items_center()
+                                    .justify_center()
+                                    .gap_2()
+                                    .w(px(88.0))
+                                    .h(px(96.0))
+                                    .rounded_xl()
+                                    .bg(rgb(0x181825))
+                                    .border_1()
+                                    .border_color(rgba(0x31324488))
+                                    .hover(|h| h.bg(rgb(0x313244)).border_color(rgb(0xa6e3a1)))
+                                    .cursor_pointer()
+                                    .text_color(rgb(0xa6e3a1))
+                                    .child(div().text_size(px(28.0)).child("\u{f186}"))
+                                    .child(div().text_size(px(12.0)).font_weight(gpui::FontWeight::BOLD).child("Suspend"))
+                                    .child(div().text_size(px(10.0)).text_color(rgb(0x6c7086)).child("[S]"))
+                                    .on_click(|_, _, cx| {
+                                        let _ = std::process::Command::new("systemctl").arg("suspend").spawn();
+                                        cx.hide_window("powermenu");
+                                    }),
+                            )
+                            .child(
+                                div()
+                                    .id("pw-logout")
+                                    .flex()
+                                    .flex_col()
+                                    .items_center()
+                                    .justify_center()
+                                    .gap_2()
+                                    .w(px(88.0))
+                                    .h(px(96.0))
+                                    .rounded_xl()
+                                    .bg(rgb(0x181825))
+                                    .border_1()
+                                    .border_color(rgba(0x31324488))
+                                    .hover(|h| h.bg(rgb(0x313244)).border_color(rgb(0xf9e2af)))
+                                    .cursor_pointer()
+                                    .text_color(rgb(0xf9e2af))
+                                    .child(div().text_size(px(28.0)).child("\u{f2f5}"))
+                                    .child(div().text_size(px(12.0)).font_weight(gpui::FontWeight::BOLD).child("Logout"))
+                                    .child(div().text_size(px(10.0)).text_color(rgb(0x6c7086)).child("[E]"))
+                                    .on_click(|_, _, cx| {
+                                        let _ = std::process::Command::new("swaymsg").arg("exit").spawn();
+                                        let _ = std::process::Command::new("loginctl").args(["terminate-session", ""]).spawn();
+                                        cx.hide_window("powermenu");
+                                    }),
+                            )
+                            .child(
+                                div()
+                                    .id("pw-reboot")
+                                    .flex()
+                                    .flex_col()
+                                    .items_center()
+                                    .justify_center()
+                                    .gap_2()
+                                    .w(px(88.0))
+                                    .h(px(96.0))
+                                    .rounded_xl()
+                                    .bg(rgb(0x181825))
+                                    .border_1()
+                                    .border_color(rgba(0x31324488))
+                                    .hover(|h| h.bg(rgb(0x313244)).border_color(rgb(0xfab387)))
+                                    .cursor_pointer()
+                                    .text_color(rgb(0xfab387))
+                                    .child(div().text_size(px(28.0)).child("\u{f021}"))
+                                    .child(div().text_size(px(12.0)).font_weight(gpui::FontWeight::BOLD).child("Reboot"))
+                                    .child(div().text_size(px(10.0)).text_color(rgb(0x6c7086)).child("[R]"))
+                                    .on_click(|_, _, cx| {
+                                        let _ = std::process::Command::new("systemctl").arg("reboot").spawn();
+                                        cx.hide_window("powermenu");
+                                    }),
+                            )
+                            .child(
+                                div()
+                                    .id("pw-shutdown")
+                                    .flex()
+                                    .flex_col()
+                                    .items_center()
+                                    .justify_center()
+                                    .gap_2()
+                                    .w(px(88.0))
+                                    .h(px(96.0))
+                                    .rounded_xl()
+                                    .bg(rgb(0x181825))
+                                    .border_1()
+                                    .border_color(rgba(0x31324488))
+                                    .hover(|h| h.bg(rgb(0x313244)).border_color(rgb(0xf38ba8)))
+                                    .cursor_pointer()
+                                    .text_color(rgb(0xf38ba8))
+                                    .child(div().text_size(px(28.0)).child("\u{f011}"))
+                                    .child(div().text_size(px(12.0)).font_weight(gpui::FontWeight::BOLD).child("Shutdown"))
+                                    .child(div().text_size(px(10.0)).text_color(rgb(0x6c7086)).child("[P]"))
+                                    .on_click(|_, _, cx| {
+                                        let _ = std::process::Command::new("systemctl").arg("poweroff").spawn();
+                                        cx.hide_window("powermenu");
+                                    }),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(11.0))
+                            .text_color(rgb(0x585b70))
+                            .child("Press Esc or click backdrop to cancel"),
                     ),
             )
     }

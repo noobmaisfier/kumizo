@@ -22,3 +22,4 @@ libc = { workspace = true }
 image = { workspace = true }
 smallvec = { workspace = true }
 wk-ipc = { workspace = true }
+resvg = "0.46.0"

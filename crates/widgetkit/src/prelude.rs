@@ -8,8 +8,9 @@ pub use wk_gpui_ext::{Anchor, KeyboardInteractivity, Layer, LayerWindow, Margins
 
 // System Services
 pub use wk_services::{
-    Audio, Battery, BatteryState, Brightness, Clock, ClockResolution, Mpris, Network, OpenMenu,
-    PlaybackStatus, Service, Tray, TrayItem, TrayMenuItem, TrayStatus, WifiBackend,
+    AppInfo, Apps, Audio, Battery, BatteryState, Brightness, Clock, ClockResolution, Mpris,
+    Network, OpenMenu, PlaybackStatus, Service, Tray, TrayItem, TrayMenuItem, TrayStatus,
+    WifiBackend,
 };
 
 // Compositor Integration

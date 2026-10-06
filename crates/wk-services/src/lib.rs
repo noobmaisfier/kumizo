@@ -11,6 +11,7 @@
 //! - [`Tray`]: System tray host (StatusNotifierItem watcher, icons, menus)
 //! - [`Brightness`]: Screen backlight via sysfs + `brightnessctl`
 
+pub mod apps;
 pub mod audio;
 pub mod battery;
 pub mod brightness;
@@ -21,6 +22,7 @@ pub mod service;
 pub mod tray;
 pub mod window;
 
+pub use apps::{AppInfo, Apps};
 pub use audio::Audio;
 pub use battery::{Battery, BatteryState};
 pub use brightness::Brightness;
