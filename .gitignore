@@ -8,3 +8,7 @@
 
 # Fichiers de verrouillage : Cargo.lock est versionné volontairement
 # (projet applicatif : builds reproductibles)
+
+# Distribution et releases locales
+dist/
+*.tar.gz

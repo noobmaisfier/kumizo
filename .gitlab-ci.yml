@@ -1,0 +1,84 @@
+stages:
+  - test
+  - build
+  - release
+
+variables:
+  CARGO_HOME: "${CI_PROJECT_DIR}/.cargo"
+  RUST_BACKTRACE: "1"
+
+default:
+  image: rust:latest
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}"
+    paths:
+      - .cargo/bin
+      - .cargo/registry/index
+      - .cargo/registry/cache
+      - target/
+
+# ---------------------------------------------------------------------------
+# Stage: Test & Lint
+# ---------------------------------------------------------------------------
+check:
+  stage: test
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq pkg-config libpam0g-dev libwayland-dev libxkbcommon-dev libfontconfig1-dev libasound2-dev
+  script:
+    - cargo check --workspace
+    - cargo test --workspace --lib
+
+# ---------------------------------------------------------------------------
+# Stage: Build Release
+# ---------------------------------------------------------------------------
+build_release:
+  stage: build
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq pkg-config libpam0g-dev libwayland-dev libxkbcommon-dev libfontconfig1-dev libasound2-dev
+  script:
+    - cargo build --release --package shell-example --package wk-ctl
+    - mkdir -p dist/bin
+    - cp target/release/shell dist/bin/kumizo
+    - cp target/release/widgetctl dist/bin/kumizo-ctl
+    - cp README.md dist/ || true
+    - tar -czf kumizo-linux-x86_64.tar.gz -C dist .
+  artifacts:
+    name: "kumizo-${CI_COMMIT_REF_SLUG}"
+    paths:
+      - kumizo-linux-x86_64.tar.gz
+      - dist/bin/kumizo
+      - dist/bin/kumizo-ctl
+    expire_in: 30 days
+  rules:
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "develop"
+
+# ---------------------------------------------------------------------------
+# Stage: GitLab Release Publishing
+# ---------------------------------------------------------------------------
+release_job:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  needs:
+    - job: build_release
+      artifacts: true
+  rules:
+    - if: $CI_COMMIT_TAG
+  script:
+    - echo "Publishing official release for tag $CI_COMMIT_TAG"
+  release:
+    name: "Release $CI_COMMIT_TAG"
+    tag_name: "$CI_COMMIT_TAG"
+    description: |
+      ## Kumizo $CI_COMMIT_TAG
+      - Complete Wayland modular shell dressed in risograph style
+      - Neo-brutalist Flexoki palette & tactile physics
+      - Fullscreen Kanban board & Sticky Notes
+      - Integrated PAM lockscreen with wallpaper blur
+      - Fast application launcher & open window switcher
+      - Interactive notifications & persistent clipboard manager
+    assets:
+      links:
+        - name: "kumizo-linux-x86_64.tar.gz"
+          url: "${CI_PROJECT_URL}/-/jobs/${CI_JOB_ID}/artifacts/raw/kumizo-linux-x86_64.tar.gz"
