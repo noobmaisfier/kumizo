@@ -57,19 +57,25 @@ pub struct LayerWindow {
 
 impl LayerWindow {
     /// Create a new LayerWindow configuration with a given ID.
+    ///
+    /// The window is created with neutral defaults:
+    /// - `anchor`: `Anchor::empty()` (caller specifies attached edges)
+    /// - `exclusive_zone`: `0` (no space reserved by default)
+    /// - `width`: `None` (auto-expanded if anchored `LEFT | RIGHT`, or fallback)
+    /// - `height`: `None` (auto-expanded if anchored `TOP | BOTTOM`, or fallback)
     pub fn new(id: impl Into<String>) -> Self {
         let name = id.into();
         Self {
             namespace: format!("wk-{}", name),
             id: name,
             layer: Layer::Top,
-            anchor: Anchor::TOP | Anchor::LEFT | Anchor::RIGHT,
-            exclusive_zone: 32,
+            anchor: Anchor::empty(),
+            exclusive_zone: 0,
             margins: Margins::zero(),
             keyboard_interactivity: KeyboardInteractivity::None,
             monitor: MonitorTarget::Primary,
             width: None,
-            height: Some(DEFAULT_HEIGHT),
+            height: None,
             transparent: true,
             start_hidden: false,
         }

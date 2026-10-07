@@ -46,12 +46,9 @@ fn main() {
         .window(
             LayerWindow::new("lock")
                 .layer(Layer::Overlay)
-                .anchor(Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT)
-                .exclusive_zone(0)
+                .anchor(Anchor::FULLSCREEN)
+                .exclusive_zone(-1)
                 .keyboard_interactivity(KeyboardInteractivity::Exclusive)
-                // No explicit size: with all four anchors the surface takes
-                // the full output bounds (see `to_gpui_options_with_display`).
-                .size(None, None)
                 .transparent(false)
                 .namespace("wk-lock"),
             |cx: &mut gpui::App| cx.new(LockScreen::new),

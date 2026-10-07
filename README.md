@@ -64,6 +64,7 @@ fn main() {
             LayerWindow::new("topbar")
                 .layer(Layer::Top)
                 .anchor(Anchor::TOP | Anchor::LEFT | Anchor::RIGHT)
+                .height(32.0)
                 .exclusive_zone(32)
                 .namespace("wk-topbar"),
             |cx: &mut gpui::App| cx.new(TopBar::new),
@@ -125,7 +126,7 @@ All services are built with reactive event streaming for **Zero Idle CPU**:
 | `Network` | NM / iwd / sysfs | Auto-detecting Wi-Fi signal, connection status, and SSID with multi-backend fallback. |
 | `Tray` | StatusNotifierItem / D-Bus | Complete SNI system tray host with dbusmenu layout tree and GPU icon texture rendering. |
 | `Mpris` | `org.mpris.MediaPlayer2` | Manages media player state (Spotify, Firefox, mpv): title, artist, playback status, controls. |
-| `Apps` | FreeDesktop `.desktop` | Application discovery, instant fuzzy search, background launch, and GPU icon loading (PNG & SVG via `resvg`). |
+| `Apps` | FreeDesktop `.desktop` | Application discovery, instant fuzzy search, background launch, icon lookup via `find_icon()`, and GPU icon loading (PNG & SVG via `resvg`). |
 | `Notifications` | `org.freedesktop.Notifications` | In-process D-Bus notification daemon replacing dunst/mako/swaync: toasts, action handling, history, and DND. |
 | `Clipboard` | Wayland `wl-clipboard` | In-memory clipboard manager: history streaming, fuzzy search, deduplication and fast pasteback. |
 
@@ -136,6 +137,7 @@ let audio = cx.service::<Audio>();
 let apps = cx.service::<Apps>();
 let notifs = cx.service::<Notifications>();
 let clip = cx.service::<Clipboard>();
+let comp = cx.service::<Compositor>();
 ```
 Views are automatically re-rendered when services notify updates.
 
@@ -154,9 +156,16 @@ WidgetKit automatically detects and connects to your active Wayland compositor:
 let comp = cx.service::<Compositor>();
 let comp_ref = comp.read(cx);
 
+// Workspaces
 for ws in comp_ref.workspaces() {
     println!("Workspace {}: active={}", ws.name, ws.is_active);
 }
+
+// Open windows & focus switching
+for win in comp_ref.windows() {
+    println!("Window [{}]: title='{}', class='{}', ws='{}'", win.id, win.title, win.class, win.workspace_name);
+}
+comp_ref.focus_window(target_con_id);
 ```
 
 ---
@@ -216,7 +225,7 @@ bind = $mainMod, B, exec, widgetctl toggle dock
 ## Running the Examples
 
 ```bash
-# The whole shell (topbar + dock + OSD + tray menu + calendar + app launcher + powermenu) in a single process
+# The whole shell (rail + launcher + tasks switcher + calendar + powermenu + clipboard + notifications) in a single process
 cargo run --release --package shell-example
 
 # The PAM lockscreen (separate process on purpose, no IPC)

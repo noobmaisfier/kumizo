@@ -4,7 +4,7 @@ use wk_services::Service;
 use crate::hyprland::HyprlandIpc;
 use crate::niri::NiriIpc;
 use crate::sway::SwayIpc;
-use crate::types::{ActiveWindow, CompositorEvent, CompositorKind, Workspace};
+use crate::types::{ActiveWindow, AppWindow, CompositorEvent, CompositorKind, Workspace};
 
 /// Asynchronous compositor state service.
 ///
@@ -15,6 +15,7 @@ pub struct Compositor {
     workspaces: Vec<Workspace>,
     active_workspace_id: i32,
     active_window: Option<ActiveWindow>,
+    windows: Vec<AppWindow>,
 }
 
 impl Compositor {
@@ -29,6 +30,7 @@ impl Compositor {
             workspaces: default_workspaces,
             active_workspace_id: 1,
             active_window: None,
+            windows: Vec::new(),
         }
     }
 
@@ -81,6 +83,20 @@ impl Compositor {
         }
     }
 
+    /// List of all currently open application windows.
+    pub fn windows(&self) -> &[AppWindow] {
+        &self.windows
+    }
+
+    /// Focus an application window by its container/node ID.
+    pub fn focus_window(&self, con_id: i64) {
+        if self.kind == CompositorKind::Sway {
+            if let Some(sway) = SwayIpc::try_new() {
+                let _ = sway.focus_window(con_id);
+            }
+        }
+    }
+
     /// Close the active window.
     pub fn close_window(&self) {
         if self.kind == CompositorKind::Hyprland {
@@ -125,6 +141,9 @@ impl Service for Compositor {
                 if !ws.is_empty() {
                     comp.workspaces = ws;
                 }
+            }
+            if let Ok(wins) = sway.fetch_windows() {
+                comp.windows = wins;
             }
             let _ = sway.start_event_loop(tx);
         } else if let Some(niri) = NiriIpc::try_new() {
@@ -174,6 +193,10 @@ impl Service for Compositor {
                         }
                         CompositorEvent::WindowFocused(win) => {
                             comp.active_window = Some(win);
+                            cx.notify();
+                        }
+                        CompositorEvent::WindowsChanged(windows) => {
+                            comp.windows = windows;
                             cx.notify();
                         }
                         CompositorEvent::FullSync(ws, win) => {

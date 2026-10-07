@@ -7,6 +7,7 @@ const I3_IPC_MAGIC: &[u8] = b"i3-ipc";
 const I3_IPC_MESSAGE_RUN_COMMAND: u32 = 0;
 const I3_IPC_MESSAGE_GET_WORKSPACES: u32 = 1;
 const I3_IPC_MESSAGE_SUBSCRIBE: u32 = 2;
+const I3_IPC_MESSAGE_GET_TREE: u32 = 4;
 
 /// Sway / i3 compositor IPC client.
 pub struct SwayIpc {
@@ -63,6 +64,70 @@ impl SwayIpc {
         let cmd = format!("workspace number {}", num);
         let _ = self.send_message(I3_IPC_MESSAGE_RUN_COMMAND, cmd.as_bytes())?;
         Ok(())
+    }
+
+    /// Focus a window container by its Sway node ID.
+    pub fn focus_window(&self, con_id: i64) -> anyhow::Result<()> {
+        let cmd = format!("[con_id={}] focus", con_id);
+        let _ = self.send_message(I3_IPC_MESSAGE_RUN_COMMAND, cmd.as_bytes())?;
+        Ok(())
+    }
+
+    /// Retrieve all open application windows across all workspaces from Sway tree.
+    pub fn fetch_windows(&self) -> anyhow::Result<Vec<crate::types::AppWindow>> {
+        let bytes = self.send_message(I3_IPC_MESSAGE_GET_TREE, b"")?;
+        let root: serde_json::Value = serde_json::from_slice(&bytes)?;
+        let mut windows = Vec::new();
+
+        fn traverse(node: &serde_json::Value, current_ws_id: i32, current_ws_name: &str, acc: &mut Vec<crate::types::AppWindow>) {
+            let mut ws_id = current_ws_id;
+            let mut ws_name = current_ws_name;
+
+            if node.get("type").and_then(|t| t.as_str()) == Some("workspace") {
+                if let Some(num) = node.get("num").and_then(|n| n.as_i64()) {
+                    ws_id = num as i32;
+                }
+                if let Some(name) = node.get("name").and_then(|n| n.as_str()) {
+                    ws_name = name;
+                }
+            }
+
+            let app_id = node.get("app_id").and_then(|a| a.as_str());
+            let win_class = node.get("window_properties")
+                .and_then(|wp| wp.get("class"))
+                .and_then(|c| c.as_str());
+            let title = node.get("name").and_then(|n| n.as_str());
+
+            if let (Some(class), Some(title)) = (app_id.or(win_class), title) {
+                if !class.is_empty() && !title.is_empty() {
+                    let id = node.get("id").and_then(|i| i.as_i64()).unwrap_or(0);
+                    let focused = node.get("focused").and_then(|f| f.as_bool()).unwrap_or(false);
+
+                    acc.push(crate::types::AppWindow {
+                        id,
+                        title: title.to_string(),
+                        class: class.to_string(),
+                        workspace_id: ws_id,
+                        workspace_name: ws_name.to_string(),
+                        is_focused: focused,
+                    });
+                }
+            }
+
+            if let Some(children) = node.get("nodes").and_then(|n| n.as_array()) {
+                for child in children {
+                    traverse(child, ws_id, ws_name, acc);
+                }
+            }
+            if let Some(floating) = node.get("floating_nodes").and_then(|n| n.as_array()) {
+                for child in floating {
+                    traverse(child, ws_id, ws_name, acc);
+                }
+            }
+        }
+
+        traverse(&root, 1, "1", &mut windows);
+        Ok(windows)
     }
 
     /// Retrieve list of workspaces from Sway.
@@ -157,9 +222,16 @@ impl SwayIpc {
                     continue;
                 };
 
-                // A window event carries `container`, and its `current` is null.
-                // Never treat it as a workspace event.
+                // Window events carry container; handle window creation/close/focus/title
                 if ev.container.is_some() {
+                    let win_change = ev.change.as_deref().unwrap_or("");
+                    if matches!(win_change, "new" | "close" | "focus" | "title" | "mark" | "move") {
+                        if let Some(client) = SwayIpc::new(socket_path.clone()) {
+                            if let Ok(windows) = client.fetch_windows() {
+                                let _ = tx.send_blocking(CompositorEvent::WindowsChanged(windows));
+                            }
+                        }
+                    }
                     continue;
                 }
 
@@ -179,6 +251,9 @@ impl SwayIpc {
                     if let Some(client) = SwayIpc::new(socket_path.clone()) {
                         if let Ok(list) = client.fetch_workspaces() {
                             let _ = tx.send_blocking(CompositorEvent::WorkspacesChanged(list));
+                        }
+                        if let Ok(windows) = client.fetch_windows() {
+                            let _ = tx.send_blocking(CompositorEvent::WindowsChanged(windows));
                         }
                     }
                 }

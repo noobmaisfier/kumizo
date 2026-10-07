@@ -1,44 +1,240 @@
-//! A single-process Wayland shell hosting the topbar, the dock and the OSD.
+//! "Riso" — a Wayland shell dressed like a risograph print.
 //!
-//! Running the three widgets as three separate binaries works, but each one
-//! pays the full cost of initialising the GPU stack, the font stack and the
-//! compositor connection. In a single process that cost is paid once, and the
-//! services (`Clock`, `Audio`, `Compositor`, ...) are instantiated once and
-//! shared by every window, which also means one wakeup per second instead of one
-//! per binary.
+//! Structure
+//! ---------
+//! * No topbar. A vertical **rail** on the left holds everything that used to
+//!   be spread over the bar and the dock: launcher, workspaces, apps, media,
+//!   tray, status gauges, notifications, power.
+//! * A small **stamp** in the top-right corner carries the clock (and the
+//!   current track when something is playing).
+//! * Popups hang under the stamp; the launcher, clipboard and power menu are
+//!   sheets printed on a pale paper veil.
 //!
-//! The trade-off is the loss of isolation: a panic in any window takes down all
-//! of them. That is the same trade-off Waybar and AGS make, and it is the right
-//! one for a desktop shell.
+//! Look
+//! ----
+//! * Paper grey, electric blue, fluo pink, yellow, ink. 2px ink outlines,
+//!   square corners, hard offset shadows (blur 0).
+//! * Active text is "misprinted": a pink layer sits 1.5px off a blue one.
 //!
-//! Run it with:
+//! Motion
+//! ------
+//! * Things are *printed*: a pink plate lands slightly off-register behind a
+//!   card and settles into its hard shadow while the card fades in.
+//! * Buttons are physical: hover lifts, press sinks and loses its shadow.
+//! * Power tiles slam down one after another; calendar pages drop in when you
+//!   flip months; OSD blocks pop as the level rises; the rail slides in once.
 //!
-//! ```sh
-//! cargo run --package shell-example
-//! ```
+//! Run it with: `cargo run --package shell-example`
 
 use std::time::Duration;
 
 use gpui::prelude::*;
-use gpui::{AnyElement, FocusHandle, KeyDownEvent};
+use gpui::{
+    point, pulsating_between, Animation, AnimationExt, AnyElement, BoxShadow, Div, ElementId,
+    FocusHandle, KeyDownEvent, Rgba, Stateful,
+};
 use widgetkit::prelude::*;
 
-/// Height of the top bar, in logical pixels. Also used as its exclusive zone so
-/// regular windows are pushed below it.
-const TOPBAR_HEIGHT: f32 = 36.0;
-/// Height of the dock.
-const DOCK_HEIGHT: f32 = 58.0;
-/// Size of the volume/brightness OSD.
-const OSD_WIDTH: f32 = 280.0;
-const OSD_HEIGHT: f32 = 80.0;
-/// Size of the calendar popup.
-const CALENDAR_WIDTH: f32 = 300.0;
-const CALENDAR_HEIGHT: f32 = 290.0;
+const RAIL_WIDTH: f32 = 72.0;
+const STAMP_WIDTH: f32 = 236.0;
+const STAMP_HEIGHT: f32 = 80.0;
+const OSD_WIDTH: f32 = 400.0;
+const OSD_HEIGHT: f32 = 104.0;
+const CALENDAR_WIDTH: f32 = 330.0;
+const CALENDAR_HEIGHT: f32 = 392.0;
+/// Where popups start, just under the stamp.
+const POPUP_TOP: i32 = 98;
+
+// ---------------------------------------------------------------------------
+// Tokens and helpers
+// ---------------------------------------------------------------------------
+
+mod pal {
+    use gpui::{rgb, rgba, Rgba};
+    pub fn paper() -> Rgba { rgb(0xe9eaee) }
+    pub fn white() -> Rgba { rgb(0xf7f7f9) }
+    pub fn ink() -> Rgba { rgb(0x14141a) }
+    pub fn blue() -> Rgba { rgb(0x2b3bff) }
+    pub fn pink() -> Rgba { rgb(0xff4fa3) }
+    pub fn yellow() -> Rgba { rgb(0xffd500) }
+    pub fn gray() -> Rgba { rgb(0x8a8c99) }
+    pub fn tint() -> Rgba { rgb(0xd9dcff) }
+    pub fn veil() -> Rgba { rgba(0xe9eaeedb) }
+    pub fn faint() -> Rgba { rgba(0x14141a26) }
+    pub fn clear() -> Rgba { rgba(0x00000000) }
+}
+
+fn hard(color: Rgba, d: f32) -> Vec<BoxShadow> {
+    vec![BoxShadow {
+        color: color.into(),
+        offset: point(px(d), px(d)),
+        blur_radius: px(0.0),
+        spread_radius: px(0.0),
+        inset: false,
+    }]
+}
+
+fn out_cubic(t: f32) -> f32 {
+    1.0 - (1.0 - t).powi(3)
+}
+
+fn out_back(t: f32) -> f32 {
+    let c1 = 1.70158;
+    let c3 = c1 + 1.0;
+    1.0 + c3 * (t - 1.0).powi(3) + c1 * (t - 1.0).powi(2)
+}
+
+fn staggered(d: f32, i: usize, n: usize, step: f32) -> f32 {
+    let span = (1.0 - step * n.saturating_sub(1) as f32).max(0.25);
+    ((d - step * i as f32) / span).clamp(0.0, 1.0)
+}
+
+/// Blue text over a pink plate that is 1.5px off register.
+fn misprint(text: String, size: f32, top: Rgba, under: Rgba) -> Div {
+    div()
+        .relative()
+        .text_size(px(size))
+        .font_weight(gpui::FontWeight::BOLD)
+        .child(
+            div()
+                .absolute()
+                .top(px(1.5))
+                .left(px(1.5))
+                .text_color(under)
+                .child(text.clone()),
+        )
+        .child(div().text_color(top).child(text))
+}
+
+/// A physical square button: lifts on hover, sinks on press.
+fn tile(id: impl Into<ElementId>) -> Stateful<Div> {
+    div()
+        .id(id)
+        .relative()
+        .flex()
+        .items_center()
+        .justify_center()
+        .w(px(40.0))
+        .h(px(40.0))
+        .bg(pal::paper())
+        .border_2()
+        .border_color(pal::ink())
+        .shadow(hard(pal::ink(), 3.0))
+        .text_size(px(16.0))
+        .text_color(pal::ink())
+        .cursor_pointer()
+        .active(|s| s.shadow(Vec::new()).top(px(3.0)).left(px(3.0)))
+}
+
+fn key_chip(key: &'static str, label: &'static str) -> Div {
+    div()
+        .flex()
+        .items_center()
+        .gap_1p5()
+        .child(
+            div()
+                .px_1p5()
+                .bg(pal::white())
+                .border_2()
+                .border_color(pal::ink())
+                .text_size(px(10.0))
+                .font_weight(gpui::FontWeight::BOLD)
+                .text_color(pal::ink())
+                .child(key),
+        )
+        .child(div().text_size(px(11.0)).text_color(pal::ink()).child(label))
+}
+
+/// Printed-card entrance: a colored plate lands off-register behind the card
+/// and settles into place while the card fades in.
+fn printed<E: Styled + IntoElement + 'static>(card: E, key: &str, echo: Rgba) -> impl IntoElement {
+    let k_plate = format!("{key}-plate");
+    let k_card = format!("{key}-card");
+    div()
+        .relative()
+        .child(
+            div()
+                .absolute()
+                .size_full()
+                .bg(echo)
+                .border_2()
+                .border_color(pal::ink())
+                .with_animation(k_plate, Animation::new(Duration::from_millis(460)), |el, d| {
+                    let off = 7.0 + 18.0 * (1.0 - out_back(d));
+                    el.left(px(off)).top(px(off))
+                }),
+        )
+        .child(
+            card.relative()
+                .with_animation(k_card, Animation::new(Duration::from_millis(300)), |el, d| {
+                    el.opacity(d.min(1.0))
+                }),
+        )
+}
+
+fn caret() -> impl IntoElement {
+    div()
+        .w(px(10.0))
+        .h(px(22.0))
+        .bg(pal::blue())
+        .with_animation(
+            "caret",
+            Animation::new(Duration::from_millis(900))
+                .repeat()
+                .with_easing(pulsating_between(0.0, 1.0)),
+            |el, d| el.opacity(d),
+        )
+}
+
+/// Tagged input field shared by launcher and clipboard.
+fn find_field(tag: &'static str, tag_bg: Rgba, query: &str, placeholder: &'static str) -> Div {
+    let empty = query.is_empty();
+    div()
+        .flex()
+        .items_center()
+        .gap_3()
+        .h(px(52.0))
+        .pr_3()
+        .bg(pal::white())
+        .border_2()
+        .border_color(pal::ink())
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .h_full()
+                .px_3()
+                .bg(tag_bg)
+                .text_size(px(14.0))
+                .font_weight(gpui::FontWeight::BOLD)
+                .text_color(pal::ink())
+                .child(tag),
+        )
+        .child(div().w(px(2.0)).h_full().bg(pal::ink()))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .flex_1()
+                .gap_0p5()
+                .text_size(px(18.0))
+                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .when(empty, |s| s.child(caret()))
+                .child(
+                    div()
+                        .text_color(if empty { pal::gray() } else { pal::ink() })
+                        .child(if empty { placeholder.to_string() } else { query.to_string() }),
+                )
+                .when(!empty, |s| s.child(caret())),
+        )
+}
+
+// ---------------------------------------------------------------------------
+// Entry point and windows
+// ---------------------------------------------------------------------------
 
 fn main() {
     WidgetKit::new()
-        // Services are declared once and shared by all windows: the clock
-        // ticks once per second for the whole shell, not once per widget.
         .service::<Clock>()
         .service::<Battery>()
         .service::<Network>()
@@ -50,10 +246,8 @@ fn main() {
         .service::<Apps>()
         .service::<Notifications>()
         .service::<Clipboard>()
-        .window(topbar_window(), |cx: &mut gpui::App| {
-            cx.new(TopBar::new)
-        })
-        .window(dock_window(), |cx: &mut gpui::App| cx.new(Dock::new))
+        .window(rail_window(), |cx: &mut gpui::App| cx.new(Rail::new))
+        .window(stamp_window(), |cx: &mut gpui::App| cx.new(Stamp::new))
         .window(osd_window(), |cx: &mut gpui::App| cx.new(VolumeOsd::new))
         .window(traymenu_window(), |cx: &mut gpui::App| cx.new(TrayMenu::new))
         .window(calendar_window(), |cx: &mut gpui::App| cx.new(Calendar::new))
@@ -62,141 +256,111 @@ fn main() {
         .window(notifications_window(), |cx: &mut gpui::App| cx.new(NotificationToasts::new))
         .window(notification_center_window(), |cx: &mut gpui::App| cx.new(NotificationCenter::new))
         .window(clipboard_window(), |cx: &mut gpui::App| cx.new(ClipboardManager::new))
+        .window(tasks_window(), |cx: &mut gpui::App| cx.new(TaskSwitcher::new))
         .run();
 }
 
-fn topbar_window() -> LayerWindow {
-    LayerWindow::new("topbar")
+fn tasks_window() -> LayerWindow { fullscreen("tasks", "wk-tasks") }
+
+fn rail_window() -> LayerWindow {
+    LayerWindow::new("rail")
         .layer(Layer::Top)
-        .anchor(Anchor::TOP_BAR)
-        // Reserving the bar's height keeps maximised windows from overlapping it.
-        .exclusive_zone(TOPBAR_HEIGHT as i32)
-        .height(TOPBAR_HEIGHT)
-        .margins(Margins::new(6, 12, 0, 12))
-        .namespace("wk-topbar")
+        .anchor(Anchor::LEFT | Anchor::TOP | Anchor::BOTTOM)
+        .exclusive_zone(RAIL_WIDTH as i32 + 10)
+        .size(Some(RAIL_WIDTH), None)
+        .margins(Margins::new(8, 0, 8, 8))
+        .namespace("wk-rail")
 }
 
-fn dock_window() -> LayerWindow {
-    LayerWindow::new("dock")
+fn stamp_window() -> LayerWindow {
+    LayerWindow::new("stamp")
         .layer(Layer::Top)
-        .anchor(Anchor::BOTTOM)
-        .exclusive_zone(DOCK_HEIGHT as i32)
-        .width(480.0)
-        .height(DOCK_HEIGHT)
-        .margins(Margins::new(0, 0, 10, 0))
-        .namespace("wk-dock")
+        .anchor(Anchor::TOP | Anchor::RIGHT)
+        .exclusive_zone(0)
+        .width(STAMP_WIDTH)
+        .height(STAMP_HEIGHT)
+        .margins(Margins::new(10, 14, 0, 0))
+        .namespace("wk-stamp")
 }
 
 fn osd_window() -> LayerWindow {
     LayerWindow::new("osd")
         .layer(Layer::Overlay)
         .anchor(Anchor::BOTTOM)
-        // No exclusive zone: the OSD must never reserve screen space.
         .exclusive_zone(0)
         .width(OSD_WIDTH)
         .height(OSD_HEIGHT)
-        .margins(Margins::new(0, 0, 100, 0))
+        .margins(Margins::new(0, 0, 56, 0))
         .namespace("wk-osd")
 }
 
-/// Context menu of a tray icon. Starts with no surface (`start_hidden`) so
-/// it never reserves input area while closed; the `Tray` service shows and
-/// hides it through `WindowControl` as menus open and close.
 fn traymenu_window() -> LayerWindow {
     LayerWindow::new("traymenu")
         .layer(Layer::Overlay)
-        .anchor(Anchor::TOP | Anchor::RIGHT)
+        .anchor(Anchor::LEFT | Anchor::BOTTOM)
         .exclusive_zone(0)
-        .width(300.0)
-        .height(420.0)
-        .margins(Margins::new(44, 12, 0, 0))
+        .width(310.0)
+        .height(430.0)
+        .margins(Margins::new(0, 0, 110, 88))
         .namespace("wk-traymenu")
         .start_hidden(true)
 }
 
-/// Month calendar popup, toggled in-memory by a click on the clock
-/// (`cx.toggle_window("calendar")`). Like the tray menu it has no surface
-/// while closed.
 fn calendar_window() -> LayerWindow {
     LayerWindow::new("calendar")
         .layer(Layer::Overlay)
-        .anchor(Anchor::TOP)
+        .anchor(Anchor::TOP | Anchor::RIGHT)
         .exclusive_zone(0)
         .width(CALENDAR_WIDTH)
         .height(CALENDAR_HEIGHT)
-        .margins(Margins::new(44, 0, 0, 0))
+        .margins(Margins::new(POPUP_TOP, 14, 0, 0))
         .namespace("wk-calendar")
         .start_hidden(true)
 }
 
-/// Fullscreen overlay application launcher (Rofi/Spotlight style).
-fn launcher_window() -> LayerWindow {
-    LayerWindow::new("launcher")
+fn fullscreen(name: &'static str, ns: &'static str) -> LayerWindow {
+    LayerWindow::new(name)
         .layer(Layer::Overlay)
         .anchor(Anchor::FULLSCREEN)
-        .exclusive_zone(0)
+        .exclusive_zone(-1)
         .keyboard_interactivity(KeyboardInteractivity::Exclusive)
-        .size(None, None)
-        .namespace("wk-launcher")
+        .namespace(ns)
         .start_hidden(true)
 }
 
-/// Fullscreen overlay power menu (Lock, Suspend, Logout, Reboot, Shutdown).
-fn powermenu_window() -> LayerWindow {
-    LayerWindow::new("powermenu")
-        .layer(Layer::Overlay)
-        .anchor(Anchor::FULLSCREEN)
-        .exclusive_zone(0)
-        .keyboard_interactivity(KeyboardInteractivity::Exclusive)
-        .size(None, None)
-        .namespace("wk-powermenu")
-        .start_hidden(true)
-}
+fn launcher_window() -> LayerWindow { fullscreen("launcher", "wk-launcher") }
+fn powermenu_window() -> LayerWindow { fullscreen("powermenu", "wk-powermenu") }
+fn clipboard_window() -> LayerWindow { fullscreen("clipboard", "wk-clipboard") }
 
-/// Ephemeral notification toasts displayed in the top-right corner.
 fn notifications_window() -> LayerWindow {
     LayerWindow::new("notifications")
         .layer(Layer::Overlay)
         .anchor(Anchor::TOP | Anchor::RIGHT)
         .exclusive_zone(0)
-        .width(360.0)
+        .width(380.0)
         .height(600.0)
-        .margins(Margins::new(44, 12, 0, 0))
+        .margins(Margins::new(POPUP_TOP, 14, 0, 0))
         .namespace("wk-notifications")
         .start_hidden(true)
 }
 
-/// Notification history center / drawer toggled by the bell icon.
 fn notification_center_window() -> LayerWindow {
     LayerWindow::new("notification_center")
         .layer(Layer::Overlay)
         .anchor(Anchor::TOP | Anchor::RIGHT)
         .exclusive_zone(0)
-        .width(380.0)
-        .height(520.0)
-        .margins(Margins::new(44, 12, 0, 0))
+        .width(400.0)
+        .height(540.0)
+        .margins(Margins::new(POPUP_TOP, 14, 0, 0))
         .namespace("wk-notification-center")
         .start_hidden(true)
 }
 
-/// Fullscreen overlay clipboard manager (history, fuzzy search, pasteback).
-fn clipboard_window() -> LayerWindow {
-    LayerWindow::new("clipboard")
-        .layer(Layer::Overlay)
-        .anchor(Anchor::FULLSCREEN)
-        .exclusive_zone(0)
-        .keyboard_interactivity(KeyboardInteractivity::Exclusive)
-        .size(None, None)
-        .namespace("wk-clipboard")
-        .start_hidden(true)
-}
-
 // ---------------------------------------------------------------------------
-// Top bar
+// Rail: launcher, tasks, workspaces, media, tray, status, bell, power
 // ---------------------------------------------------------------------------
 
-struct TopBar {
-    clock: Entity<Clock>,
+struct Rail {
     battery: Entity<Battery>,
     network: Entity<Network>,
     tray: Entity<Tray>,
@@ -206,14 +370,12 @@ struct TopBar {
     notifications: Entity<Notifications>,
 }
 
-impl TopBar {
+impl Rail {
     fn new(cx: &mut Context<Self>) -> Self {
-        let tray = cx.service::<Tray>();
         Self {
-            clock: cx.service::<Clock>(),
             battery: cx.service::<Battery>(),
             network: cx.service::<Network>(),
-            tray,
+            tray: cx.service::<Tray>(),
             audio: cx.service::<Audio>(),
             mpris: cx.service::<Mpris>(),
             compositor: cx.service::<Compositor>(),
@@ -222,9 +384,72 @@ impl TopBar {
     }
 }
 
-impl Render for TopBar {
+/// Three colored bars that jump while media is playing, or stay static when paused.
+fn equalizer(playing: bool) -> impl IntoElement {
+    let colors = [pal::yellow(), pal::pink(), pal::white()];
+    div()
+        .flex()
+        .flex_row()
+        .items_end()
+        .gap(px(3.0))
+        .h(px(22.0))
+        .children(colors.into_iter().enumerate().map(move |(i, c)| {
+            let base = div()
+                .w(px(6.0))
+                .border_1()
+                .border_color(pal::ink())
+                .bg(c);
+
+            if playing {
+                base.with_animation(
+                    format!("eq-{i}"),
+                    Animation::new(Duration::from_millis(480 + i as u64 * 170))
+                        .repeat()
+                        .with_easing(pulsating_between(0.0, 1.0)),
+                    |el, d| el.h(px(5.0 + 17.0 * d)),
+                )
+                .into_any_element()
+            } else {
+                let static_height = match i {
+                    0 => 8.0,
+                    1 => 16.0,
+                    _ => 11.0,
+                };
+                base.h(px(static_height)).into_any_element()
+            }
+        }))
+}
+
+fn gauge(fraction: f32) -> Div {
+    div()
+        .w(px(28.0))
+        .h(px(5.0))
+        .border_1()
+        .border_color(pal::ink())
+        .bg(pal::white())
+        .child(
+            div()
+                .h_full()
+                .w(gpui::DefiniteLength::Fraction(fraction.clamp(0.0, 1.0)))
+                .bg(pal::ink()),
+        )
+}
+
+fn status_row(glyph: AnyElement, label: String) -> Div {
+    div()
+        .flex()
+        .flex_col()
+        .items_center()
+        .gap(px(1.0))
+        .py_1()
+        .text_size(px(10.0))
+        .font_weight(gpui::FontWeight::BOLD)
+        .child(div().text_size(px(15.0)).child(glyph))
+        .child(label)
+}
+
+impl Render for Rail {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let clock = self.clock.read(cx);
         let battery = self.battery.read(cx);
         let network = self.network.read(cx);
         let tray = self.tray.read(cx);
@@ -235,305 +460,348 @@ impl Render for TopBar {
         let unread = notifs.unread_count();
         let dnd = notifs.is_dnd();
 
-        div()
+        let volume = audio.volume();
+        let muted = audio.is_muted();
+        let connected = network.is_connected();
+        let percent = battery.percent();
+        let charging = battery.is_charging();
+        let low = !charging && percent <= 20;
+
+        let has_media = mpris.title().is_some();
+        let mpris_entity = self.mpris.clone();
+        let audio_entity = self.audio.clone();
+
+        // --- Rows of the status block ---------------------------------------
+        let audio_row = div()
+            .id("wk-audio-toggle")
+            .cursor_pointer()
+            .when(muted, |s| s.bg(pal::pink()))
+            .when(!muted, |s| s.hover(|h| h.bg(pal::yellow())))
+            .child(
+                status_row(
+                    div().child(audio.icon()).into_any_element(),
+                    if muted { "mute".to_string() } else { format!("{volume}") },
+                )
+                .child(gauge(if muted { 0.0 } else { volume as f32 / 100.0 })),
+            )
+            .on_click(move |_, _w, cx| {
+                audio_entity.update(cx, |a, _| a.toggle_mute());
+            });
+
+        let net_row = div()
+            .when(!connected, |s| s.bg(pal::pink()))
+            .child(status_row(
+                div().child(network.icon()).into_any_element(),
+                if connected { "on".to_string() } else { "off".to_string() },
+            ));
+
+        let batt_inner = div()
+            .when(charging, |s| s.bg(pal::yellow()))
+            .when(low, |s| s.bg(pal::pink()))
+            .child(
+                status_row(
+                    div().child(battery.state().icon(percent)).into_any_element(),
+                    format!("{percent}"),
+                )
+                .child(gauge(percent as f32 / 100.0)),
+            );
+        // A low battery flashes; anything else stays still.
+        let batt_row: AnyElement = if low {
+            batt_inner
+                .with_animation(
+                    "batt-low",
+                    Animation::new(Duration::from_millis(900))
+                        .repeat()
+                        .with_easing(pulsating_between(0.4, 1.0)),
+                    |el, d| el.opacity(d),
+                )
+                .into_any_element()
+        } else {
+            batt_inner.into_any_element()
+        };
+
+        let status_block = div()
             .flex()
-            .flex_row()
+            .flex_col()
+            .w(px(44.0))
+            .bg(pal::paper())
+            .border_2()
+            .border_color(pal::ink())
+            .child(audio_row)
+            .child(div().h(px(2.0)).w_full().bg(pal::ink()))
+            .child(net_row)
+            .child(div().h(px(2.0)).w_full().bg(pal::ink()))
+            .child(batt_row);
+
+        let tray_items: Vec<_> = tray.items().into_iter().collect();
+
+        let panel = div()
+            .flex()
+            .flex_col()
             .items_center()
-            .justify_between()
-            .w_full()
-            .h(px(TOPBAR_HEIGHT))
-            .bg(rgba(0x181825ee))
-            .border_1()
-            .border_color(rgba(0x31324488))
-            .rounded_lg()
-            .px_3()
-            .text_size(px(13.0))
-            .text_color(rgb(0xcdd6f4))
-            // App Launcher and Workspaces
+            .gap_2()
+            .w(px(64.0))
+            .h_full()
+            .py_2()
+            .bg(pal::paper())
+            .border_2()
+            .border_color(pal::ink())
+            .shadow(hard(pal::ink(), 5.0))
+            // Launcher.
             .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .child(
-                        div()
-                            .id("wk-launcher-btn")
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .bg(rgb(0x1e1e2e))
-                            .hover(|s| s.bg(rgb(0x313244)))
-                            .cursor_pointer()
-                            .px_2p5()
-                            .py_1()
-                            .rounded_md()
-                            .text_color(rgb(0x89b4fa))
-                            .child("\u{f00a}")
-                            .on_click(|_, _window, cx| cx.toggle_window("launcher")),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_1()
-                            .bg(rgb(0x1e1e2e))
-                            .px_2()
-                            .py_1()
-                            .rounded_md()
-                            .children(comp.workspaces().iter().map(|ws| {
-                                let is_active = ws.is_active;
-                                let ws_id = ws.id;
-                                let name = ws.name.clone();
-                                let compositor = self.compositor.clone();
-
-                                div()
-                                    .id(format!("workspace-{}", ws_id))
-                                    .px_2()
-                                    .py_0p5()
-                                    .rounded_sm()
-                                    .cursor_pointer()
-                                    .when(is_active, |s| {
-                                        s.bg(rgb(0x89b4fa))
-                                            .text_color(rgb(0x11111b))
-                                            .font_weight(gpui::FontWeight::BOLD)
-                                    })
-                                    .when(!is_active, |s| s.hover(|h| h.bg(rgb(0x313244))))
-                                    .child(name)
-                                    .on_click(move |_, _window, cx| {
-                                        compositor.update(cx, |c, _| c.switch_workspace(ws_id));
-                                    })
-                            })),
-                    ),
+                tile("wk-launcher-btn")
+                    .bg(pal::yellow())
+                    .hover(|s| s.bg(pal::pink()))
+                    .child("\u{f00a}")
+                    .on_click(|_, _w, cx| cx.toggle_window("launcher")),
             )
-            // Date and time. Click toggles the calendar popup, in memory.
+            // Task Switcher (open windows).
             .child(
+                tile("wk-tasks-btn")
+                    .bg(pal::white())
+                    .hover(|s| s.bg(pal::tint()))
+                    .child("\u{f2d0}")
+                    .on_click(|_, _w, cx| cx.toggle_window("tasks")),
+            )
+            // Workspaces: the active one is blue with a pink plate, and stretches.
+            .child(div().flex().flex_col().items_center().gap_1p5().children(
+                comp.workspaces().iter().map(|ws| {
+                    let is_active = ws.is_active;
+                    let ws_id = ws.id;
+                    let name = ws.name.clone();
+                    let compositor = self.compositor.clone();
+
+                    div()
+                        .id(format!("workspace-{ws_id}"))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .w(px(40.0))
+                        .h(px(30.0))
+                        .border_2()
+                        .border_color(pal::ink())
+                        .cursor_pointer()
+                        .text_size(px(13.0))
+                        .font_weight(gpui::FontWeight::BOLD)
+                        .when(is_active, |s| {
+                            s.bg(pal::blue())
+                                .text_color(pal::paper())
+                                .shadow(hard(pal::pink(), 3.0))
+                        })
+                        .when(!is_active, |s| {
+                            s.bg(pal::paper())
+                                .text_color(pal::ink())
+                                .hover(|h| h.bg(pal::yellow()))
+                        })
+                        .child(name)
+                        .on_click(move |_, _w, cx| {
+                            compositor.update(cx, |c, _| c.switch_workspace(ws_id));
+                        })
+                        .with_animation(
+                            format!("ws-anim-{ws_id}-{is_active}"),
+                            Animation::new(Duration::from_millis(380)),
+                            move |el, d| {
+                                if is_active {
+                                    el.h(px(30.0 + 12.0 * out_back(d)))
+                                } else {
+                                    el
+                                }
+                            },
+                        )
+                }),
+            ))
+            .child(div().w(px(32.0)).h(px(2.0)).bg(pal::ink()))
+            // Flexible spacer pushing status, media and power to the bottom.
+            .child(div().flex_1())
+            // Media.
+            .when(has_media, |s| {
+                let playing = mpris.status().is_playing();
+                s.child(
+                    tile("wk-mpris-toggle")
+                        .bg(pal::blue())
+                        .hover(|h| h.bg(pal::pink()))
+                        .child(equalizer(playing))
+                        .on_click(move |_, _w, cx| {
+                            mpris_entity.read(cx).play_pause();
+                        }),
+                )
+            })
+            // Tray: left-click activates, right-click opens the menu.
+            .children(tray_items.into_iter().map(|item| {
+                let activate_id = item.id.clone();
+                let menu_id = item.id.clone();
+                let tray_entity = self.tray.clone();
+                let tray_entity2 = self.tray.clone();
+                let icon = item.icon.clone();
+                let title = item.title.clone();
+
                 div()
-                    .id("wk-clock")
+                    .id(format!("tray-{}", item.id))
                     .flex()
                     .items_center()
-                    .gap_2()
-                    .bg(rgb(0x1e1e2e))
-                    .hover(|s| s.bg(rgb(0x313244)))
+                    .justify_center()
+                    .w(px(32.0))
+                    .h(px(32.0))
+                    .border_2()
+                    .border_color(pal::ink())
+                    .bg(pal::white())
                     .cursor_pointer()
-                    .px_3()
-                    .py_1()
-                    .rounded_md()
-                    .on_click(|_, _window, cx| cx.toggle_window("calendar"))
-                    .child(div().text_color(rgb(0xb4befe)).child(clock.date_formatted()))
-                    .child(
-                        div()
-                            .font_weight(gpui::FontWeight::BOLD)
-                            .text_color(rgb(0xcdd6f4))
-                            .child(clock.time_hms()),
-                    ),
-            )
-            // MPRIS, tray, volume and battery.
+                    .hover(|h| h.bg(pal::yellow()))
+                    .when(icon.is_some(), |this| {
+                        this.child(gpui::img(icon.clone().unwrap()).w(px(18.0)).h(px(18.0)))
+                    })
+                    .when(icon.is_none(), |this| {
+                        this.child(div().text_color(pal::blue()).child(
+                            title
+                                .chars()
+                                .next()
+                                .map(|c| c.to_string())
+                                .unwrap_or_else(|| "?".to_string()),
+                        ))
+                    })
+                    .on_click(move |_, _, cx| {
+                        tray_entity.update(cx, |t, _| t.activate(&activate_id));
+                    })
+                    .on_mouse_down(gpui::MouseButton::Right, move |_, _, cx| {
+                        tray_entity2.update(cx, |t, _| t.open_menu(&menu_id));
+                    })
+            }))
+            .child(status_block)
+            // Notifications.
             .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .when(mpris.title().is_some(), |this| {
-                        let mpris_entity = self.mpris.clone();
-                        let status_icon = mpris.status().icon();
-                        let label = mpris.display_label();
-
-                        this.child(
+                tile("wk-notif-bell")
+                    .when(!dnd, |s| s.hover(|h| h.bg(pal::yellow())))
+                    .when(dnd, |s| s.bg(pal::ink()).text_color(pal::paper()).hover(|h| h.bg(pal::pink()).text_color(pal::ink())))
+                    .child(if dnd { "\u{f1f6}" } else { "\u{f0f3}" })
+                    .when(unread > 0, |s| {
+                        s.child(
                             div()
+                                .absolute()
+                                .right(px(-8.0))
+                                .px_1()
+                                .min_w(px(18.0))
                                 .flex()
-                                .items_center()
-                                .gap_2()
-                                .bg(rgb(0x1e1e2e))
-                                .px_3()
-                                .py_1()
-                                .rounded_md()
-                                .child(div().text_color(rgb(0xf5c2e7)).child("\u{f00e}"))
-                                .child(
-                                    div()
-                                        .text_color(rgb(0xcdd6f4))
-                                        .max_w(px(MPRIS_LABEL_MAX_WIDTH))
-                                        .truncate()
-                                        .child(label),
-                                )
-                                .child(
-                                    div()
-                                        .id("wk-mpris-toggle")
-                                        .cursor_pointer()
-                                        .hover(|s| s.text_color(rgb(0x89b4fa)))
-                                        .child(status_icon)
-                                        .on_click(move |_, _window, cx| {
-                                            mpris_entity.read(cx).play_pause();
-                                        }),
+                                .justify_center()
+                                .bg(pal::pink())
+                                .border_2()
+                                .border_color(pal::ink())
+                                .text_size(px(10.0))
+                                .font_weight(gpui::FontWeight::BOLD)
+                                .text_color(pal::ink())
+                                .child(format!("{unread}"))
+                                // The badge bobs: something is waiting.
+                                .with_animation(
+                                    "bell-badge",
+                                    Animation::new(Duration::from_millis(900))
+                                        .repeat()
+                                        .with_easing(pulsating_between(0.0, 1.0)),
+                                    |el, d| el.top(px(-9.0 - 4.0 * d)),
                                 ),
                         )
                     })
-                    // Tray icons: left-click activates, right-click opens the menu.
-                    .children(tray.items().into_iter().map(|item| {
-                        let activate_id = item.id.clone();
-                        let menu_id = item.id.clone();
-                        let tray_entity = self.tray.clone();
-                        let tray_entity2 = self.tray.clone();
-                        let icon = item.icon.clone();
-                        let title = item.title.clone();
-
-                        div()
-                            .id(format!("tray-{}", item.id))
-                            .px_2()
-                            .py_1()
-                            .rounded_sm()
-                            .cursor_pointer()
-                            .hover(|h| h.bg(rgb(0x313244)))
-                            .when(icon.is_some(), |this| {
-                                this.child(
-                                    gpui::img(icon.clone().unwrap())
-                                        .w(px(20.0))
-                                        .h(px(20.0)),
-                                )
-                            })
-                            .when(icon.is_none(), |this| {
-                                this.child(
-                                    div()
-                                        .text_color(rgb(0xf38ba8))
-                                        .child(title.chars().next().map(|c| c.to_string()).unwrap_or_else(|| "?".to_string())),
-                                )
-                            })
-                            .on_click(move |_, _, cx| {
-                                tray_entity.update(cx, |t, _| t.activate(&activate_id));
-                            })
-                            .on_mouse_down(gpui::MouseButton::Right, move |_, _, cx| {
-                                tray_entity2.update(cx, |t, _| t.open_menu(&menu_id));
-                            })
-                    }))
-                    .child({
-                        let audio_entity = self.audio.clone();
-                        let icon = audio.icon();
-                        let volume = audio.volume();
-                        let muted = audio.is_muted();
-
-                        div()
-                            .id("wk-audio-toggle")
-                            .flex()
-                            .items_center()
-                            .gap_1p5()
-                            .bg(rgb(0x1e1e2e))
-                            .hover(|s| s.bg(rgb(0x313244)))
-                            .cursor_pointer()
-                            .px_3()
-                            .py_1()
-                            .rounded_md()
-                            .child(
-                                div()
-                                    .text_color(if muted {
-                                        rgb(0xf38ba8)
-                                    } else {
-                                        rgb(0x89b4fa)
-                                    })
-                                    .child(icon),
-                            )
-                            .child(format!("{}%", volume))
-                            .on_click(move |_, _window, cx| {
-                                audio_entity.update(cx, |a, _| a.toggle_mute());
-                            })
-                    })
-                    .child({
-                        let connected = network.is_connected();
-
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_1p5()
-                            .bg(rgb(0x1e1e2e))
-                            .px_3()
-                            .py_1()
-                            .rounded_md()
-                            .child(
-                                div()
-                                    .text_color(if connected {
-                                        rgb(0x89b4fa)
-                                    } else {
-                                        rgb(0xf38ba8)
-                                    })
-                                    .child(network.icon()),
-                            )
-                            .child(network.display_label())
-                    })
-                    .child({
-                        let percent = battery.percent();
-                        let charging = battery.is_charging();
-
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_1p5()
-                            .bg(rgb(0x1e1e2e))
-                            .px_3()
-                            .py_1()
-                            .rounded_md()
-                            .child(
-                                div()
-                                    .text_color(if charging {
-                                        rgb(0xa6e3a1)
-                                    } else if percent <= 20 {
-                                        rgb(0xf38ba8)
-                                    } else {
-                                        rgb(0xf9e2af)
-                                    })
-                                    .child(battery.state().icon(percent)),
-                            )
-                            .child(format!("{}%", percent))
-                    })
-                    .child(
-                        div()
-                            .id("wk-notif-bell")
-                            .flex()
-                            .items_center()
-                            .gap_1()
-                            .bg(rgb(0x1e1e2e))
-                            .hover(|s| s.bg(rgb(0x313244)))
-                            .cursor_pointer()
-                            .px_2p5()
-                            .py_1()
-                            .rounded_md()
-                            .text_color(if dnd {
-                                rgb(0x6c7086)
-                            } else if unread > 0 {
-                                rgb(0xf9e2af)
-                            } else {
-                                rgb(0x89b4fa)
-                            })
-                            .child(if dnd { "\u{f1f6}" } else { "\u{f0f3}" })
-                            .when(unread > 0, |this| {
-                                this.child(
-                                    div()
-                                        .bg(rgb(0xf38ba8))
-                                        .text_color(rgb(0x11111b))
-                                        .text_size(px(10.0))
-                                        .font_weight(gpui::FontWeight::BOLD)
-                                        .px_1p5()
-                                        .py_0p5()
-                                        .rounded_full()
-                                        .child(format!("{unread}")),
-                                )
-                            })
-                            .on_click(|_, _window, cx| cx.toggle_window("notification_center")),
-                    )
-                    .child(
-                        div()
-                            .id("wk-power-btn")
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .bg(rgb(0x1e1e2e))
-                            .hover(|s| s.bg(rgb(0x313244)))
-                            .cursor_pointer()
-                            .px_2p5()
-                            .py_1()
-                            .rounded_md()
-                            .text_color(rgb(0xf38ba8))
-                            .child("\u{f011}")
-                            .on_click(|_, _window, cx| cx.toggle_window("powermenu")),
-                    ),
+                    .on_click(|_, _w, cx| cx.toggle_window("notification_center")),
             )
+            // Power.
+            .child(
+                tile("wk-power-btn")
+                    .bg(pal::ink())
+                    .text_color(pal::pink())
+                    .hover(|s| s.bg(pal::pink()).text_color(pal::ink()))
+                    .child("\u{f011}")
+                    .on_click(|_, _w, cx| cx.toggle_window("powermenu")),
+            );
+
+        // Room on the right and bottom for the hard shadow.
+        div().w_full().h_full().pb(px(6.0)).child(
+            panel.with_animation(
+                "rail-intro",
+                Animation::new(Duration::from_millis(650)),
+                |el, d| {
+                    let t = out_cubic(d);
+                    el.relative().left(px(-(RAIL_WIDTH + 12.0) * (1.0 - t)))
+                },
+            ),
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Stamp: clock (and the current track)
+// ---------------------------------------------------------------------------
+
+struct Stamp {
+    clock: Entity<Clock>,
+    mpris: Entity<Mpris>,
+}
+
+impl Stamp {
+    fn new(cx: &mut Context<Self>) -> Self {
+        Self { clock: cx.service::<Clock>(), mpris: cx.service::<Mpris>() }
+    }
+}
+
+impl Render for Stamp {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let clock = self.clock.read(cx);
+        let mpris = self.mpris.read(cx);
+        let time = format!("{}", clock.time_hms());
+        let line2 = if mpris.title().is_some() {
+            format!("\u{f00e}  {}", mpris.display_label())
+        } else {
+            format!("{}", clock.date_formatted())
+        };
+
+        let panel = div()
+            .id("wk-clock")
+            .flex()
+            .flex_col()
+            .w_full()
+            .h_full()
+            .bg(pal::yellow())
+            .border_2()
+            .border_color(pal::ink())
+            .shadow(hard(pal::ink(), 5.0))
+            .cursor_pointer()
+            .hover(|s| s.bg(pal::white()))
+            .active(|s| s.shadow(Vec::new()).top(px(5.0)).left(px(5.0)))
+            .on_click(|_, _w, cx| cx.toggle_window("calendar"))
+            // Registration bar: the three plates of the print.
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .h(px(7.0))
+                    .child(div().flex_1().bg(pal::pink()))
+                    .child(div().flex_1().bg(pal::blue()))
+                    .child(div().flex_1().bg(pal::ink())),
+            )
+            .child(div().h(px(2.0)).w_full().bg(pal::ink()))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .px_3()
+                    .pt_1()
+                    .child(misprint(time, 28.0, pal::blue(), pal::pink()))
+                    .child(
+                        div()
+                            .w_full()
+                            .truncate()
+                            .text_size(px(12.0))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(pal::ink())
+                            .child(line2),
+                    ),
+            );
+
+        div().w_full().h_full().pr(px(6.0)).pb(px(6.0)).child(panel.with_animation(
+            "stamp-in",
+            Animation::new(Duration::from_millis(560)),
+            |el, d| {
+                let t = out_back(d);
+                el.relative().top(px(-46.0 * (1.0 - t))).opacity(d.min(1.0))
+            },
+        ))
     }
 }
 
@@ -541,47 +809,21 @@ impl Render for TopBar {
 // Tray context menu
 // ---------------------------------------------------------------------------
 
-/// Max width of the media title in the topbar, in logical pixels.
-///
-/// The bar's right block is laid out after the left one, so an unbounded
-/// title pushes the battery and the wifi pill off the screen. Truncation is
-/// done by the layout (`truncate()`), not by slicing the string: slicing by
-/// byte index splits UTF-8 (accents, emoji) and would panic or corrupt it.
-const MPRIS_LABEL_MAX_WIDTH: f32 = 260.0;
-
-/// Context menu of a tray icon, rendered in the `traymenu` window.
-///
-/// The window has no surface while closed (`start_hidden`); the whole window
-/// is a click-catcher that closes the menu, so no surface lingers.
 struct TrayMenu {
     tray: Entity<Tray>,
 }
 
 impl TrayMenu {
     fn new(cx: &mut Context<Self>) -> Self {
-        Self {
-            tray: cx.service::<Tray>(),
-        }
+        Self { tray: cx.service::<Tray>() }
     }
 }
 
-/// Render menu entries recursively. Submenus appear expanded and indented;
-/// separators become hairlines; disabled rows are dimmed and inert.
-fn render_menu_items(
-    items: &[TrayMenuItem],
-    tray: &Entity<Tray>,
-) -> Vec<gpui::AnyElement> {
+fn render_menu_items(items: &[TrayMenuItem], tray: &Entity<Tray>) -> Vec<gpui::AnyElement> {
     let mut out = Vec::new();
     for item in items {
         if item.separator {
-            out.push(
-                div()
-                    .h(px(1.0))
-                    .my_1()
-                    .bg(rgb(0x313244))
-                    .w_full()
-                    .into_any_element(),
-            );
+            out.push(div().h(px(2.0)).my_1().bg(pal::ink()).w_full().into_any_element());
             continue;
         }
         let id = item.id;
@@ -593,24 +835,21 @@ fn render_menu_items(
             .gap_2()
             .px_3()
             .py_1p5()
-            .rounded_md()
-            .text_color(if item.enabled {
-                rgb(0xcdd6f4)
-            } else {
-                rgb(0x6c7086)
-            });
+            .text_size(px(13.0))
+            .font_weight(gpui::FontWeight::SEMIBOLD)
+            .text_color(if item.enabled { pal::ink() } else { pal::gray() });
         if item.enabled {
             let tray_entity = tray.clone();
             row = row
-                .hover(|h| h.bg(rgb(0x313244)))
+                .hover(|h| h.bg(pal::yellow()))
                 .cursor_pointer()
                 .on_click(move |_, _, cx| {
                     tray_entity.update(cx, |t, _| t.click_menu_item(id));
                 });
         }
         let check = match item.toggle {
-            Some(true) => "✓ ",
-            Some(false) => "○ ",
+            Some(true) => "■ ",
+            Some(false) => "□ ",
             None => "",
         };
         row = row.child(format!("{}{}", check, item.label));
@@ -639,312 +878,240 @@ impl Render for TrayMenu {
             .id("traymenu-backdrop")
             .w_full()
             .h_full()
+            .pr(px(8.0))
+            .pb(px(8.0))
             .on_click(move |_, _, cx| {
                 tray_entity.update(cx, |t, _| t.close_menu());
             })
-            .child(
+            .child(printed(
                 div()
                     .flex()
                     .flex_col()
-                    .bg(rgb(0x1e1e2e))
-                    .border_1()
-                    .border_color(rgba(0x31324488))
-                    .rounded_lg()
                     .p_2()
+                    .bg(pal::white())
+                    .border_2()
+                    .border_color(pal::ink())
                     .child(
                         div()
                             .px_3()
-                            .py_1()
-                            .text_color(rgb(0x89b4fa))
+                            .py_1p5()
+                            .bg(pal::blue())
+                            .text_size(px(13.0))
+                            .font_weight(gpui::FontWeight::BOLD)
+                            .text_color(pal::paper())
                             .child(menu.title.clone()),
                     )
-                    .child(div().h(px(1.0)).my_1().bg(rgb(0x313244)).w_full())
+                    .child(div().h(px(2.0)).my_1().bg(pal::ink()).w_full())
                     .children(render_menu_items(&menu.items, &self.tray)),
-            )
+                "traymenu",
+                pal::pink(),
+            ))
     }
 }
 
 // ---------------------------------------------------------------------------
-// Calendar popup
+// Calendar: a tear-off pad
 // ---------------------------------------------------------------------------
 
 struct Calendar {
     clock: Entity<Clock>,
+    offset: i32,
 }
 
 impl Calendar {
     fn new(cx: &mut Context<Self>) -> Self {
-        Self {
-            clock: cx.service::<Clock>(),
-        }
+        Self { clock: cx.service::<Clock>(), offset: 0 }
     }
+}
+
+fn ring(left: f32) -> Div {
+    div()
+        .absolute()
+        .top(px(-9.0))
+        .left(px(left))
+        .w(px(12.0))
+        .h(px(24.0))
+        .rounded_full()
+        .bg(pal::paper())
+        .border_2()
+        .border_color(pal::ink())
 }
 
 impl Render for Calendar {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let clock = self.clock.read(cx);
-        let dt = clock.datetime();
-        let year = dt.year();
-        let month = dt.month();
+        const NAMES: [&str; 12] = [
+            "January", "February", "March", "April", "May", "June", "July", "August",
+            "September", "October", "November", "December",
+        ];
+        let dt = self.clock.read(cx).datetime();
         let today = dt.day();
-
-        let month_name = match month {
-            time::Month::January => "January",
-            time::Month::February => "February",
-            time::Month::March => "March",
-            time::Month::April => "April",
-            time::Month::May => "May",
-            time::Month::June => "June",
-            time::Month::July => "July",
-            time::Month::August => "August",
-            time::Month::September => "September",
-            time::Month::October => "October",
-            time::Month::November => "November",
-            time::Month::December => "December",
-        };
-
+        let mut year = dt.year();
+        let mut month = dt.month();
+        for _ in 0..self.offset.unsigned_abs() {
+            if self.offset > 0 {
+                if month == time::Month::December {
+                    year += 1;
+                }
+                month = month.next();
+            } else {
+                if month == time::Month::January {
+                    year -= 1;
+                }
+                month = month.previous();
+            }
+        }
+        let is_current = self.offset == 0;
+        let month_name = NAMES[month as usize - 1];
         let days_in_month = time::util::days_in_month(month, year);
-        let first_day_weekday = time::Date::from_calendar_date(year, month, 1)
+        let first_weekday = time::Date::from_calendar_date(year, month, 1)
             .map(|d| d.weekday().number_from_monday())
             .unwrap_or(1);
+        let leading = (first_weekday - 1) as usize;
+        let total_slots = leading + days_in_month as usize;
+        let rows = (total_slots + 6) / 7;
+        let page_key = format!("cal-page-{}", self.offset);
 
-        let weekdays = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+        let grid = div()
+            .flex()
+            .flex_col()
+            .gap_1()
+            .children((0..rows).map(|row| {
+                div().flex().flex_row().justify_between().children((0..7usize).map(move |col| {
+                    let slot = row * 7 + col;
+                    if slot < leading || slot >= total_slots {
+                        return div().w(px(38.0)).h(px(34.0)).into_any_element();
+                    }
+                    let day_num = (slot - leading + 1) as u8;
+                    let is_today = is_current && day_num == today;
+                    div()
+                        .w(px(38.0))
+                        .h(px(34.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .text_size(px(13.0))
+                        .when(is_today, |s| {
+                            s.bg(pal::pink())
+                                .border_2()
+                                .border_color(pal::ink())
+                                .shadow(hard(pal::ink(), 2.0))
+                                .font_weight(gpui::FontWeight::BOLD)
+                                .text_color(pal::ink())
+                        })
+                        .when(!is_today, |s| {
+                            s.border_1()
+                                .border_color(pal::faint())
+                                .text_color(if col >= 5 { pal::blue() } else { pal::ink() })
+                                .hover(|h| h.bg(pal::yellow()))
+                        })
+                        .child(format!("{day_num}"))
+                        .into_any_element()
+                }))
+            }))
+            // Flipping a month drops a fresh page onto the pad.
+            .with_animation(page_key, Animation::new(Duration::from_millis(380)), |el, d| {
+                el.relative().top(px(-26.0 * (1.0 - out_back(d)))).opacity(d.min(1.0))
+            });
+
+        let mini = |id: &'static str, glyph: &'static str| {
+            tile(id).w(px(30.0)).h(px(30.0)).shadow(hard(pal::ink(), 2.0)).child(glyph)
+        };
+
+        let card = div()
+            .id("calendar-card")
+            .relative()
+            .flex()
+            .flex_col()
+            .w_full()
+            .bg(pal::white())
+            .border_2()
+            .border_color(pal::ink())
+            .shadow(hard(pal::ink(), 5.0))
+            .on_click(|_, _, _| {})
+            .child(ring(70.0))
+            .child(ring(CALENDAR_WIDTH - 70.0 - 12.0 - 14.0))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .px_4()
+                    .py_3()
+                    .bg(pal::blue())
+                    .child(
+                        div()
+                            .flex()
+                            .items_end()
+                            .gap_2()
+                            .child(misprint(month_name.to_string(), 24.0, pal::paper(), pal::pink()))
+                            .child(
+                                div()
+                                    .pb_1()
+                                    .text_size(px(13.0))
+                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .text_color(pal::yellow())
+                                    .child(format!("{year}")),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(mini("cal-prev", "‹").on_click(cx.listener(|this, _, _, cx| {
+                                this.offset -= 1;
+                                cx.notify();
+                            })))
+                            .when(!is_current, |s| {
+                                s.child(
+                                    mini("cal-today", "•")
+                                        .bg(pal::yellow())
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.offset = 0;
+                                            cx.notify();
+                                        })),
+                                )
+                            })
+                            .child(mini("cal-next", "›").on_click(cx.listener(|this, _, _, cx| {
+                                this.offset += 1;
+                                cx.notify();
+                            }))),
+                    ),
+            )
+            .child(div().h(px(2.0)).w_full().bg(pal::ink()))
+            .child(
+                div().flex().flex_col().gap_2().p_3().child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .justify_between()
+                        .children(["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].iter().enumerate().map(
+                            |(i, day)| {
+                                div()
+                                    .w(px(38.0))
+                                    .flex()
+                                    .justify_center()
+                                    .text_size(px(11.0))
+                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .text_color(if i >= 5 { pal::blue() } else { pal::ink() })
+                                    .child(*day)
+                            },
+                        )),
+                )
+                .child(grid),
+            );
 
         div()
             .id("calendar-backdrop")
             .w_full()
             .h_full()
+            .pt(px(12.0))
+            .pr(px(8.0))
+            .pb(px(8.0))
             .on_click(|_, _, cx| {
                 cx.hide_window("calendar");
             })
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .bg(rgb(0x1e1e2e))
-                    .border_1()
-                    .border_color(rgba(0x31324488))
-                    .rounded_xl()
-                    .p_3()
-                    .gap_2()
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .px_2()
-                            .py_1()
-                            .child(
-                                div()
-                                    .font_weight(gpui::FontWeight::BOLD)
-                                    .text_color(rgb(0x89b4fa))
-                                    .text_size(px(15.0))
-                                    .child(format!("{month_name} {year}")),
-                            )
-                            .child(
-                                div()
-                                    .id("calendar-close-btn")
-                                    .cursor_pointer()
-                                    .text_color(rgb(0x6c7086))
-                                    .hover(|s| s.text_color(rgb(0xf38ba8)))
-                                    .child("✕")
-                                    .on_click(|_, _, cx| {
-                                        cx.hide_window("calendar");
-                                    }),
-                            ),
-                    )
-                    .child(div().h(px(1.0)).bg(rgb(0x313244)).w_full())
-                    .child(
-                        div()
-                            .flex()
-                            .flex_row()
-                            .justify_between()
-                            .px_1()
-                            .children(weekdays.iter().map(|day| {
-                                div()
-                                    .w(px(34.0))
-                                    .flex()
-                                    .justify_center()
-                                    .text_size(px(12.0))
-                                    .text_color(rgb(0xa6adc8))
-                                    .font_weight(gpui::FontWeight::BOLD)
-                                    .child(*day)
-                            })),
-                    )
-                    .child({
-                        let leading_blanks = (first_day_weekday - 1) as usize;
-                        let total_slots = leading_blanks + days_in_month as usize;
-                        let rows = (total_slots + 6) / 7;
-
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_1()
-                            .children((0..rows).map(|row| {
-                                div()
-                                    .flex()
-                                    .flex_row()
-                                    .justify_between()
-                                    .px_1()
-                                    .children((0..7).map(|col| {
-                                        let slot_idx = row * 7 + col;
-                                        if slot_idx < leading_blanks || slot_idx >= total_slots {
-                                            div().w(px(34.0)).h(px(28.0))
-                                        } else {
-                                            let day_num = (slot_idx - leading_blanks + 1) as u8;
-                                            let is_today = day_num == today;
-                                            div()
-                                                .w(px(34.0))
-                                                .h(px(28.0))
-                                                .flex()
-                                                .items_center()
-                                                .justify_center()
-                                                .rounded_md()
-                                                .text_size(px(13.0))
-                                                .when(is_today, |s| {
-                                                    s.bg(rgb(0x89b4fa))
-                                                        .text_color(rgb(0x11111b))
-                                                        .font_weight(gpui::FontWeight::BOLD)
-                                                })
-                                                .when(!is_today, |s| {
-                                                    s.text_color(rgb(0xcdd6f4))
-                                                        .hover(|h| h.bg(rgb(0x313244)))
-                                                })
-                                                .child(format!("{day_num}"))
-                                        }
-                                    }))
-                            }))
-                    }),
-            )
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Dock
-// ---------------------------------------------------------------------------
-
-struct DockItem {
-    icon: &'static str,
-    command: &'static str,
-    /// Lowercase app_id/class fragment used to detect a running indicator.
-    app_class: &'static str,
-}
-
-struct Dock {
-    items: Vec<DockItem>,
-    compositor: Entity<Compositor>,
-}
-
-impl Dock {
-    fn new(cx: &mut Context<Self>) -> Self {
-        let items = vec![
-            DockItem { icon: "\u{f1209}", command: "ghostty", app_class: "ghostty" },
-            DockItem { icon: "\u{f0219}", command: "firefox", app_class: "firefox" },
-            DockItem { icon: "\u{f129e}", command: "zed", app_class: "dev.zed.zed" },
-            DockItem { icon: "\u{f024b}", command: "nautilus", app_class: "org.gnome.nautilus" },
-            DockItem { icon: "\u{f0243}", command: "spotify", app_class: "spotify" },
-            DockItem { icon: "\u{f0266}", command: "discord", app_class: "discord" },
-        ];
-
-        Self {
-            items,
-            compositor: cx.service::<Compositor>(),
-        }
-    }
-}
-
-impl Render for Dock {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let active_class = self
-            .compositor
-            .read(cx)
-            .active_window()
-            .map(|w| w.class.to_lowercase())
-            .unwrap_or_default();
-
-        div()
-            .flex()
-            .items_center()
-            .justify_center()
-            .w_full()
-            .h_full()
-            .child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .gap_2()
-                    .px_3()
-                    .py_2()
-                    .bg(rgba(0x181825ee))
-                    .border_1()
-                    .border_color(rgba(0x45475a88))
-                    .rounded_2xl()
-                    .child(
-                        div()
-                            .id("dock-launcher")
-                            .flex()
-                            .flex_col()
-                            .items_center()
-                            .justify_center()
-                            .w(px(44.0))
-                            .h(px(44.0))
-                            .rounded_xl()
-                            .cursor_pointer()
-                            .bg(rgb(0x1e1e2e))
-                            .hover(|s| s.bg(rgb(0x313244)))
-                            .text_size(px(20.0))
-                            .text_color(rgb(0x89b4fa))
-                            .child("\u{f00a}")
-                            .on_click(|_, _window, cx| cx.toggle_window("launcher")),
-                    )
-                    .child(
-                        div()
-                            .w(px(1.0))
-                            .h(px(24.0))
-                            .bg(rgb(0x313244))
-                            .mx_1(),
-                    )
-                    .children(self.items.iter().map(|item| {
-                        let running = !active_class.is_empty()
-                            && active_class.contains(&item.app_class);
-                        let command = item.command;
-
-                        div()
-                            .id(format!("dock-{}", command))
-                            .flex()
-                            .flex_col()
-                            .items_center()
-                            .justify_center()
-                            .w(px(44.0))
-                            .h(px(44.0))
-                            .rounded_xl()
-                            .cursor_pointer()
-                            .bg(rgb(0x1e1e2e))
-                            .hover(|s| s.bg(rgb(0x313244)))
-                            .child(
-                                div()
-                                    .text_size(px(22.0))
-                                    .text_color(rgb(0xcdd6f4))
-                                    .child(item.icon),
-                            )
-                            // Running indicator dot.
-                            .child(
-                                div()
-                                    .w(px(4.0))
-                                    .h(px(4.0))
-                                    .rounded_full()
-                                    .bg(if running {
-                                        rgb(0x89b4fa)
-                                    } else {
-                                        rgba(0x00000000)
-                                    }),
-                            )
-                            .on_click(move |_, _window, _cx| {
-                                let _ = std::process::Command::new(command).spawn();
-                            })
-                    })),
-            )
+            .child(card)
     }
 }
 
@@ -961,21 +1128,19 @@ struct VolumeOsd {
     last_muted: bool,
     last_brightness: u8,
     generation: u64,
+    session: u64,
 }
 
-/// What the OSD currently displays. Volume and brightness share one surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OsdKind {
     Volume,
     Brightness,
 }
 
-/// Reveal the OSD for `kind` and reset its 2-second auto-hide timer.
-///
-/// Each adjustment increments `generation`. Any previous timer that wakes
-/// up sees an outdated generation and does nothing; only the latest timer
-/// (2s after the *last* user adjustment) will dismiss the OSD.
 fn reveal_osd(osd: &mut VolumeOsd, cx: &mut Context<VolumeOsd>, kind: OsdKind) {
+    if !osd.visible {
+        osd.session = osd.session.wrapping_add(1);
+    }
     osd.shown = kind;
     osd.visible = true;
     osd.generation = osd.generation.wrapping_add(1);
@@ -1011,10 +1176,9 @@ impl VolumeOsd {
             last_muted,
             last_brightness,
             generation: 0,
+            session: 0,
         };
 
-        // React to volume AND mute changes: mute alone used to stay silent
-        // because only the level was compared.
         let watched = osd.audio.clone();
         cx.observe(&watched, |this, audio, cx| {
             let volume = audio.read(cx).volume();
@@ -1028,7 +1192,6 @@ impl VolumeOsd {
         })
         .detach();
 
-        // Brightness shares the same surface, shown with its own label.
         let watched_brightness = osd.brightness.clone();
         cx.observe(&watched_brightness, |this, brightness, cx| {
             let level = brightness.read(cx).percent();
@@ -1044,14 +1207,41 @@ impl VolumeOsd {
     }
 }
 
+const OSD_BLOCKS: usize = 16;
+
+/// Segmented level bar. Each newly filled block pops up like a type slug.
+fn segments(pct: usize, fill: Rgba) -> Div {
+    let filled = (pct * OSD_BLOCKS + 99) / 100;
+    div()
+        .flex()
+        .flex_row()
+        .items_end()
+        .gap(px(2.0))
+        .h(px(18.0))
+        .children((0..OSD_BLOCKS).map(move |i| {
+            let block = div().w(px(10.0)).border_1().border_color(pal::ink());
+            if i < filled {
+                block
+                    .bg(fill)
+                    .with_animation(
+                        format!("seg-{i}"),
+                        Animation::new(Duration::from_millis(300)),
+                        |el, d| el.h(px((18.0 * out_back(d)).max(0.0))),
+                    )
+                    .into_any_element()
+            } else {
+                block.h(px(18.0)).bg(pal::white()).into_any_element()
+            }
+        }))
+}
+
 impl Render for VolumeOsd {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if !self.visible {
-            // Nothing to show: stay transparent instead of burning frames.
             return div().w_full().h_full();
         }
 
-        let (icon, label, pct, accent) = match self.shown {
+        let (icon, label, pct, fill) = match self.shown {
             OsdKind::Volume => {
                 let audio = self.audio.read(cx);
                 let muted = audio.is_muted();
@@ -1059,93 +1249,77 @@ impl Render for VolumeOsd {
                     audio.icon(),
                     if muted { "Muted" } else { "Volume" },
                     audio.volume(),
-                    if muted { rgb(0xf38ba8) } else { rgb(0x89b4fa) },
+                    if muted { pal::pink() } else { pal::blue() },
                 )
             }
             OsdKind::Brightness => {
-                let brightness = self.brightness.read(cx);
-                (
-                    brightness.icon(),
-                    "Brightness",
-                    brightness.percent(),
-                    rgb(0x89b4fa),
-                )
+                let b = self.brightness.read(cx);
+                (b.icon(), "Brightness", b.percent(), pal::yellow())
             }
         };
 
-        div()
-            .flex()
-            .items_center()
-            .justify_center()
-            .w_full()
-            .h_full()
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .justify_center()
-                    .gap_2()
-                    .w(px(OSD_WIDTH - 20.0))
-                    .p_3()
-                    .bg(rgba(0x181825f2))
-                    .border_1()
-                    .border_color(rgba(0x45475a88))
-                    .rounded_2xl()
-                    .shadow_xl()
-                    .child(
-                        div()
-                            .flex()
-                            .flex_row()
-                            .items_center()
-                            .justify_between()
-                            .w_full()
-                            .px_1()
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .text_color(accent)
-                                    .text_size(px(18.0))
-                                    .child(icon)
-                                    .child(
-                                        div()
-                                            .text_size(px(14.0))
-                                            .font_weight(gpui::FontWeight::BOLD)
-                                            .text_color(rgb(0xcdd6f4))
-                                            .child(label),
-                                    ),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(14.0))
-                                    .text_color(rgb(0xa6adc8))
-                                    .child(format!("{}%", pct)),
-                            ),
-                    )
-                    // Progress bar.
-                    .child(
-                        div()
-                            .w_full()
-                            .h(px(8.0))
-                            .bg(rgb(0x313244))
-                            .rounded_full()
-                            .overflow_hidden()
-                            .child(
-                                div()
-                                    .h_full()
-                                    .w(gpui::DefiniteLength::Fraction(pct as f32 / 100.0))
-                                    .bg(accent)
-                                    .rounded_full(),
-                            ),
-                    ),
-            )
+        div().flex().items_start().justify_center().w_full().h_full().pt(px(4.0)).child(
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_3()
+                .w(px(OSD_WIDTH - 28.0))
+                .p_4()
+                .bg(pal::white())
+                .border_2()
+                .border_color(pal::ink())
+                .shadow(hard(pal::ink(), 6.0))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .w(px(46.0))
+                        .h(px(46.0))
+                        .bg(fill)
+                        .border_2()
+                        .border_color(pal::ink())
+                        .text_size(px(22.0))
+                        .text_color(if fill == pal::blue() { pal::paper() } else { pal::ink() })
+                        .child(icon),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .gap_1p5()
+                        .child(
+                            div()
+                                .text_size(px(14.0))
+                                .font_weight(gpui::FontWeight::BOLD)
+                                .text_color(pal::ink())
+                                .child(label),
+                        )
+                        .child(segments(pct as usize, fill)),
+                )
+                .child(
+                    div()
+                        .w(px(64.0))
+                        .flex()
+                        .justify_end()
+                        .child(misprint(format!("{pct}"), 34.0, pal::blue(), pal::pink())),
+                )
+                .with_animation(
+                    format!("osd-in-{}", self.session),
+                    Animation::new(Duration::from_millis(340)),
+                    |el, d| {
+                        let t = out_back(d);
+                        el.relative().top(px(26.0 * (1.0 - t))).opacity(d.min(1.0))
+                    },
+                ),
+        )
     }
 }
 
 // ---------------------------------------------------------------------------
-// Application Launcher (Rofi / Spotlight style)
+// Launcher: a printed sheet on a paper veil
 // ---------------------------------------------------------------------------
 
 struct AppLauncher {
@@ -1188,11 +1362,8 @@ impl AppLauncher {
             }
             "up" => {
                 if count > 0 {
-                    if self.selected_index == 0 {
-                        self.selected_index = count - 1;
-                    } else {
-                        self.selected_index -= 1;
-                    }
+                    self.selected_index =
+                        if self.selected_index == 0 { count - 1 } else { self.selected_index - 1 };
                     cx.notify();
                 }
             }
@@ -1238,17 +1409,166 @@ impl Render for AppLauncher {
         let apps_service = self.apps.clone();
 
         let max_visible = 6;
-        let start_idx = if selected >= max_visible {
-            selected - max_visible + 1
-        } else {
-            0
-        };
-        let visible_items: Vec<_> = matches
-            .iter()
-            .enumerate()
-            .skip(start_idx)
-            .take(max_visible)
-            .collect();
+        let start_idx = if selected >= max_visible { selected - max_visible + 1 } else { 0 };
+        let visible_items: Vec<_> =
+            matches.iter().enumerate().skip(start_idx).take(max_visible).collect();
+
+        let card = div()
+            .id("launcher-modal")
+            .w(px(640.0))
+            .flex()
+            .flex_col()
+            .gap_3()
+            .p_4()
+            .bg(pal::paper())
+            .border_2()
+            .border_color(pal::ink())
+            .on_click(|_, _, _| {})
+            .child(
+                find_field("Find", pal::yellow(), &self.query, "Type an app name").child(
+                    div()
+                        .text_size(px(12.0))
+                        .font_weight(gpui::FontWeight::BOLD)
+                        .text_color(pal::blue())
+                        .child(format!("{total}")),
+                ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1p5()
+                    .when(total == 0, |s| {
+                        s.py_8()
+                            .items_center()
+                            .justify_center()
+                            .text_size(px(14.0))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(pal::ink())
+                            .child("No app by that name. Try fewer letters.")
+                    })
+                    .children(visible_items.into_iter().map(|(idx, app)| {
+                        let is_selected = idx == selected;
+                        let app_item = app.clone();
+                        let apps_ref = apps_service.clone();
+                        let app_key = format!("launcher-sel-{}", app.id);
+
+                        let icon_el: AnyElement = if let Some(img) = &app.icon {
+                            div()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .w(px(40.0))
+                                .h(px(40.0))
+                                .bg(pal::white())
+                                .border_2()
+                                .border_color(pal::ink())
+                                .child(gpui::img(img.clone()).w(px(28.0)).h(px(28.0)))
+                                .into_any_element()
+                        } else {
+                            let letter = app
+                                .name
+                                .chars()
+                                .next()
+                                .unwrap_or('?')
+                                .to_uppercase()
+                                .to_string();
+                            div()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .w(px(40.0))
+                                .h(px(40.0))
+                                .bg(pal::pink())
+                                .border_2()
+                                .border_color(pal::ink())
+                                .text_size(px(18.0))
+                                .font_weight(gpui::FontWeight::BOLD)
+                                .text_color(pal::ink())
+                                .child(letter)
+                                .into_any_element()
+                        };
+
+                        let comment = if app.comment.is_empty() {
+                            app.exec.clone()
+                        } else {
+                            app.comment.clone()
+                        };
+
+                        let row = div()
+                            .id(format!("launcher-item-{}", app.id))
+                            .flex()
+                            .items_center()
+                            .gap_3()
+                            .px_3()
+                            .py_2()
+                            .border_2()
+                            .cursor_pointer()
+                            .when(is_selected, |s| {
+                                s.bg(pal::yellow())
+                                    .border_color(pal::ink())
+                                    .shadow(hard(pal::ink(), 3.0))
+                            })
+                            .when(!is_selected, |s| {
+                                s.border_color(pal::clear()).hover(|h| h.bg(pal::tint()))
+                            })
+                            .child(
+                                div()
+                                    .w(px(12.0))
+                                    .text_size(px(14.0))
+                                    .text_color(pal::blue())
+                                    .child(if is_selected { "\u{25B6}" } else { "" }),
+                            )
+                            .child(icon_el)
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(
+                                        div()
+                                            .text_size(px(15.0))
+                                            .font_weight(gpui::FontWeight::BOLD)
+                                            .text_color(pal::ink())
+                                            .child(app.name.clone()),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(11.0))
+                                            .text_color(pal::ink())
+                                            .opacity(0.65)
+                                            .truncate()
+                                            .child(comment),
+                                    ),
+                            )
+                            .on_click(move |_, _, cx| {
+                                apps_ref.read(cx).launch(&app_item);
+                                cx.hide_window("launcher");
+                            });
+
+                        // The selected row snaps in from the left.
+                        if is_selected {
+                            row.with_animation(
+                                app_key,
+                                Animation::new(Duration::from_millis(200)),
+                                |el, d| el.relative().left(px(-12.0 * (1.0 - out_cubic(d)))),
+                            )
+                            .into_any_element()
+                        } else {
+                            row.into_any_element()
+                        }
+                    })),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_4()
+                    .child(key_chip("↑↓", "move"))
+                    .child(key_chip("Enter", "open"))
+                    .child(key_chip("Esc", "close")),
+            );
 
         div()
             .id("launcher-backdrop")
@@ -1256,197 +1576,55 @@ impl Render for AppLauncher {
             .h_full()
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::on_key))
-            .bg(rgba(0x11111b88))
+            .bg(pal::veil())
             .flex()
             .flex_col()
             .items_center()
             .justify_start()
-            .pt(px(140.0))
+            .pt(px(120.0))
             .on_click(|_, _, cx| {
                 cx.hide_window("launcher");
             })
-            .child(
-                div()
-                    .id("launcher-modal")
-                    .w(px(580.0))
-                    .bg(rgb(0x1e1e2e))
-                    .border_1()
-                    .border_color(rgba(0x45475a88))
-                    .rounded_2xl()
-                    .shadow_2xl()
-                    .p_4()
-                    .gap_3()
-                    .flex()
-                    .flex_col()
-                    .on_click(|_, _, _| {})
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_3()
-                            .bg(rgb(0x181825))
-                            .border_1()
-                            .border_color(rgba(0x31324488))
-                            .rounded_xl()
-                            .px_3()
-                            .py_2p5()
-                            .child(
-                                div()
-                                    .text_size(px(18.0))
-                                    .text_color(rgb(0x89b4fa))
-                                    .child("\u{f002}"),
-                            )
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .flex_1()
-                                    .text_size(px(15.0))
-                                    .when(self.query.is_empty(), |s| {
-                                        s.text_color(rgb(0x6c7086))
-                                            .child("Search applications...")
-                                    })
-                                    .when(!self.query.is_empty(), |s| {
-                                        s.text_color(rgb(0xcdd6f4))
-                                            .child(self.query.clone())
-                                            .child(
-                                                div()
-                                                    .text_color(rgb(0x89b4fa))
-                                                    .font_weight(gpui::FontWeight::BOLD)
-                                                    .child("|"),
-                                            )
-                                    }),
-                            )
-                            .child(
-                                div()
-                                    .px_2()
-                                    .py_0p5()
-                                    .rounded_md()
-                                    .bg(rgb(0x313244))
-                                    .text_size(px(11.0))
-                                    .text_color(rgb(0xa6adc8))
-                                    .child(format!("{total} apps")),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_1p5()
-                            .when(total == 0, |s| {
-                                s.py_6()
-                                    .flex()
-                                    .flex_col()
-                                    .items_center()
-                                    .justify_center()
-                                    .text_color(rgb(0x6c7086))
-                                    .child("No matching applications")
-                            })
-                            .children(visible_items.into_iter().map(|(idx, app)| {
-                                let is_selected = idx == selected;
-                                let app_item = app.clone();
-                                let apps_ref = apps_service.clone();
-
-                                let icon_el: AnyElement = if let Some(img) = &app.icon {
-                                    gpui::img(img.clone())
-                                        .w(px(32.0))
-                                        .h(px(32.0))
-                                        .into_any_element()
-                                } else {
-                                    let letter = app
-                                        .name
-                                        .chars()
-                                        .next()
-                                        .unwrap_or('?')
-                                        .to_uppercase()
-                                        .to_string();
-                                    div()
-                                        .w(px(32.0))
-                                        .h(px(32.0))
-                                        .rounded_lg()
-                                        .bg(rgb(0x313244))
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .text_size(px(16.0))
-                                        .font_weight(gpui::FontWeight::BOLD)
-                                        .text_color(rgb(0x89b4fa))
-                                        .child(letter)
-                                        .into_any_element()
-                                };
-
-                                let comment = if app.comment.is_empty() {
-                                    app.exec.clone()
-                                } else {
-                                    app.comment.clone()
-                                };
-
-                                div()
-                                    .id(format!("launcher-item-{}", app.id))
-                                    .flex()
-                                    .items_center()
-                                    .gap_3()
-                                    .p_2()
-                                    .rounded_xl()
-                                    .cursor_pointer()
-                                    .when(is_selected, |s| {
-                                        s.bg(rgb(0x313244))
-                                            .border_1()
-                                            .border_color(rgba(0x89b4fa66))
-                                    })
-                                    .when(!is_selected, |s| {
-                                        s.hover(|h| h.bg(rgb(0x181825)))
-                                    })
-                                    .child(icon_el)
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .flex_col()
-                                            .flex_1()
-                                            .child(
-                                                div()
-                                                    .text_size(px(14.0))
-                                                    .font_weight(gpui::FontWeight::BOLD)
-                                                    .text_color(if is_selected {
-                                                        rgb(0x89b4fa)
-                                                    } else {
-                                                        rgb(0xcdd6f4)
-                                                    })
-                                                    .child(app.name.clone()),
-                                            )
-                                            .child(
-                                                div()
-                                                    .text_size(px(11.0))
-                                                    .text_color(rgb(0x6c7086))
-                                                    .truncate()
-                                                    .child(comment),
-                                            ),
-                                    )
-                                    .when(is_selected, |s| {
-                                        s.child(
-                                            div()
-                                                .px_2()
-                                                .py_0p5()
-                                                .rounded_sm()
-                                                .bg(rgb(0x1e1e2e))
-                                                .text_size(px(10.0))
-                                                .text_color(rgb(0x89b4fa))
-                                                .child("↵ Enter"),
-                                        )
-                                    })
-                                    .on_click(move |_, _, cx| {
-                                        apps_ref.read(cx).launch(&app_item);
-                                        cx.hide_window("launcher");
-                                    })
-                            })),
-                    ),
-            )
+            .child(printed(card, "launcher", pal::pink()))
     }
 }
 
 // ---------------------------------------------------------------------------
-// Power Menu (Session actions: Lock, Suspend, Logout, Reboot, Shutdown)
+// Power menu: five slabs that slam down
 // ---------------------------------------------------------------------------
+
+#[derive(Clone, Copy)]
+enum PowerAction {
+    Lock,
+    Suspend,
+    Logout,
+    Reboot,
+    Poweroff,
+}
+
+impl PowerAction {
+    fn run(self) {
+        use std::process::Command;
+        match self {
+            PowerAction::Lock => {
+                let _ = Command::new("loginctl").arg("lock-session").spawn();
+            }
+            PowerAction::Suspend => {
+                let _ = Command::new("systemctl").arg("suspend").spawn();
+            }
+            PowerAction::Logout => {
+                let _ = Command::new("swaymsg").arg("exit").spawn();
+                let _ = Command::new("loginctl").args(["terminate-session", ""]).spawn();
+            }
+            PowerAction::Reboot => {
+                let _ = Command::new("systemctl").arg("reboot").spawn();
+            }
+            PowerAction::Poweroff => {
+                let _ = Command::new("systemctl").arg("poweroff").spawn();
+            }
+        }
+    }
+}
 
 struct PowerMenu {
     focus: FocusHandle,
@@ -1454,48 +1632,96 @@ struct PowerMenu {
 
 impl PowerMenu {
     fn new(cx: &mut Context<Self>) -> Self {
-        Self {
-            focus: cx.focus_handle(),
-        }
-    }
-
-    fn action_lock(&self, cx: &mut Context<Self>) {
-        let _ = std::process::Command::new("loginctl").arg("lock-session").spawn();
-        cx.hide_window("powermenu");
-    }
-
-    fn action_suspend(&self, cx: &mut Context<Self>) {
-        let _ = std::process::Command::new("systemctl").arg("suspend").spawn();
-        cx.hide_window("powermenu");
-    }
-
-    fn action_logout(&self, cx: &mut Context<Self>) {
-        let _ = std::process::Command::new("swaymsg").arg("exit").spawn();
-        let _ = std::process::Command::new("loginctl").args(["terminate-session", ""]).spawn();
-        cx.hide_window("powermenu");
-    }
-
-    fn action_reboot(&self, cx: &mut Context<Self>) {
-        let _ = std::process::Command::new("systemctl").arg("reboot").spawn();
-        cx.hide_window("powermenu");
-    }
-
-    fn action_poweroff(&self, cx: &mut Context<Self>) {
-        let _ = std::process::Command::new("systemctl").arg("poweroff").spawn();
-        cx.hide_window("powermenu");
+        Self { focus: cx.focus_handle() }
     }
 
     fn on_key(&mut self, event: &KeyDownEvent, _: &mut Window, cx: &mut Context<Self>) {
-        match event.keystroke.key.as_str() {
-            "escape" | "q" => cx.hide_window("powermenu"),
-            "l" => self.action_lock(cx),
-            "s" => self.action_suspend(cx),
-            "e" => self.action_logout(cx),
-            "r" => self.action_reboot(cx),
-            "p" => self.action_poweroff(cx),
-            _ => {}
-        }
+        let action = match event.keystroke.key.as_str() {
+            "escape" | "q" => {
+                cx.hide_window("powermenu");
+                return;
+            }
+            "l" => PowerAction::Lock,
+            "s" => PowerAction::Suspend,
+            "e" => PowerAction::Logout,
+            "r" => PowerAction::Reboot,
+            "p" => PowerAction::Poweroff,
+            _ => return,
+        };
+        action.run();
+        cx.hide_window("powermenu");
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn power_tile(
+    i: usize,
+    n: usize,
+    id: &'static str,
+    glyph: &'static str,
+    label: &'static str,
+    key: &'static str,
+    bg: Rgba,
+    fg: Rgba,
+    action: PowerAction,
+) -> impl IntoElement {
+    div()
+        .id(id)
+        .relative()
+        .flex()
+        .flex_col()
+        .items_center()
+        .justify_center()
+        .gap_2()
+        .w(px(128.0))
+        .h(px(128.0))
+        .bg(bg)
+        .border_2()
+        .border_color(pal::ink())
+        .shadow(hard(pal::ink(), 6.0))
+        .text_color(fg)
+        .cursor_pointer()
+        .hover(|s| s.top(px(-3.0)).left(px(-3.0)).shadow(hard(pal::ink(), 9.0)))
+        .active(|s| s.top(px(5.0)).left(px(5.0)).shadow(Vec::new()))
+        .child(div().text_size(px(36.0)).child(glyph))
+        .child(
+            div()
+                .text_size(px(15.0))
+                .font_weight(gpui::FontWeight::BOLD)
+                .child(label),
+        )
+        // Shortcut sticker on the corner.
+        .child(
+            div()
+                .absolute()
+                .top(px(-10.0))
+                .right(px(-10.0))
+                .flex()
+                .items_center()
+                .justify_center()
+                .w(px(24.0))
+                .h(px(24.0))
+                .bg(pal::white())
+                .border_2()
+                .border_color(pal::ink())
+                .text_size(px(11.0))
+                .font_weight(gpui::FontWeight::BOLD)
+                .text_color(pal::ink())
+                .child(key),
+        )
+        .on_click(move |_, _, cx| {
+            action.run();
+            cx.hide_window("powermenu");
+        })
+        // Each slab slams down a beat after the previous one.
+        .with_animation(
+            format!("pw-tile-{id}"),
+            Animation::new(Duration::from_millis(760)),
+            move |el, d| {
+                let t = staggered(d, i, n, 0.12);
+                el.relative().top(px(-80.0 * (1.0 - out_back(t)))).opacity((t * 3.0).min(1.0))
+            },
+        )
 }
 
 impl Render for PowerMenu {
@@ -1503,8 +1729,8 @@ impl Render for PowerMenu {
         if !self.focus.is_focused(window) {
             window.focus(&self.focus, cx);
         }
-
         let user = std::env::var("USER").unwrap_or_else(|_| "User".to_string());
+        let n = 5;
 
         div()
             .id("powermenu-backdrop")
@@ -1512,192 +1738,52 @@ impl Render for PowerMenu {
             .h_full()
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::on_key))
-            .bg(rgba(0x11111bd0))
+            .bg(pal::veil())
             .flex()
+            .flex_col()
             .items_center()
             .justify_center()
+            .gap_10()
             .on_click(|_, _, cx| {
                 cx.hide_window("powermenu");
             })
             .child(
                 div()
-                    .id("powermenu-card")
                     .flex()
                     .flex_col()
                     .items_center()
-                    .gap_6()
-                    .p_8()
-                    .bg(rgb(0x1e1e2e))
-                    .border_1()
-                    .border_color(rgba(0x45475a88))
-                    .rounded_2xl()
-                    .shadow_2xl()
-                    .on_click(|_, _, _| {})
+                    .gap_2()
+                    .child(misprint(
+                        format!("Done for today, {user}?"),
+                        44.0,
+                        pal::blue(),
+                        pal::pink(),
+                    ))
                     .child(
                         div()
-                            .flex()
-                            .flex_col()
-                            .items_center()
-                            .gap_1()
-                            .child(
-                                div()
-                                    .text_size(px(22.0))
-                                    .font_weight(gpui::FontWeight::BOLD)
-                                    .text_color(rgb(0xcdd6f4))
-                                    .child(format!("Goodbye, {user}")),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(13.0))
-                                    .text_color(rgb(0x6c7086))
-                                    .child("Choose an action or press shortcut key"),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_row()
-                            .items_center()
-                            .gap_4()
-                            .child(
-                                div()
-                                    .id("pw-lock")
-                                    .flex()
-                                    .flex_col()
-                                    .items_center()
-                                    .justify_center()
-                                    .gap_2()
-                                    .w(px(88.0))
-                                    .h(px(96.0))
-                                    .rounded_xl()
-                                    .bg(rgb(0x181825))
-                                    .border_1()
-                                    .border_color(rgba(0x31324488))
-                                    .hover(|h| h.bg(rgb(0x313244)).border_color(rgb(0x89b4fa)))
-                                    .cursor_pointer()
-                                    .text_color(rgb(0x89b4fa))
-                                    .child(div().text_size(px(28.0)).child("\u{f023}"))
-                                    .child(div().text_size(px(12.0)).font_weight(gpui::FontWeight::BOLD).child("Lock"))
-                                    .child(div().text_size(px(10.0)).text_color(rgb(0x6c7086)).child("[L]"))
-                                    .on_click(|_, _, cx| {
-                                        let _ = std::process::Command::new("loginctl").arg("lock-session").spawn();
-                                        cx.hide_window("powermenu");
-                                    }),
-                            )
-                            .child(
-                                div()
-                                    .id("pw-suspend")
-                                    .flex()
-                                    .flex_col()
-                                    .items_center()
-                                    .justify_center()
-                                    .gap_2()
-                                    .w(px(88.0))
-                                    .h(px(96.0))
-                                    .rounded_xl()
-                                    .bg(rgb(0x181825))
-                                    .border_1()
-                                    .border_color(rgba(0x31324488))
-                                    .hover(|h| h.bg(rgb(0x313244)).border_color(rgb(0xa6e3a1)))
-                                    .cursor_pointer()
-                                    .text_color(rgb(0xa6e3a1))
-                                    .child(div().text_size(px(28.0)).child("\u{f186}"))
-                                    .child(div().text_size(px(12.0)).font_weight(gpui::FontWeight::BOLD).child("Suspend"))
-                                    .child(div().text_size(px(10.0)).text_color(rgb(0x6c7086)).child("[S]"))
-                                    .on_click(|_, _, cx| {
-                                        let _ = std::process::Command::new("systemctl").arg("suspend").spawn();
-                                        cx.hide_window("powermenu");
-                                    }),
-                            )
-                            .child(
-                                div()
-                                    .id("pw-logout")
-                                    .flex()
-                                    .flex_col()
-                                    .items_center()
-                                    .justify_center()
-                                    .gap_2()
-                                    .w(px(88.0))
-                                    .h(px(96.0))
-                                    .rounded_xl()
-                                    .bg(rgb(0x181825))
-                                    .border_1()
-                                    .border_color(rgba(0x31324488))
-                                    .hover(|h| h.bg(rgb(0x313244)).border_color(rgb(0xf9e2af)))
-                                    .cursor_pointer()
-                                    .text_color(rgb(0xf9e2af))
-                                    .child(div().text_size(px(28.0)).child("\u{f2f5}"))
-                                    .child(div().text_size(px(12.0)).font_weight(gpui::FontWeight::BOLD).child("Logout"))
-                                    .child(div().text_size(px(10.0)).text_color(rgb(0x6c7086)).child("[E]"))
-                                    .on_click(|_, _, cx| {
-                                        let _ = std::process::Command::new("swaymsg").arg("exit").spawn();
-                                        let _ = std::process::Command::new("loginctl").args(["terminate-session", ""]).spawn();
-                                        cx.hide_window("powermenu");
-                                    }),
-                            )
-                            .child(
-                                div()
-                                    .id("pw-reboot")
-                                    .flex()
-                                    .flex_col()
-                                    .items_center()
-                                    .justify_center()
-                                    .gap_2()
-                                    .w(px(88.0))
-                                    .h(px(96.0))
-                                    .rounded_xl()
-                                    .bg(rgb(0x181825))
-                                    .border_1()
-                                    .border_color(rgba(0x31324488))
-                                    .hover(|h| h.bg(rgb(0x313244)).border_color(rgb(0xfab387)))
-                                    .cursor_pointer()
-                                    .text_color(rgb(0xfab387))
-                                    .child(div().text_size(px(28.0)).child("\u{f021}"))
-                                    .child(div().text_size(px(12.0)).font_weight(gpui::FontWeight::BOLD).child("Reboot"))
-                                    .child(div().text_size(px(10.0)).text_color(rgb(0x6c7086)).child("[R]"))
-                                    .on_click(|_, _, cx| {
-                                        let _ = std::process::Command::new("systemctl").arg("reboot").spawn();
-                                        cx.hide_window("powermenu");
-                                    }),
-                            )
-                            .child(
-                                div()
-                                    .id("pw-shutdown")
-                                    .flex()
-                                    .flex_col()
-                                    .items_center()
-                                    .justify_center()
-                                    .gap_2()
-                                    .w(px(88.0))
-                                    .h(px(96.0))
-                                    .rounded_xl()
-                                    .bg(rgb(0x181825))
-                                    .border_1()
-                                    .border_color(rgba(0x31324488))
-                                    .hover(|h| h.bg(rgb(0x313244)).border_color(rgb(0xf38ba8)))
-                                    .cursor_pointer()
-                                    .text_color(rgb(0xf38ba8))
-                                    .child(div().text_size(px(28.0)).child("\u{f011}"))
-                                    .child(div().text_size(px(12.0)).font_weight(gpui::FontWeight::BOLD).child("Shutdown"))
-                                    .child(div().text_size(px(10.0)).text_color(rgb(0x6c7086)).child("[P]"))
-                                    .on_click(|_, _, cx| {
-                                        let _ = std::process::Command::new("systemctl").arg("poweroff").spawn();
-                                        cx.hide_window("powermenu");
-                                    }),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(11.0))
-                            .text_color(rgb(0x585b70))
-                            .child("Press Esc or click backdrop to cancel"),
+                            .text_size(px(14.0))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(pal::ink())
+                            .child("Pick a slab, or press the letter on its corner."),
                     ),
             )
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .gap_6()
+                    .child(power_tile(0, n, "pw-lock", "\u{f023}", "Lock", "L", pal::yellow(), pal::ink(), PowerAction::Lock))
+                    .child(power_tile(1, n, "pw-suspend", "\u{f186}", "Suspend", "S", pal::blue(), pal::paper(), PowerAction::Suspend))
+                    .child(power_tile(2, n, "pw-logout", "\u{f2f5}", "Log out", "E", pal::paper(), pal::ink(), PowerAction::Logout))
+                    .child(power_tile(3, n, "pw-reboot", "\u{f021}", "Restart", "R", pal::pink(), pal::ink(), PowerAction::Reboot))
+                    .child(power_tile(4, n, "pw-shutdown", "\u{f011}", "Shut down", "P", pal::ink(), pal::yellow(), PowerAction::Poweroff)),
+            )
+            .child(key_chip("Esc", "stay logged in"))
     }
 }
 
 // ---------------------------------------------------------------------------
-// Notification Toasts (Ephemeral popups in top-right)
+// Notification toasts
 // ---------------------------------------------------------------------------
 
 struct NotificationToasts {
@@ -1706,57 +1792,49 @@ struct NotificationToasts {
 
 impl NotificationToasts {
     fn new(cx: &mut Context<Self>) -> Self {
-        Self {
-            notifications: cx.service::<Notifications>(),
-        }
+        Self { notifications: cx.service::<Notifications>() }
+    }
+}
+
+/// Plate color for a notification: pink is normal, blue is urgent, gray is quiet.
+fn urgency_plate(u: &Urgency) -> Rgba {
+    match u {
+        Urgency::Critical => pal::blue(),
+        Urgency::Low => pal::gray(),
+        Urgency::Normal => pal::pink(),
     }
 }
 
 impl Render for NotificationToasts {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let notifs = self.notifications.read(cx);
-        let toasts = notifs.toasts().to_vec();
+        let toasts = self.notifications.read(cx).toasts().to_vec();
 
-        div()
-            .flex()
-            .flex_col()
-            .gap_2p5()
-            .w_full()
-            .children(toasts.into_iter().map(|notif| {
+        div().flex().flex_col().gap_4().w_full().pr(px(10.0)).children(toasts.into_iter().map(
+            |notif| {
                 let notif_id = notif.id;
                 let notifs_entity = self.notifications.clone();
                 let notifs_entity_close = self.notifications.clone();
-                let urgency_color = match notif.urgency {
-                    Urgency::Critical => rgb(0xf38ba8),
-                    Urgency::Low => rgb(0x6c7086),
-                    Urgency::Normal => rgb(0x89b4fa),
+                let plate = urgency_plate(&notif.urgency);
+                let app_icon = notif.app_icon.clone();
+                let summary = notif.summary.clone();
+                let body = notif.body.clone();
+                let actions = notif.actions.clone();
+                let app_name = if notif.app_name.is_empty() {
+                    "Notification".to_string()
+                } else {
+                    notif.app_name.clone()
                 };
 
-                div()
-                    .id(format!("toast-{}", notif.id))
+                let card = div()
+                    .id(format!("toast-{notif_id}"))
                     .flex()
-                    .flex_row()
+                    .flex_col()
                     .w_full()
-                    .rounded_xl()
-                    .bg(rgba(0x181825f2))
-                    .border_1()
-                    .border_color(rgba(0x313244cc))
-                    .shadow_lg()
-                    // Urgency accent left bar
-                    .child(
-                        div()
-                            .w(px(4.0))
-                            .rounded_l_xl()
-                            .bg(urgency_color),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .flex_1()
-                            .gap_1p5()
-                            .p_3()
-                            // Header: App icon / name + summary + close button
+                    .gap_1p5()
+                    .p_3()
+                    .bg(pal::white())
+                    .border_2()
+                    .border_color(pal::ink())
                     .child(
                         div()
                             .flex()
@@ -1769,107 +1847,87 @@ impl Render for NotificationToasts {
                                     .flex()
                                     .items_center()
                                     .gap_2()
-                                    .when(notif.app_icon.is_some(), |this| {
+                                    .when(app_icon.is_some(), |this| {
                                         this.child(
-                                            gpui::img(notif.app_icon.clone().unwrap())
+                                            gpui::img(app_icon.clone().unwrap())
                                                 .w(px(18.0))
-                                                .h(px(18.0))
-                                                .rounded_sm(),
-                                        )
-                                    })
-                                    .when(notif.app_icon.is_none(), |this| {
-                                        this.child(
-                                            div()
-                                                .text_color(rgb(0x89b4fa))
-                                                .text_size(px(14.0))
-                                                .child("\u{f0f3}"),
+                                                .h(px(18.0)),
                                         )
                                     })
                                     .child(
                                         div()
+                                            .px_2()
+                                            .bg(pal::yellow())
+                                            .border_2()
+                                            .border_color(pal::ink())
                                             .text_size(px(11.0))
                                             .font_weight(gpui::FontWeight::BOLD)
-                                            .text_color(rgb(0xa6adc8))
+                                            .text_color(pal::ink())
                                             .truncate()
-                                            .child(if notif.app_name.is_empty() {
-                                                "Notification".to_string()
-                                            } else {
-                                                notif.app_name.clone()
-                                            }),
+                                            .child(app_name),
                                     ),
                             )
                             .child(
-                                div()
-                                    .id(format!("toast-close-{}", notif_id))
-                                    .cursor_pointer()
-                                    .px_1p5()
-                                    .py_0p5()
-                                    .rounded_md()
-                                    .text_color(rgb(0x6c7086))
-                                    .hover(|h| h.bg(rgb(0x313244)).text_color(rgb(0xf38ba8)))
+                                tile(format!("toast-close-{notif_id}"))
+                                    .w(px(24.0))
+                                    .h(px(24.0))
+                                    .shadow(hard(pal::ink(), 2.0))
+                                    .text_size(px(12.0))
                                     .child("✕")
                                     .on_click(move |_, _, cx| {
-                                        notifs_entity_close.update(cx, |n, _| n.dismiss_toast(notif_id));
+                                        notifs_entity_close
+                                            .update(cx, |n, _| n.dismiss_toast(notif_id));
                                     }),
                             ),
                     )
-                    // Summary (title)
                     .child(
                         div()
-                            .text_size(px(13.0))
+                            .text_size(px(15.0))
                             .font_weight(gpui::FontWeight::BOLD)
-                            .text_color(rgb(0xcdd6f4))
-                            .child(notif.summary.clone()),
+                            .text_color(pal::ink())
+                            .child(summary),
                     )
-                    // Body (optional)
-                    .when(!notif.body.is_empty(), |this| {
+                    .when(!body.is_empty(), |this| {
                         this.child(
                             div()
                                 .text_size(px(12.0))
-                                .text_color(rgb(0xa6adc8))
-                                .line_height(px(16.0))
-                                .child(notif.body.clone()),
+                                .line_height(px(17.0))
+                                .text_color(pal::ink())
+                                .opacity(0.8)
+                                .child(body),
                         )
                     })
-                    // Action buttons (if any)
-                    .when(!notif.actions.is_empty(), |this| {
-                        this.child(
-                            div()
-                                .flex()
-                                .flex_row()
-                                .gap_2()
-                                .pt_1()
-                                .children(notif.actions.into_iter().map(|action| {
-                                    let notifs_act = notifs_entity.clone();
-                                    let act_key = action.key.clone();
-                                    div()
-                                        .id(format!("toast-act-{}-{}", notif_id, action.key))
-                                        .cursor_pointer()
-                                        .px_2p5()
-                                        .py_1()
-                                        .rounded_md()
-                                        .bg(rgb(0x313244))
-                                        .hover(|h| h.bg(rgb(0x45475a)))
-                                        .text_size(px(11.0))
-                                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                                        .text_color(rgb(0xcdd6f4))
-                                        .child(action.label)
-                                        .on_click(move |_, _, cx| {
-                                            notifs_act.update(cx, |n, _| {
-                                                n.invoke_action(notif_id, &act_key);
-                                                n.dismiss_toast(notif_id);
-                                            });
-                                        })
-                                })),
-                        )
-                    }),
-                    )
-            }))
+                    .when(!actions.is_empty(), |this| {
+                        this.child(div().flex().flex_row().gap_2().pt_1().children(
+                            actions.into_iter().map(|action| {
+                                let notifs_act = notifs_entity.clone();
+                                let act_key = action.key.clone();
+                                tile(format!("toast-act-{}-{}", notif_id, action.key))
+                                    .w_auto()
+                                    .h(px(28.0))
+                                    .px_3()
+                                    .shadow(hard(pal::ink(), 2.0))
+                                    .text_size(px(12.0))
+                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .child(action.label)
+                                    .on_click(move |_, _, cx| {
+                                        notifs_act.update(cx, |n, _| {
+                                            n.invoke_action(notif_id, &act_key);
+                                            n.dismiss_toast(notif_id);
+                                        });
+                                    })
+                            }),
+                        ))
+                    });
+
+                printed(card, &format!("toast-{notif_id}"), plate)
+            },
+        ))
     }
 }
 
 // ---------------------------------------------------------------------------
-// Notification Center (Drawer toggled by topbar bell icon)
+// Notification center
 // ---------------------------------------------------------------------------
 
 struct NotificationCenter {
@@ -1878,9 +1936,7 @@ struct NotificationCenter {
 
 impl NotificationCenter {
     fn new(cx: &mut Context<Self>) -> Self {
-        Self {
-            notifications: cx.service::<Notifications>(),
-        }
+        Self { notifications: cx.service::<Notifications>() }
     }
 }
 
@@ -1889,122 +1945,109 @@ impl Render for NotificationCenter {
         let notifs = self.notifications.read(cx);
         let history = notifs.history().to_vec();
         let dnd = notifs.is_dnd();
-        let notifs_entity = self.notifications.clone();
-        let notifs_entity2 = self.notifications.clone();
+        let notifs_dnd = self.notifications.clone();
+        let notifs_clear = self.notifications.clone();
+        let shown = history.len().min(10);
+        let is_empty = history.is_empty();
+        let count = history.len();
 
-        div()
+        let card = div()
             .flex()
             .flex_col()
             .w_full()
             .h_full()
-            .bg(rgba(0x181825f8))
-            .border_1()
-            .border_color(rgba(0x313244aa))
-            .rounded_2xl()
-            .p_4()
-            .gap_3()
-            .shadow_xl()
-            // Header: Title + DND button + Clear All button + Close button
+            .bg(pal::paper())
+            .border_2()
+            .border_color(pal::ink())
+            .shadow(hard(pal::ink(), 6.0))
+            // Ledger header.
             .child(
                 div()
                     .flex()
                     .flex_row()
                     .items_center()
                     .justify_between()
-                    .pb_2()
-                    .border_color(rgba(0x31324488))
+                    .px_4()
+                    .py_3()
+                    .bg(pal::ink())
                     .child(
                         div()
                             .flex()
-                            .items_center()
+                            .items_baseline()
                             .gap_2()
                             .child(
                                 div()
-                                    .text_size(px(15.0))
+                                    .text_size(px(17.0))
                                     .font_weight(gpui::FontWeight::BOLD)
-                                    .text_color(rgb(0xcdd6f4))
+                                    .text_color(pal::paper())
                                     .child("Notifications"),
                             )
                             .child(
                                 div()
-                                    .text_size(px(12.0))
-                                    .text_color(rgb(0x6c7086))
-                                    .child(format!("({})", history.len())),
+                                    .text_size(px(13.0))
+                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .text_color(pal::yellow())
+                                    .child(format!("{count}")),
                             ),
                     )
                     .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            // DND Toggle
-                            .child(
-                                div()
-                                    .id("nc-toggle-dnd")
-                                    .flex()
-                                    .items_center()
-                                    .gap_1p5()
-                                    .px_2p5()
-                                    .py_1()
-                                    .rounded_md()
-                                    .cursor_pointer()
-                                    .when(dnd, |s| s.bg(rgb(0xf38ba8)).text_color(rgb(0x11111b)))
-                                    .when(!dnd, |s| {
-                                        s.bg(rgb(0x313244))
-                                            .text_color(rgb(0xa6adc8))
-                                            .hover(|h| h.bg(rgb(0x45475a)))
-                                    })
-                                    .text_size(px(11.0))
-                                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                                    .child(if dnd { "\u{f1f6} DND On" } else { "\u{f0f3} DND Off" })
-                                    .on_click(move |_, _, cx| {
-                                        notifs_entity.update(cx, |n, _| n.toggle_dnd());
-                                    }),
-                            )
-                            // Clear All button
-                            .when(!history.is_empty(), |this| {
-                                this.child(
-                                    div()
-                                        .id("nc-clear-all")
-                                        .px_2()
-                                        .py_1()
-                                        .rounded_md()
-                                        .bg(rgb(0x313244))
-                                        .hover(|h| h.bg(rgb(0x45475a)).text_color(rgb(0xf38ba8)))
-                                        .cursor_pointer()
-                                        .text_size(px(11.0))
-                                        .text_color(rgb(0xa6adc8))
-                                        .child("Clear")
-                                        .on_click(move |_, _, cx| {
-                                            notifs_entity2.update(cx, |n, _| n.clear_history());
-                                        }),
-                                )
-                            })
-                            // Close drawer button
-                            .child(
-                                div()
-                                    .id("nc-close")
-                                    .px_2()
-                                    .py_1()
-                                    .rounded_md()
-                                    .hover(|h| h.bg(rgb(0x313244)))
-                                    .cursor_pointer()
-                                    .text_size(px(13.0))
-                                    .text_color(rgb(0x6c7086))
-                                    .child("✕")
-                                    .on_click(|_, _, cx| cx.hide_window("notification_center")),
-                            ),
+                        tile("nc-close")
+                            .w(px(26.0))
+                            .h(px(26.0))
+                            .shadow(hard(pal::pink(), 2.0))
+                            .text_size(px(12.0))
+                            .child("✕")
+                            .on_click(|_, _, cx| cx.hide_window("notification_center")),
                     ),
             )
-            // Body: List or Empty placeholder
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_2()
+                    .px_3()
+                    .py_2()
+                    .child(
+                        tile("nc-toggle-dnd")
+                            .w_auto()
+                            .h(px(28.0))
+                            .px_3()
+                            .shadow(hard(pal::ink(), 2.0))
+                            .text_size(px(12.0))
+                            .font_weight(gpui::FontWeight::BOLD)
+                            .when(dnd, |s| s.bg(pal::pink()))
+                            .child(if dnd { "\u{f1f6}  Quiet is on" } else { "\u{f0f3}  Quiet is off" })
+                            .on_click(move |_, _, cx| {
+                                notifs_dnd.update(cx, |n, _| n.toggle_dnd());
+                            }),
+                    )
+                    .when(!is_empty, |this| {
+                        this.child(
+                            tile("nc-clear-all")
+                                .w_auto()
+                                .h(px(28.0))
+                                .px_3()
+                                .shadow(hard(pal::ink(), 2.0))
+                                .text_size(px(12.0))
+                                .font_weight(gpui::FontWeight::BOLD)
+                                .child("Clear all")
+                                .on_click(move |_, _, cx| {
+                                    notifs_clear.update(cx, |n, _| n.clear_history());
+                                }),
+                        )
+                    }),
+            )
+            .child(div().h(px(2.0)).w_full().bg(pal::ink()))
             .child(
                 div()
                     .flex()
                     .flex_col()
                     .flex_1()
                     .gap_2()
+                    .p_3()
                     .overflow_hidden()
-                    .when(history.is_empty(), |this| {
+                    .when(is_empty, |this| {
                         this.child(
                             div()
                                 .flex()
@@ -2013,124 +2056,124 @@ impl Render for NotificationCenter {
                                 .justify_center()
                                 .h_full()
                                 .gap_2()
-                                .py_12()
-                                .child(
-                                    div()
-                                        .text_size(px(32.0))
-                                        .text_color(rgb(0x45475a))
-                                        .child("\u{f0f3}"),
-                                )
+                                .child(misprint("Nothing new".to_string(), 24.0, pal::blue(), pal::pink()))
                                 .child(
                                     div()
                                         .text_size(px(13.0))
-                                        .text_color(rgb(0x6c7086))
-                                        .child("No notifications"),
+                                        .text_color(pal::ink())
+                                        .child("New notifications will land here."),
                                 ),
                         )
                     })
-                    .children(history.into_iter().take(10).map(|notif| {
+                    .children(history.into_iter().take(10).enumerate().map(|(i, notif)| {
                         let notif_id = notif.id;
                         let notifs_remove = self.notifications.clone();
-                        let urgency_color = match notif.urgency {
-                            Urgency::Critical => rgb(0xf38ba8),
-                            Urgency::Low => rgb(0x6c7086),
-                            Urgency::Normal => rgb(0x89b4fa),
+                        let tab = urgency_plate(&notif.urgency);
+                        let app_icon = notif.app_icon.clone();
+                        let summary = notif.summary.clone();
+                        let body = notif.body.clone();
+                        let app_name = if notif.app_name.is_empty() {
+                            "System".to_string()
+                        } else {
+                            notif.app_name.clone()
                         };
 
                         div()
-                            .id(format!("hist-{}", notif.id))
+                            .id(format!("hist-{notif_id}"))
                             .flex()
                             .flex_row()
-                            .rounded_xl()
-                            .bg(rgb(0x1e1e2e))
-                            .border_1()
-                            .border_color(rgba(0x31324466))
-                            .hover(|h| h.bg(rgb(0x242438)))
-                            .child(
-                                div()
-                                    .w(px(3.0))
-                                    .rounded_l_xl()
-                                    .bg(urgency_color),
-                            )
+                            .bg(pal::white())
+                            .border_2()
+                            .border_color(pal::ink())
+                            .hover(|h| h.bg(pal::tint()))
+                            .child(div().w(px(8.0)).bg(tab))
+                            .child(div().w(px(2.0)).bg(pal::ink()))
                             .child(
                                 div()
                                     .flex()
                                     .flex_col()
                                     .flex_1()
                                     .gap_1()
-                                    .p_3()
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_row()
-                                    .items_center()
-                                    .justify_between()
-                                    .gap_2()
+                                    .p_2p5()
                                     .child(
                                         div()
                                             .flex()
+                                            .flex_row()
                                             .items_center()
+                                            .justify_between()
                                             .gap_2()
-                                            .when(notif.app_icon.is_some(), |this| {
-                                                this.child(
-                                                    gpui::img(notif.app_icon.clone().unwrap())
-                                                        .w(px(16.0))
-                                                        .h(px(16.0))
-                                                        .rounded_sm(),
-                                                )
-                                            })
                                             .child(
                                                 div()
-                                                    .text_size(px(11.0))
-                                                    .font_weight(gpui::FontWeight::BOLD)
-                                                    .text_color(rgb(0xa6adc8))
-                                                    .truncate()
-                                                    .child(if notif.app_name.is_empty() {
-                                                        "System".to_string()
-                                                    } else {
-                                                        notif.app_name.clone()
+                                                    .flex()
+                                                    .items_center()
+                                                    .gap_2()
+                                                    .when(app_icon.is_some(), |this| {
+                                                        this.child(
+                                                            gpui::img(app_icon.clone().unwrap())
+                                                                .w(px(16.0))
+                                                                .h(px(16.0)),
+                                                        )
+                                                    })
+                                                    .child(
+                                                        div()
+                                                            .text_size(px(11.0))
+                                                            .font_weight(gpui::FontWeight::BOLD)
+                                                            .text_color(pal::blue())
+                                                            .truncate()
+                                                            .child(app_name),
+                                                    ),
+                                            )
+                                            .child(
+                                                div()
+                                                    .id(format!("hist-del-{notif_id}"))
+                                                    .cursor_pointer()
+                                                    .px_1p5()
+                                                    .text_color(pal::ink())
+                                                    .hover(|h| h.bg(pal::pink()))
+                                                    .child("✕")
+                                                    .on_click(move |_, _, cx| {
+                                                        notifs_remove.update(cx, |n, _| {
+                                                            n.remove_history(notif_id)
+                                                        });
                                                     }),
                                             ),
                                     )
                                     .child(
                                         div()
-                                            .id(format!("hist-del-{}", notif_id))
-                                            .cursor_pointer()
-                                            .px_1p5()
-                                            .py_0p5()
-                                            .rounded_md()
-                                            .text_color(rgb(0x585b70))
-                                            .hover(|h| h.bg(rgb(0x313244)).text_color(rgb(0xf38ba8)))
-                                            .child("✕")
-                                            .on_click(move |_, _, cx| {
-                                                notifs_remove.update(cx, |n, _| n.remove_history(notif_id));
-                                            }),
-                                    ),
+                                            .text_size(px(13.0))
+                                            .font_weight(gpui::FontWeight::BOLD)
+                                            .text_color(pal::ink())
+                                            .child(summary),
+                                    )
+                                    .when(!body.is_empty(), |this| {
+                                        this.child(
+                                            div()
+                                                .text_size(px(12.0))
+                                                .line_height(px(16.0))
+                                                .text_color(pal::ink())
+                                                .opacity(0.75)
+                                                .child(body),
+                                        )
+                                    }),
                             )
-                            .child(
-                                div()
-                                    .text_size(px(13.0))
-                                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                                    .text_color(rgb(0xcdd6f4))
-                                    .child(notif.summary.clone()),
-                            )
-                            .when(!notif.body.is_empty(), |this| {
-                                this.child(
-                                    div()
-                                        .text_size(px(12.0))
-                                        .text_color(rgb(0xa6adc8))
-                                        .line_height(px(16.0))
-                                        .child(notif.body.clone()),
-                                )
-                            }),
+                            // Entries slam in from the right, one after another.
+                            .with_animation(
+                                format!("hist-anim-{notif_id}"),
+                                Animation::new(Duration::from_millis(620)),
+                                move |el, d| {
+                                    let t = staggered(d, i, shown, 0.08);
+                                    el.relative().left(px(48.0 * (1.0 - out_back(t)))).opacity((t * 3.0).min(1.0))
+                                },
                             )
                     })),
-            )
+            );
+
+        div().w_full().h_full().pr(px(10.0)).pb(px(10.0)).child(card)
     }
 }
 
 // ---------------------------------------------------------------------------
-// Clipboard Manager (Spotlight style popup modal)
+// Clipboard manager
 // ---------------------------------------------------------------------------
 
 struct ClipboardManager {
@@ -2164,8 +2207,7 @@ impl ClipboardManager {
             "enter" => {
                 if !matches.is_empty() {
                     let idx = self.selected_index.min(count.saturating_sub(1));
-                    let item = &matches[idx];
-                    let item_id = item.id;
+                    let item_id = matches[idx].id;
                     self.clipboard.update(cx, |c, _| c.copy_item(item_id));
                     self.query.clear();
                     self.selected_index = 0;
@@ -2175,8 +2217,7 @@ impl ClipboardManager {
             "delete" => {
                 if !matches.is_empty() {
                     let idx = self.selected_index.min(count.saturating_sub(1));
-                    let item = &matches[idx];
-                    let item_id = item.id;
+                    let item_id = matches[idx].id;
                     self.clipboard.update(cx, |c, _| c.remove_item(item_id));
                     if self.selected_index >= count.saturating_sub(1) {
                         self.selected_index = self.selected_index.saturating_sub(1);
@@ -2186,11 +2227,8 @@ impl ClipboardManager {
             }
             "up" => {
                 if count > 0 {
-                    if self.selected_index == 0 {
-                        self.selected_index = count - 1;
-                    } else {
-                        self.selected_index -= 1;
-                    }
+                    self.selected_index =
+                        if self.selected_index == 0 { count - 1 } else { self.selected_index - 1 };
                     cx.notify();
                 }
             }
@@ -2237,17 +2275,169 @@ impl Render for ClipboardManager {
         let clipboard_clear = self.clipboard.clone();
 
         let max_visible = 6;
-        let start_idx = if selected >= max_visible {
-            selected - max_visible + 1
-        } else {
-            0
-        };
-        let visible_items: Vec<_> = matches
-            .iter()
-            .enumerate()
-            .skip(start_idx)
-            .take(max_visible)
-            .collect();
+        let start_idx = if selected >= max_visible { selected - max_visible + 1 } else { 0 };
+        let visible_items: Vec<_> =
+            matches.iter().enumerate().skip(start_idx).take(max_visible).collect();
+
+        let card = div()
+            .id("clipboard-modal")
+            .w(px(640.0))
+            .flex()
+            .flex_col()
+            .gap_3()
+            .p_4()
+            .bg(pal::paper())
+            .border_2()
+            .border_color(pal::ink())
+            .on_click(|_, _, _| {})
+            .child(
+                find_field("Paste", pal::pink(), &self.query, "Search what you copied")
+                    .child(
+                        div()
+                            .text_size(px(12.0))
+                            .font_weight(gpui::FontWeight::BOLD)
+                            .text_color(pal::blue())
+                            .child(format!("{total}")),
+                    )
+                    .when(total > 0, |this| {
+                        this.child(
+                            tile("clip-clear-btn")
+                                .w_auto()
+                                .h(px(28.0))
+                                .px_3()
+                                .shadow(hard(pal::ink(), 2.0))
+                                .text_size(px(12.0))
+                                .font_weight(gpui::FontWeight::BOLD)
+                                .child("Clear all")
+                                .on_click(move |_, _, cx| {
+                                    clipboard_clear.update(cx, |c, _| c.clear());
+                                }),
+                        )
+                    }),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1p5()
+                    .when(total == 0, |s| {
+                        s.py_8()
+                            .items_center()
+                            .justify_center()
+                            .text_size(px(14.0))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(pal::ink())
+                            .child("Nothing copied yet. Copy a line and it appears here.")
+                    })
+                    .children(visible_items.into_iter().map(|(idx, item)| {
+                        let is_selected = idx == selected;
+                        let item_id = item.id;
+                        let clip_ref = clipboard_service.clone();
+                        let clip_del = clipboard_service.clone();
+                        let preview = item.preview();
+                        let lines = item.line_count();
+                        let chars = item.char_count();
+                        let key = format!("clip-sel-{item_id}");
+
+                        let row = div()
+                            .id(format!("clip-item-{item_id}"))
+                            .flex()
+                            .items_center()
+                            .gap_3()
+                            .px_3()
+                            .py_2()
+                            .border_2()
+                            .cursor_pointer()
+                            .when(is_selected, |s| {
+                                s.bg(pal::pink())
+                                    .border_color(pal::ink())
+                                    .shadow(hard(pal::ink(), 3.0))
+                            })
+                            .when(!is_selected, |s| {
+                                s.border_color(pal::clear()).hover(|h| h.bg(pal::tint()))
+                            })
+                            // Ticket stub with the entry number.
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .flex_shrink_0()
+                                    .w(px(30.0))
+                                    .h(px(30.0))
+                                    .bg(pal::white())
+                                    .border_2()
+                                    .border_color(pal::ink())
+                                    .text_size(px(12.0))
+                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .text_color(pal::ink())
+                                    .child(format!("{}", idx + 1)),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .overflow_hidden()
+                                    .child(
+                                        div()
+                                            .w_full()
+                                            .text_size(px(14.0))
+                                            .font_weight(gpui::FontWeight::BOLD)
+                                            .text_color(pal::ink())
+                                            .truncate()
+                                            .child(preview),
+                                    )
+                                    .child(
+                                        div()
+                                            .text_size(px(11.0))
+                                            .text_color(pal::ink())
+                                            .opacity(0.65)
+                                            .child(format!(
+                                                "{lines} line{}, {chars} characters",
+                                                if lines > 1 { "s" } else { "" }
+                                            )),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .id(format!("clip-del-{item_id}"))
+                                    .flex_shrink_0()
+                                    .px_1p5()
+                                    .text_color(pal::ink())
+                                    .hover(|h| h.bg(pal::yellow()))
+                                    .child("✕")
+                                    .on_click(move |_, _, cx| {
+                                        clip_del.update(cx, |c, _| c.remove_item(item_id));
+                                    }),
+                            )
+                            .on_click(move |_, _, cx| {
+                                clip_ref.update(cx, |c, _| c.copy_item(item_id));
+                                cx.hide_window("clipboard");
+                            });
+
+                        if is_selected {
+                            row.with_animation(
+                                key,
+                                Animation::new(Duration::from_millis(200)),
+                                |el, d| el.relative().left(px(-12.0 * (1.0 - out_cubic(d)))),
+                            )
+                            .into_any_element()
+                        } else {
+                            row.into_any_element()
+                        }
+                    })),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_4()
+                    .child(key_chip("Enter", "copy"))
+                    .child(key_chip("Del", "remove"))
+                    .child(key_chip("Esc", "close")),
+            );
 
         div()
             .id("clipboard-backdrop")
@@ -2255,200 +2445,334 @@ impl Render for ClipboardManager {
             .h_full()
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::on_key))
-            .bg(rgba(0x11111b88))
+            .bg(pal::veil())
             .flex()
             .flex_col()
             .items_center()
             .justify_start()
-            .pt(px(140.0))
+            .pt(px(120.0))
             .on_click(|_, _, cx| {
                 cx.hide_window("clipboard");
             })
+            .child(printed(card, "clipboard", pal::blue()))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Task Switcher (open windows view with decoded icons)
+// ---------------------------------------------------------------------------
+
+struct TaskSwitcher {
+    focus: FocusHandle,
+    compositor: Entity<Compositor>,
+    apps: Entity<Apps>,
+    query: String,
+    selected_index: usize,
+}
+
+impl TaskSwitcher {
+    fn new(cx: &mut Context<Self>) -> Self {
+        Self {
+            focus: cx.focus_handle(),
+            compositor: cx.service::<Compositor>(),
+            apps: cx.service::<Apps>(),
+            query: String::new(),
+            selected_index: 0,
+        }
+    }
+
+    fn on_key(&mut self, event: &KeyDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+        let key = event.keystroke.key.as_str();
+        let comp = self.compositor.read(cx);
+        let all_windows = comp.windows();
+        let q = self.query.trim().to_lowercase();
+        let filtered: Vec<_> = all_windows
+            .iter()
+            .filter(|w| {
+                if q.is_empty() {
+                    true
+                } else {
+                    w.title.to_lowercase().contains(&q) || w.class.to_lowercase().contains(&q)
+                }
+            })
+            .collect();
+        let count = filtered.len();
+
+        match key {
+            "escape" => {
+                self.query.clear();
+                self.selected_index = 0;
+                cx.hide_window("tasks");
+            }
+            "enter" => {
+                if !filtered.is_empty() {
+                    let idx = self.selected_index.min(count.saturating_sub(1));
+                    let target = filtered[idx];
+                    let con_id = target.id;
+                    self.compositor.read(cx).focus_window(con_id);
+                    self.query.clear();
+                    self.selected_index = 0;
+                    cx.hide_window("tasks");
+                }
+            }
+            "up" => {
+                if count > 0 {
+                    self.selected_index =
+                        if self.selected_index == 0 { count - 1 } else { self.selected_index - 1 };
+                    cx.notify();
+                }
+            }
+            "down" | "tab" => {
+                if count > 0 {
+                    self.selected_index = (self.selected_index + 1) % count;
+                    cx.notify();
+                }
+            }
+            "backspace" => {
+                self.query.pop();
+                self.selected_index = 0;
+                cx.notify();
+            }
+            "space" => {
+                self.query.push(' ');
+                self.selected_index = 0;
+                cx.notify();
+            }
+            s if s.chars().count() == 1 => {
+                if let Some(c) = s.chars().next() {
+                    if !c.is_control() {
+                        self.query.push(c);
+                        self.selected_index = 0;
+                        cx.notify();
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+impl Render for TaskSwitcher {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if !self.focus.is_focused(window) {
+            window.focus(&self.focus, cx);
+        }
+
+        let comp = self.compositor.read(cx);
+        let apps = self.apps.read(cx);
+        let all_windows = comp.windows();
+        let q = self.query.trim().to_lowercase();
+        let filtered: Vec<_> = all_windows
+            .iter()
+            .filter(|w| {
+                if q.is_empty() {
+                    true
+                } else {
+                    w.title.to_lowercase().contains(&q) || w.class.to_lowercase().contains(&q)
+                }
+            })
+            .collect();
+
+        let total = filtered.len();
+        let selected = self.selected_index.min(total.saturating_sub(1));
+        let max_visible = 6;
+        let start_idx = if selected >= max_visible { selected - max_visible + 1 } else { 0 };
+        let visible_items: Vec<_> =
+            filtered.iter().enumerate().skip(start_idx).take(max_visible).collect();
+
+        let card = div()
+            .id("tasks-modal")
+            .w(px(640.0))
+            .flex()
+            .flex_col()
+            .gap_3()
+            .p_4()
+            .bg(pal::paper())
+            .border_2()
+            .border_color(pal::ink())
+            .on_click(|_, _, _| {})
+            .child(
+                find_field("Windows", pal::yellow(), &self.query, "Search open windows").child(
+                    div()
+                        .px_2()
+                        .py_0p5()
+                        .bg(pal::white())
+                        .border_1()
+                        .border_color(pal::ink())
+                        .text_size(px(11.0))
+                        .font_weight(gpui::FontWeight::BOLD)
+                        .text_color(pal::ink())
+                        .child(format!("{total}")),
+                ),
+            )
             .child(
                 div()
-                    .id("clipboard-modal")
-                    .w(px(580.0))
-                    .bg(rgb(0x1e1e2e))
-                    .border_1()
-                    .border_color(rgba(0x45475a88))
-                    .rounded_2xl()
-                    .shadow_2xl()
-                    .p_4()
-                    .gap_3()
                     .flex()
                     .flex_col()
-                    .on_click(|_, _, _| {})
-                    // Header: Search bar + items count + clear button
-                    .child(
-                        div()
+                    .gap_1p5()
+                    .when(total == 0, |s| {
+                        s.py_8()
+                            .items_center()
+                            .justify_center()
+                            .text_size(px(14.0))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .text_color(pal::ink())
+                            .child("No open windows matching.")
+                    })
+                    .children(visible_items.into_iter().map(|(idx, &win)| {
+                        let is_selected = idx == selected;
+                        let con_id = win.id;
+                        let comp_ref = self.compositor.clone();
+                        let app_icon = apps.find_icon(&win.class);
+                        let item_key = format!("task-sel-{}", win.id);
+
+                        let icon_el: AnyElement = if let Some(img) = app_icon {
+                            div()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .w(px(40.0))
+                                .h(px(40.0))
+                                .bg(pal::white())
+                                .border_2()
+                                .border_color(pal::ink())
+                                .child(gpui::img(img).w(px(26.0)).h(px(26.0)))
+                                .into_any_element()
+                        } else {
+                            let letter = win
+                                .class
+                                .chars()
+                                .next()
+                                .unwrap_or('?')
+                                .to_uppercase()
+                                .to_string();
+                            div()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .w(px(40.0))
+                                .h(px(40.0))
+                                .bg(pal::tint())
+                                .border_2()
+                                .border_color(pal::ink())
+                                .text_size(px(18.0))
+                                .font_weight(gpui::FontWeight::BOLD)
+                                .text_color(pal::ink())
+                                .child(letter)
+                                .into_any_element()
+                        };
+
+                        let row = div()
+                            .id(format!("task-item-{}", win.id))
                             .flex()
                             .items_center()
                             .gap_3()
-                            .bg(rgb(0x181825))
-                            .border_1()
-                            .border_color(rgba(0x31324488))
-                            .rounded_xl()
                             .px_3()
-                            .py_2p5()
+                            .py_2()
+                            .border_2()
+                            .cursor_pointer()
+                            .when(is_selected, |s| {
+                                s.bg(pal::yellow())
+                                    .border_color(pal::ink())
+                                    .shadow(hard(pal::ink(), 3.0))
+                            })
+                            .when(!is_selected, |s| {
+                                s.border_color(pal::clear()).hover(|h| h.bg(pal::tint()))
+                            })
                             .child(
                                 div()
-                                    .text_size(px(18.0))
-                                    .text_color(rgb(0x89b4fa))
-                                    .child("\u{f0ea}"),
+                                    .w(px(12.0))
+                                    .text_size(px(14.0))
+                                    .text_color(pal::blue())
+                                    .child(if is_selected { "\u{25B6}" } else { "" }),
                             )
+                            .child(icon_el)
                             .child(
                                 div()
-                                    .flex()
-                                    .items_center()
-                                    .flex_1()
-                                    .text_size(px(15.0))
-                                    .when(self.query.is_empty(), |s| {
-                                        s.text_color(rgb(0x6c7086))
-                                            .child("Search clipboard history...")
-                                    })
-                                    .when(!self.query.is_empty(), |s| {
-                                        s.text_color(rgb(0xcdd6f4))
-                                            .child(self.query.clone())
-                                            .child(
-                                                div()
-                                                    .text_color(rgb(0x89b4fa))
-                                                    .font_weight(gpui::FontWeight::BOLD)
-                                                    .child("|"),
-                                            )
-                                    }),
-                            )
-                            .child(
-                                div()
-                                    .px_2()
-                                    .py_0p5()
-                                    .rounded_md()
-                                    .bg(rgb(0x313244))
-                                    .text_size(px(11.0))
-                                    .text_color(rgb(0xa6adc8))
-                                    .child(format!("{total} items")),
-                            )
-                            .when(total > 0, |this| {
-                                this.child(
-                                    div()
-                                        .id("clip-clear-btn")
-                                        .px_2()
-                                        .py_0p5()
-                                        .rounded_md()
-                                        .bg(rgb(0x313244))
-                                        .hover(|h| h.bg(rgb(0x45475a)).text_color(rgb(0xf38ba8)))
-                                        .cursor_pointer()
-                                        .text_size(px(11.0))
-                                        .text_color(rgb(0xa6adc8))
-                                        .child("Clear")
-                                        .on_click(move |_, _, cx| {
-                                            clipboard_clear.update(cx, |c, _| c.clear());
-                                        }),
-                                )
-                            }),
-                    )
-                    // Results list
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_1p5()
-                            .when(total == 0, |s| {
-                                s.py_6()
                                     .flex()
                                     .flex_col()
-                                    .items_center()
-                                    .justify_center()
-                                    .text_color(rgb(0x6c7086))
-                                    .child("No clipboard history")
-                            })
-                            .children(visible_items.into_iter().map(|(idx, item)| {
-                                let is_selected = idx == selected;
-                                let item_id = item.id;
-                                let clip_ref = clipboard_service.clone();
-                                let clip_del = clipboard_service.clone();
-                                let preview = item.preview();
-                                let lines = item.line_count();
-                                let chars = item.char_count();
-
-                                div()
-                                    .id(format!("clip-item-{}", item.id))
-                                    .flex()
-                                    .items_center()
-                                    .justify_between()
-                                    .gap_3()
-                                    .p_2p5()
-                                    .rounded_xl()
-                                    .cursor_pointer()
-                                    .when(is_selected, |s| {
-                                        s.bg(rgb(0x313244))
-                                            .border_1()
-                                            .border_color(rgba(0x89b4fa66))
-                                    })
-                                    .when(!is_selected, |s| {
-                                        s.hover(|h| h.bg(rgb(0x181825)))
-                                    })
+                                    .flex_1()
+                                    .min_w_0()
                                     .child(
                                         div()
                                             .flex()
-                                            .flex_col()
-                                            .flex_1()
-                                            .min_w_0()
-                                            .overflow_hidden()
-                                            .gap_0p5()
+                                            .items_center()
+                                            .gap_2()
                                             .child(
                                                 div()
-                                                    .w_full()
-                                                    .text_size(px(13.0))
-                                                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                                                    .text_color(rgb(0xcdd6f4))
+                                                    .text_size(px(14.0))
+                                                    .font_weight(gpui::FontWeight::BOLD)
+                                                    .text_color(pal::ink())
                                                     .truncate()
-                                                    .child(preview),
+                                                    .child(win.title.clone()),
                                             )
-                                            .child(
-                                                div()
-                                                    .flex()
-                                                    .items_center()
-                                                    .gap_2()
-                                                    .text_size(px(10.0))
-                                                    .text_color(rgb(0x6c7086))
-                                                    .child(format!("{lines} line{}", if lines > 1 { "s" } else { "" }))
-                                                    .child("•")
-                                                    .child(format!("{chars} chars")),
-                                            ),
+                                            .when(win.is_focused, |this| {
+                                                this.child(
+                                                    div()
+                                                        .px_1p5()
+                                                        .bg(pal::pink())
+                                                        .text_size(px(9.0))
+                                                        .font_weight(gpui::FontWeight::BOLD)
+                                                        .text_color(pal::ink())
+                                                        .child("active"),
+                                                )
+                                            }),
                                     )
                                     .child(
                                         div()
-                                            .id(format!("clip-del-{}", item_id))
-                                            .flex_shrink_0()
-                                            .px_1p5()
-                                            .py_0p5()
-                                            .rounded_md()
-                                            .text_color(rgb(0x585b70))
-                                            .hover(|h| h.bg(rgb(0x45475a)).text_color(rgb(0xf38ba8)))
-                                            .child("✕")
-                                            .on_click(move |_, _, cx| {
-                                                clip_del.update(cx, |c, _| c.remove_item(item_id));
-                                            }),
-                                    )
-                                    .on_click(move |_, _, cx| {
-                                        clip_ref.update(cx, |c, _| c.copy_item(item_id));
-                                        cx.hide_window("clipboard");
-                                    })
-                            })),
-                    )
-                    // Footer hint
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .justify_between()
-                            .pt_2()
-                            .border_color(rgba(0x31324488))
-                            .text_size(px(11.0))
-                            .text_color(rgb(0x6c7086))
-                            .child("Enter to copy • Del to delete • Esc to close")
-                            .child(format!("{total} total entries")),
-                    ),
+                                            .flex()
+                                            .items_center()
+                                            .gap_2()
+                                            .text_size(px(11.0))
+                                            .text_color(pal::ink())
+                                            .opacity(0.65)
+                                            .child(format!("app: {}", win.class))
+                                            .child("•")
+                                            .child(format!("workspace {}", win.workspace_name)),
+                                    ),
+                            )
+                            .on_click(move |_, _, cx| {
+                                comp_ref.read(cx).focus_window(con_id);
+                                cx.hide_window("tasks");
+                            });
+
+                        if is_selected {
+                            row.with_animation(
+                                item_key,
+                                Animation::new(Duration::from_millis(200)),
+                                |el, d| el.relative().left(px(-12.0 * (1.0 - out_cubic(d)))),
+                            )
+                            .into_any_element()
+                        } else {
+                            row.into_any_element()
+                        }
+                    })),
             )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_4()
+                    .child(key_chip("↑↓", "select"))
+                    .child(key_chip("Enter", "switch"))
+                    .child(key_chip("Esc", "close")),
+            );
+
+        div()
+            .id("tasks-backdrop")
+            .w_full()
+            .h_full()
+            .track_focus(&self.focus)
+            .on_key_down(cx.listener(Self::on_key))
+            .bg(pal::veil())
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_start()
+            .pt(px(120.0))
+            .on_click(|_, _, cx| {
+                cx.hide_window("tasks");
+            })
+            .child(printed(card, "tasks", pal::blue()))
     }
 }

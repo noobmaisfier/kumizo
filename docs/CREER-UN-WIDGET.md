@@ -122,27 +122,32 @@ recommandé :
 ### Étape 3 — Configurer la fenêtre (`LayerWindow`)
 
 `LayerWindow::new("<id>")` puis chaînage (chaque setter existe, voir
-`crates/wk-gpui-ext/src/layer_window.rs`). Champs et défauts :
+`crates/wk-gpui-ext/src/layer_window.rs`). `LayerWindow::new()` démarre avec des
+valeurs neutres (ancres vides, zone exclusive 0, dimensions à `None`). Le shell configure
+librement et explicitement ce dont il a besoin :
 
 - `layer(Layer::Top)` — `Background | Bottom | Top | Overlay`. Barres et
   docks : `Top`. Popups et OSD : `Overlay` (au-dessus même du plein écran).
 - `anchor(...)` — bitflags `TOP | BOTTOM | LEFT | RIGHT`, combinables avec
   `|`. Constantes : `TOP_BAR` (= `TOP|LEFT|RIGHT`), `BOTTOM_BAR`,
   `LEFT_BAR`, `RIGHT_BAR`, `FULLSCREEN`. **Opposés combinés = étirement** :
-  une barre ancrée `LEFT|RIGHT` doit demander elle-même toute la largeur,
-  le compositeur ne l'étire pas.
-- `exclusive_zone(32)` — pixels réservés (les fenêtres maximisées sont
-  repoussées). Barre : la hauteur de la barre. Popup/OSD : `0` (jamais).
+  une barre ancrée `LEFT|RIGHT` s'étire sur toute la largeur de l'écran ; un rail
+  ancré `TOP|BOTTOM` s'étire sur toute la hauteur.
+- `exclusive_zone(pixels)` — pixels réservés (les fenêtres maximisées sont
+  repoussées). Barre/rail : la taille du panneau. Popup/OSD : `0` (défaut).
 - `margins(Margins::new(top, right, bottom, left))` — ordre des arguments :
-  haut, droite, bas, gauche. `Margins::zero()`, `Margins::all(v)`,
+  haut, droite, bas, gauche. `Margins::zero()` (défaut), `Margins::all(v)`,
   `Margins::symmetric(horizontal, vertical)` existent aussi.
 - `width(f32)` / `height(f32)` — dimensions explicites en pixels logiques.
-  Sans largeur explicite et sans ancrage `LEFT|RIGHT`, repli à 800 px.
+  Quand non spécifié (`None`) : s'étire sur l'écran si des ancres opposées sont
+  présentes (`LEFT|RIGHT` pour la largeur, `TOP|BOTTOM` pour la hauteur), sinon
+  repli par défaut (800x32 px).
+- `size(width, height)` — raccourci pour définir largeur et hauteur en un appel.
 - `namespace("wk-...")` — défaut `wk-<id>`. Sert aux règles du compositeur
   (flou, ombres). Le garder préfixé `wk-`.
 - `keyboard_interactivity(...)` — `None` (défaut, barres/docks),
   `OnDemand`, `Exclusive` (lanceurs, saisie).
-- `monitor(MonitorTarget::Primary)` — ciblage d'écran.
+- `monitor(MonitorTarget::Primary)` — ciblage d'écran (défaut : `Primary`).
 - `transparent(true)` — fond transparent (défaut `true`).
 - `start_hidden(true)` — **ouvre sans surface** : la fenêtre naît cachée,
   `show` la crée, `hide` la détruit. Pour les popups uniquement : une
@@ -321,10 +326,12 @@ fenêtre, jamais à la main.
 auto-détection, même pattern que `WifiBackend`). Méthodes :
 `kind()`, `workspaces() -> &[Workspace]`, `active_workspace_id()`,
 `active_window() -> Option<&ActiveWindow>`,
+`windows() -> &[AppWindow]`, `focus_window(con_id: i64)`,
 `switch_workspace(id)` (met le surlignage à jour de façon optimiste),
 `close_window()`. `Workspace` : `id`, `name`, `is_active`, `is_urgent`,
 `window_count`, `monitor`. `ActiveWindow` : `title`, `class`,
-`workspace_id`.
+`workspace_id`. `AppWindow` : `id: i64`, `title`, `class`, `workspace_id`,
+`workspace_name`, `is_focused`.
 
 **`Brightness`** — luminosité d'écran 100% pilotée par événements noyau
 (`sysfs_notify` sur `actual_brightness` + `NETLINK_KOBJECT_UEVENT`, zéro polling).
@@ -334,7 +341,8 @@ Méthodes : `percent()`, `icon()`, `device()`, `set_percent(pct)`, `increase(ste
 **`Apps`** — catalogue d'applications FreeDesktop (`.desktop` de `/usr/share/applications`
 et `~/.local/share/applications`). Résout et décode les icônes PNG et SVG vers le GPU.
 Méthodes : `apps() -> &[AppInfo]`, `search(query) -> Vec<AppInfo>` (recherche
-fuzzy avec scoring en temps réel), `launch(app)`. `AppInfo` : `id`, `name`, `comment`,
+fuzzy avec scoring en temps réel), `find_icon(class_or_app_id) -> Option<Arc<RenderImage>>`,
+`launch(app)`. `AppInfo` : `id`, `name`, `comment`,
 `exec`, `icon: Option<Arc<RenderImage>>`, `categories`, `keywords`.
 
 **`Notifications`** — serveur natif de notifications de bureau FreeDesktop (`org.freedesktop.Notifications`).

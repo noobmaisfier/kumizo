@@ -26,6 +26,7 @@
 //!             LayerWindow::new("topbar")
 //!                 .layer(Layer::Top)
 //!                 .anchor(Anchor::TOP | Anchor::LEFT | Anchor::RIGHT)
+//!                 .height(32.0)
 //!                 .exclusive_zone(32)
 //!                 .namespace("wk-topbar"),
 //!             |cx: &mut gpui::App| cx.new(TopBar::new),

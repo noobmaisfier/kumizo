@@ -59,6 +59,35 @@ impl Apps {
         &self.apps
     }
 
+    /// Find an application's decoded GPU icon by its application class or ID (case-insensitive).
+    pub fn find_icon(&self, class_or_app_id: &str) -> Option<Arc<RenderImage>> {
+        let needle = class_or_app_id.trim().to_lowercase();
+        if needle.is_empty() {
+            return None;
+        }
+
+        // 1. Direct match on app id (e.g. "helium", "foot", "code")
+        if let Some(app) = self.apps.iter().find(|a| a.id.to_lowercase() == needle) {
+            if let Some(icon) = &app.icon {
+                return Some(icon.clone());
+            }
+        }
+
+        // 2. Substring or executable match (e.g. "helium-browser", "footclient")
+        if let Some(app) = self.apps.iter().find(|a| {
+            a.id.to_lowercase().contains(&needle)
+                || needle.contains(&a.id.to_lowercase())
+                || a.exec.to_lowercase().contains(&needle)
+                || needle.contains(&a.exec.to_lowercase())
+        }) {
+            if let Some(icon) = &app.icon {
+                return Some(icon.clone());
+            }
+        }
+
+        None
+    }
+
     /// Search applications by substring match on name, executable, keywords, and description.
     pub fn search(&self, query: &str) -> Vec<AppInfo> {
         let q = query.trim().to_lowercase();

@@ -166,6 +166,16 @@ div()
 déclaré explicitement : le chercher avec `grep 'pub struct StyleRefinement'`
 échoue, il faut chercher `impl Styled for StyleRefinement`.
 
+### `hover style already set` — Ne pas appeler `.hover(...)` deux fois
+
+GPUI panique inconditionnellement au runtime (`hover style already set`) si la
+méthode `.hover(...)` est appelée plusieurs fois sur la même vue ou le même
+`div()` (par exemple si une fonction utilitaire comme `tile(id)` pré-définit
+déjà un `.hover(...)` et qu'un appelant y réapplique un `.hover(...)`).
+
+**Règle.** Garder les helpers d'éléments de base neutres (sans hover par défaut),
+ou réserver l'appel à `.hover(...)` au niveau terminal du composant.
+
 ### `WindowOptions` : 17 champs, pas 10
 
 Et `WindowBackground` n'existe plus, c'est `WindowBackgroundAppearance` :
@@ -614,25 +624,21 @@ et de trancher le bogue ci-dessus en une minute.
 
 ## 10. Pièges de fenêtrage Wayland, UX et PAM
 
-### `DEFAULT_HEIGHT` bride les surfaces `Anchor::FULLSCREEN`
+### Dimensionnement automatique et ancres Wayland (`LayerWindow`)
 
-**Symptôme.** Un Launcher ou un Powermenu déclaré en `Anchor::FULLSCREEN`
-est invisible à l'écran, même si Wayland indique que la fenêtre est créée.
+**Comportement.** `LayerWindow::new()` démarre avec des dimensions non définies (`width: None`, `height: None`), des ancres vides et aucune zone exclusive (`exclusive_zone: 0`).
 
-**Cause.** `LayerWindow::new()` initialise par défaut `height: Some(32.0)`.
-Dans `to_gpui_options_with_display()`, un `Some(h)` explicite prend la priorité
-sur le redimensionnement automatique des ancres opposées. La surface Wayland
-ne mesure donc que 32 pixels de haut tout en haut de l'écran, et tout contenu
-décalé plus bas (ex. `.pt(px(140.0))`) est tronqué hors de la surface.
-
-**Règle.** Pour tout overlay plein écran (Launcher, Powermenu, Locker), appeler
-impérativement `.size(None, None)` pour libérer la largeur et la hauteur :
+**Règle.**
+- Pour une **barre horizontale** : déclarer `.anchor(Anchor::TOP_BAR)` (ou `Anchor::TOP | Anchor::LEFT | Anchor::RIGHT`), `.height(32.0)` et `.exclusive_zone(32)`. La largeur s'étire automatiquement sur tout l'écran.
+- Pour un **rail / panneau latéral** : déclarer `.anchor(Anchor::LEFT | Anchor::TOP | Anchor::BOTTOM)`, `.width(72.0)` et `.exclusive_zone(72)`. La hauteur s'étire automatiquement sur tout l'écran car `height` est `None`.
+- Pour un **plein écran / modal** (`Anchor::FULLSCREEN` ou toutes ancres combinées) : aucune dimension n'est requise, la surface couvre l'ensemble de l'écran par expansion naturelle des 4 ancres.
+- Pour un **popup / OSD flottant** : définir explicitement `.width(...)` et `.height(...)` (ou `.size(...)`), sans ancres opposées.
 
 ```rust
+// Exemple plein écran (propre, zéro bidouille de taille) :
 LayerWindow::new("launcher")
     .layer(Layer::Overlay)
     .anchor(Anchor::FULLSCREEN)
-    .size(None, None) // <- Indispensable pour annuler le 32px par défaut
     .start_hidden(true)
 ```
 

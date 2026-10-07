@@ -31,6 +31,23 @@ impl Workspace {
     }
 }
 
+/// Description of an open application window on the desktop.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct AppWindow {
+    /// Compositor internal container/window ID (e.g. Sway node ID).
+    pub id: i64,
+    /// Window title (e.g. "Cargo.toml - Neovim", "GitHub - Mozilla Firefox").
+    pub title: String,
+    /// Application class or app_id (e.g. "firefox", "kitty", "helium").
+    pub class: String,
+    /// Workspace ID/num where this window resides.
+    pub workspace_id: i32,
+    /// Workspace name (e.g. "1", "2").
+    pub workspace_name: String,
+    /// Whether this window currently has keyboard/cursor focus.
+    pub is_focused: bool,
+}
+
 /// Description of the currently focused window on the desktop.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct ActiveWindow {
@@ -74,6 +91,8 @@ pub enum CompositorEvent {
     WorkspacesChanged(Vec<Workspace>),
     /// Active focused window changed.
     WindowFocused(ActiveWindow),
+    /// Open windows list changed (opened, closed, renamed, focused).
+    WindowsChanged(Vec<AppWindow>),
     /// Full workspace layout refresh needed.
     FullSync(Vec<Workspace>, Option<ActiveWindow>),
 }
