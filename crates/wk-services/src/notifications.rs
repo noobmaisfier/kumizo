@@ -93,6 +93,7 @@ pub struct Notifications {
 impl Notifications {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let (tx, rx) = async_channel::unbounded();
+        let (conn_tx, conn_rx) = async_channel::bounded(1);
 
         let service = Self {
             toasts: Vec::new(),
@@ -102,9 +103,19 @@ impl Notifications {
             generation: 0,
         };
 
+        // Capture connection once D-Bus server is started
+        cx.spawn(async move |this, cx| {
+            if let Ok(conn) = conn_rx.recv().await {
+                let _ = this.update(cx, |notifs, _| {
+                    notifs.connection = Some(conn);
+                });
+            }
+        })
+        .detach();
+
         // Start D-Bus server in background
         cx.spawn(async move |_this, _cx| {
-            if let Err(e) = run_dbus_server(tx).await {
+            if let Err(e) = run_dbus_server(tx, conn_tx).await {
                 warn!("Notifications: D-Bus server error: {e}");
             }
         })
@@ -148,6 +159,7 @@ impl Notifications {
     /// Dismiss a toast from the screen.
     pub fn dismiss_toast(&mut self, id: u32) {
         self.toasts.retain(|n| n.id != id);
+        self.emit_closed(id, 2);
     }
 
     /// Dismiss and remove a notification from history.
@@ -158,6 +170,9 @@ impl Notifications {
 
     /// Clear all notification history.
     pub fn clear_history(&mut self) {
+        for n in &self.history {
+            self.emit_closed(n.id, 2);
+        }
         self.history.clear();
         self.toasts.clear();
     }
@@ -167,10 +182,29 @@ impl Notifications {
         if let Some(conn) = &self.connection {
             let conn = conn.clone();
             let key = action_key.to_string();
-            async_io::block_on(async move {
-                if let Ok(ctxt) = SignalContext::new(&conn, OBJECT_PATH) {
-                    let _ = Server::action_invoked(&ctxt, id, &key).await;
-                }
+            info!("Notifications: invoking action '{key}' for notification #{id}");
+            std::thread::spawn(move || {
+                async_io::block_on(async move {
+                    if let Ok(ctxt) = SignalContext::new(&conn, OBJECT_PATH) {
+                        let _ = Server::action_invoked(&ctxt, id, &key).await;
+                    }
+                });
+            });
+        } else {
+            warn!("Notifications: cannot invoke action '{action_key}' for #{id} - no D-Bus connection available yet");
+        }
+    }
+
+    /// Emit NotificationClosed signal to D-Bus.
+    pub fn emit_closed(&self, id: u32, reason: u32) {
+        if let Some(conn) = &self.connection {
+            let conn = conn.clone();
+            std::thread::spawn(move || {
+                async_io::block_on(async move {
+                    if let Ok(ctxt) = SignalContext::new(&conn, OBJECT_PATH) {
+                        let _ = Server::notification_closed(&ctxt, id, reason).await;
+                    }
+                });
             });
         }
     }
@@ -465,7 +499,10 @@ impl Server {
     ) -> zbus::Result<()>;
 }
 
-async fn run_dbus_server(tx: Sender<NotificationEvent>) -> zbus::Result<()> {
+async fn run_dbus_server(
+    tx: Sender<NotificationEvent>,
+    conn_tx: Sender<Connection>,
+) -> zbus::Result<()> {
     let server = Server {
         tx,
         next_id: AtomicU32::new(1),
@@ -482,6 +519,8 @@ async fn run_dbus_server(tx: Sender<NotificationEvent>) -> zbus::Result<()> {
             );
         }
     }
+
+    let _ = conn_tx.send(connection.clone()).await;
 
     // Keep connection alive
     futures_util::future::pending::<()>().await;

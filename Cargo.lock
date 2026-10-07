@@ -4896,6 +4896,8 @@ dependencies = [
  "async-io",
  "gpui",
  "image",
+ "serde",
+ "serde_json",
  "smallvec",
  "time",
  "widgetkit",
