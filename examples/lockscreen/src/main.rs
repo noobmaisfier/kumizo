@@ -27,9 +27,14 @@ use gpui::{
 };
 use widgetkit::prelude::*;
 
-/// PAM service used for verification. `login` exists on every PAM install,
-/// so no `/etc/pam.d/` fragment has to be shipped for the locker to work.
-const PAM_SERVICE: &str = "login";
+fn pam_service() -> &'static str {
+    if std::path::Path::new("/etc/pam.d/swaylock").exists() {
+        "swaylock"
+    } else {
+        "login"
+    }
+}
+
 /// Default backdrop. Overridable with `WIDGETKIT_LOCK_WALLPAPER`.
 const DEFAULT_WALLPAPER: &str = ".wallpaper/spark.jpg";
 /// Max password length accepted into the buffer.
@@ -77,7 +82,7 @@ fn wallpaper_path() -> PathBuf {
 /// thread — `pam_authenticate` may converse with `unix_chkpwd` and block.
 /// Implemented in the `wk-pam` crate (raw FFI, no bindgen/libclang).
 fn verify_password(user: &str, password: &str) -> Result<(), wk_pam::AuthError> {
-    wk_pam::verify(PAM_SERVICE, user, password)
+    wk_pam::verify(pam_service(), user, password)
 }
 
 
@@ -179,9 +184,6 @@ impl LockScreen {
         // TEMP-DIAG (retirer après diagnostic): nom des touches non
         // imprimables seulement — jamais le contenu des caractères.
         let key = event.keystroke.key.as_str();
-        if key.chars().count() != 1 {
-            eprintln!("LOCK-KEY {key:?}");
-        }
         match key {
             "backspace" => {
                 self.password.pop();
@@ -194,17 +196,23 @@ impl LockScreen {
                 self.error = None;
                 cx.notify();
             }
-            "space" => self.push_char(' ', cx),
-            s if s.chars().count() == 1 => {
-                if let Some(c) = s.chars().next() {
-                    // Skip control characters (most arrive as named keys
-                    // like "tab" anyway; this is the shifted-key tail).
-                    if !c.is_control() {
-                        self.push_char(c, cx);
+            _ => {
+                if let Some(ref text) = event.keystroke.key_char {
+                    for c in text.chars() {
+                        if !c.is_control() {
+                            self.push_char(c, cx);
+                        }
+                    }
+                } else if key == "space" {
+                    self.push_char(' ', cx);
+                } else if key.chars().count() == 1 {
+                    if let Some(c) = key.chars().next() {
+                        if !c.is_control() {
+                            self.push_char(c, cx);
+                        }
                     }
                 }
             }
-            _ => {}
         }
     }
 

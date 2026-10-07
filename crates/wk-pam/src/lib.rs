@@ -26,7 +26,8 @@ const CRED_EXPIRED: c_int = 16;
 const CRED_ERR: c_int = 17;
 const CONV_ERR: c_int = 19;
 
-const PROMPT_ECHO_OFF: c_int = 2;
+const PROMPT_ECHO_OFF: c_int = 1;
+const PROMPT_ECHO_ON: c_int = 2;
 
 /// Outcome of [`verify`].
 ///
@@ -193,12 +194,12 @@ extern "C" fn converse(
             return CONV_ERR;
         }
 
-        // Only a masked prompt gets the secret. Answering a PROMPT_ECHO_ON
-        // question ("login:", OTP confirmation) with the password would
-        // hand it to a caller that is explicitly allowed to display it.
+        // Masked prompt (PROMPT_ECHO_OFF) gets the secret. In case a module
+        // asks with PROMPT_ECHO_ON, accept it as well (same behavior as swaylock).
         // Everything else is left null, which is the documented way to say
         // "no answer" and keeps `motd`-style info messages harmless.
-        if unsafe { (*message).style } == PROMPT_ECHO_OFF {
+        let style = unsafe { (*message).style };
+        if style == PROMPT_ECHO_OFF || style == PROMPT_ECHO_ON {
             // PAM frees the answer with `free()`, so `strdup` is exactly the
             // right allocator.
             let dup = unsafe { libc::strdup(creds.password.as_ptr()) };
@@ -228,7 +229,6 @@ extern "C" {
         handle: *mut *mut Handle,
     ) -> c_int;
     fn pam_authenticate(handle: *mut Handle, flags: c_int) -> c_int;
-    fn pam_acct_mgmt(handle: *mut Handle, flags: c_int) -> c_int;
     fn pam_end(handle: *mut Handle, status: c_int) -> c_int;
 }
 
@@ -245,7 +245,7 @@ fn wipe(buf: &mut [u8]) {
     std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
 }
 
-/// Check `password` for `user` against `service` (e.g. `"login"`).
+/// Check `password` for `user` against `service` (e.g. `"swaylock"` or `"login"`).
 ///
 /// Synchronous and blocking — call off the UI thread.
 pub fn verify(service: &str, user: &str, password: &str) -> Result<(), AuthError> {
@@ -264,12 +264,11 @@ pub fn verify(service: &str, user: &str, password: &str) -> Result<(), AuthError
     let status = if started != SUCCESS || handle.is_null() {
         started
     } else {
-        let auth = unsafe { pam_authenticate(handle, 0) };
-        if auth == SUCCESS {
-            unsafe { pam_acct_mgmt(handle, 0) }
-        } else {
-            auth
-        }
+        // Screen lockers verify user credentials via pam_authenticate.
+        // pam_acct_mgmt is omitted because screen lockers run unprivileged
+        // in existing sessions, and locker PAM services (e.g. swaylock)
+        // do not define account rules (which would trigger pam_deny).
+        unsafe { pam_authenticate(handle, 0) }
     };
     if !handle.is_null() {
         unsafe {
@@ -338,5 +337,35 @@ mod tests {
         let mut buf = *b"secret bytes";
         wipe(&mut buf);
         assert_eq!(buf, [0u8; 12]);
+    }
+
+    #[test]
+    fn converse_supplies_password_for_prompts() {
+        let password = CString::new("hunter2").unwrap();
+        let creds = Creds { password };
+        let prompt = CString::new("Password: ").unwrap();
+        let msg = Message {
+            style: PROMPT_ECHO_OFF,
+            text: prompt.as_ptr(),
+        };
+        let mut msg_ptr = &msg as *const Message;
+        let mut resp: *mut Response = std::ptr::null_mut();
+
+        let ret = converse(
+            1,
+            &mut msg_ptr,
+            &mut resp,
+            &creds as *const Creds as *mut c_void,
+        );
+
+        assert_eq!(ret, SUCCESS);
+        assert!(!resp.is_null());
+        unsafe {
+            let res = &*resp;
+            assert!(!res.value.is_null());
+            let ans = std::ffi::CStr::from_ptr(res.value).to_str().unwrap();
+            assert_eq!(ans, "hunter2");
+            cleanup_responses(resp, 1);
+        }
     }
 }

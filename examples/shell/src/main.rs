@@ -1412,16 +1412,25 @@ impl AppLauncher {
                 self.selected_index = 0;
                 cx.notify();
             }
-            s if s.chars().count() == 1 => {
-                if let Some(c) = s.chars().next() {
-                    if !c.is_control() {
-                        self.query.push(c);
-                        self.selected_index = 0;
-                        cx.notify();
+            _ => {
+                if let Some(ref text) = event.keystroke.key_char {
+                    for c in text.chars() {
+                        if !c.is_control() {
+                            self.query.push(c);
+                            self.selected_index = 0;
+                            cx.notify();
+                        }
+                    }
+                } else if key.chars().count() == 1 {
+                    if let Some(c) = key.chars().next() {
+                        if !c.is_control() {
+                            self.query.push(c);
+                            self.selected_index = 0;
+                            cx.notify();
+                        }
                     }
                 }
             }
-            _ => {}
         }
     }
 }
@@ -2286,16 +2295,25 @@ impl ClipboardManager {
                 self.selected_index = 0;
                 cx.notify();
             }
-            s if s.chars().count() == 1 => {
-                if let Some(c) = s.chars().next() {
-                    if !c.is_control() {
-                        self.query.push(c);
-                        self.selected_index = 0;
-                        cx.notify();
+            _ => {
+                if let Some(ref text) = event.keystroke.key_char {
+                    for c in text.chars() {
+                        if !c.is_control() {
+                            self.query.push(c);
+                            self.selected_index = 0;
+                            cx.notify();
+                        }
+                    }
+                } else if key.chars().count() == 1 {
+                    if let Some(c) = key.chars().next() {
+                        if !c.is_control() {
+                            self.query.push(c);
+                            self.selected_index = 0;
+                            cx.notify();
+                        }
                     }
                 }
             }
-            _ => {}
         }
     }
 }
@@ -2576,16 +2594,25 @@ impl TaskSwitcher {
                 self.selected_index = 0;
                 cx.notify();
             }
-            s if s.chars().count() == 1 => {
-                if let Some(c) = s.chars().next() {
-                    if !c.is_control() {
-                        self.query.push(c);
-                        self.selected_index = 0;
-                        cx.notify();
+            _ => {
+                if let Some(ref text) = event.keystroke.key_char {
+                    for c in text.chars() {
+                        if !c.is_control() {
+                            self.query.push(c);
+                            self.selected_index = 0;
+                            cx.notify();
+                        }
+                    }
+                } else if key.chars().count() == 1 {
+                    if let Some(c) = key.chars().next() {
+                        if !c.is_control() {
+                            self.query.push(c);
+                            self.selected_index = 0;
+                            cx.notify();
+                        }
                     }
                 }
             }
-            _ => {}
         }
     }
 }
@@ -2950,15 +2977,23 @@ impl LockScreen {
                 self.error = None;
                 cx.notify();
             }
-            "space" => self.push_char(' ', cx),
-            s if s.chars().count() == 1 => {
-                if let Some(c) = s.chars().next() {
-                    if !c.is_control() {
-                        self.push_char(c, cx);
+            _ => {
+                if let Some(ref text) = event.keystroke.key_char {
+                    for c in text.chars() {
+                        if !c.is_control() {
+                            self.push_char(c, cx);
+                        }
+                    }
+                } else if key == "space" {
+                    self.push_char(' ', cx);
+                } else if key.chars().count() == 1 {
+                    if let Some(c) = key.chars().next() {
+                        if !c.is_control() {
+                            self.push_char(c, cx);
+                        }
                     }
                 }
             }
-            _ => {}
         }
     }
 
@@ -2985,7 +3020,12 @@ impl LockScreen {
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    let r = wk_pam::verify("login", &user, &secret);
+                    let service = if std::path::Path::new("/etc/pam.d/swaylock").exists() {
+                        "swaylock"
+                    } else {
+                        "login"
+                    };
+                    let r = wk_pam::verify(service, &user, &secret);
                     zeroize(&mut secret);
                     r
                 })
@@ -2999,6 +3039,7 @@ impl LockScreen {
                         view.error = None;
                     }
                     Err(e) => {
+                        eprintln!("LOCK-AUTH failed for user {}: {e:?}", view.username);
                         view.error = Some(e.user_message().to_string());
                         view.fail_count += 1;
                     }
