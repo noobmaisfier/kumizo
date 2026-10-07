@@ -51,16 +51,41 @@ const POPUP_TOP: i32 = 98;
 
 mod pal {
     use gpui::{rgb, rgba, Rgba};
-    pub fn paper() -> Rgba { rgb(0xe9eaee) }
-    pub fn white() -> Rgba { rgb(0xf7f7f9) }
-    pub fn ink() -> Rgba { rgb(0x14141a) }
-    pub fn blue() -> Rgba { rgb(0x2b3bff) }
-    pub fn pink() -> Rgba { rgb(0xff4fa3) }
-    pub fn yellow() -> Rgba { rgb(0xffd500) }
-    pub fn gray() -> Rgba { rgb(0x8a8c99) }
-    pub fn tint() -> Rgba { rgb(0xd9dcff) }
-    pub fn veil() -> Rgba { rgba(0xe9eaeedb) }
-    pub fn faint() -> Rgba { rgba(0x14141a26) }
+
+    // Official Flexoki Light Palette by Steph Ango (https://stephango.com/flexoki)
+    // Warm analog paper, deep inky contrast, and calibrated 600/400-series accents.
+
+    /// Paper (#FFFCF0) — warm analog base paper.
+    pub fn paper() -> Rgba { rgb(0xfffcf0) }
+
+    /// Base-50 (#F2F0E5) — secondary surface / cards / input boxes.
+    pub fn white() -> Rgba { rgb(0xf2f0e5) }
+
+    /// Black / Ink (#100F0F) — deep, inky rich black for text, 2px borders, hard shadows.
+    pub fn ink() -> Rgba { rgb(0x100f0f) }
+
+    /// Blue 600 (#205EA6) — primary editorial blue accent (active workspaces, buttons).
+    pub fn blue() -> Rgba { rgb(0x205ea6) }
+
+    /// Red 400 (#D14D41) — warm terracotta red for misprint plates, battery low, mute.
+    pub fn pink() -> Rgba { rgb(0xd14d41) }
+
+    /// Yellow 400 (#D0A215) — warm golden amber for launcher tile and charging gauges.
+    pub fn yellow() -> Rgba { rgb(0xd0a215) }
+
+    /// Base-600 / Text Muted (#6F6E69) — stone graphite secondary text.
+    pub fn gray() -> Rgba { rgb(0x6f6e69) }
+
+    /// UI-2 (#DAD8CE) — subtle selection tint.
+    pub fn tint() -> Rgba { rgb(0xdad8ce) }
+
+    /// Translucent Paper Veil (#FFFCF0 at 91% opacity).
+    pub fn veil() -> Rgba { rgba(0xfffcf0e8) }
+
+    /// Faint Ink (#100F0F at 12% opacity).
+    pub fn faint() -> Rgba { rgba(0x100f0f1f) }
+
+    /// Clear transparent.
     pub fn clear() -> Rgba { rgba(0x00000000) }
 }
 
