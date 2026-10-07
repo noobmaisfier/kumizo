@@ -2392,9 +2392,12 @@ impl Render for ClipboardManager {
                                             .flex()
                                             .flex_col()
                                             .flex_1()
+                                            .min_w_0()
+                                            .overflow_hidden()
                                             .gap_0p5()
                                             .child(
                                                 div()
+                                                    .w_full()
                                                     .text_size(px(13.0))
                                                     .font_weight(gpui::FontWeight::SEMIBOLD)
                                                     .text_color(rgb(0xcdd6f4))
@@ -2416,6 +2419,7 @@ impl Render for ClipboardManager {
                                     .child(
                                         div()
                                             .id(format!("clip-del-{}", item_id))
+                                            .flex_shrink_0()
                                             .px_1p5()
                                             .py_0p5()
                                             .rounded_md()
