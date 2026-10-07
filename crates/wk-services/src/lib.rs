@@ -10,6 +10,7 @@
 //! - [`Network`]: Wi-Fi status via NetworkManager, iwd or `/proc/net/wireless`
 //! - [`Tray`]: System tray host (StatusNotifierItem watcher, icons, menus)
 //! - [`Brightness`]: Screen backlight via sysfs + `brightnessctl`
+//! - [`Source`]: build your own event-driven data source (process stdout, file, socket) without a full `Service`
 
 pub mod apps;
 pub mod audio;
@@ -21,6 +22,7 @@ pub mod mpris;
 pub mod network;
 pub mod notifications;
 pub mod service;
+pub mod source;
 pub mod tray;
 pub mod window;
 
@@ -34,4 +36,5 @@ pub use mpris::{Mpris, PlaybackStatus};
 pub use network::{Network, WifiBackend};
 pub use notifications::{Notification, NotificationAction, Notifications, Urgency};
 pub use service::Service;
+pub use source::{Emitter, FileSource, ProcessSource, Source, SourceState, StopToken, TrackExt};
 pub use tray::{OpenMenu, Tray, TrayItem, TrayMenuItem, TrayStatus};

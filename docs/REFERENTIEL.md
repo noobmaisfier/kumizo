@@ -679,6 +679,19 @@ cx.spawn(async move |this, cx| {
 - Mémoire `pam_conv(3)` : les réponses doivent être allouées via `libc::calloc`
   et `libc::strdup` car PAM les libère lui-même avec `free(3)`.
 
+### Sources de données événementielles (`Source<T>`) — garanties et pièges
+
+1. **`inotify` et tronquage de fichier** :
+   Ne pas écouter `IN_MODIFY` ou `IN_CREATE` pour surveiller un fichier modifié par redirection shell (`echo val > fichier`). La redirection tronque le fichier avant d'écrire son contenu, générant un événement sur un fichier momentanément vide.
+   **Règle** : Écouter `IN_CLOSE_WRITE | IN_MOVED_TO` pour ne relire le fichier que lorsque l'écrivain a terminé de fermer ou remplacer atomiquement le fichier. Pour les pseudo-fichiers noyau (`/proc`, `/sys`) qui ne lèvent aucun événement `inotify`, utiliser `.poll_every(...)`.
+
+2. **Processus enfants et nettoyage des orphelins (`PR_SET_PDEATHSIG`)** :
+   Tout processus enfant (`ProcessSource`) est configuré avec `libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM)` dans `pre_exec`. Si le processus principal subit un arrêt brutal (`SIGKILL`), le noyau Linux envoie automatiquement `SIGTERM` aux enfants pour ne laisser aucun script orphelin en arrière-plan.
+
+3. **Inférence de type dans `cx.spawn` pour les entités génériques** :
+   Sur une méthode générique `Source<T>`, `cx.spawn(async move |this, cx| ...)` échoue avec `E0282` (« type annotations needed »). Toujours annoter explicitement :
+   `this: gpui::WeakEntity<Source<T>>, cx: &mut gpui::AsyncApp`.
+
 ---
 
 ## 11. Checklist avant de déclarer un changement fonctionnel

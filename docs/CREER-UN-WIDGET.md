@@ -405,6 +405,45 @@ Contrat (voir `crates/wk-services/src/service.rs`) :
 - Borner tout appel réseau/D-Bus qui peut pendre : timeout explicite
   (le timeout D-Bus par défaut fait 25 s mesurés — il gèle tout le reste).
 
+### Étape 9 bis — Sources ad-hoc sans écrire de Service (`Source<T>`)
+
+Écrire un `Service` complet est disproportionné si vous avez seulement besoin
+d'une valeur ponctuelle (sortie d'un script bash, fichier `/sys`, ou messages
+poussés sur un socket UNIX). Utilisez [`Source<T>`](file:///home/alamine/.iCode/kumizo/crates/wk-services/src/source.rs)
+du prelude, qui s'encapsule dans une `Entity<Source<T>>` standard GPUI :
+
+```rust
+use widgetkit::prelude::*;
+
+// 1. Processus : chaque ligne de stdout devient un T (auto-kill du processus avec PDEATHSIG)
+let ticker = ProcessSource::new("sh")
+    .args(["-c", "while true; do date +%s; sleep 1; done"])
+    .restart_after(Duration::from_secs(1))
+    .lines(cx, |line| Some(line.to_string()))
+    .track(cx); // re-notifie la vue parente à chaque valeur
+
+// 2. Fichier : relu dès qu'un script le modifie (inotify IN_CLOSE_WRITE + IN_MOVED_TO)
+let temp = Source::watch_file(cx, "/tmp/temperature", |text| text.trim().parse::<i32>().ok())
+    .track(cx);
+
+// 3. Fichier noyau sans inotify (/proc, /sys) : ajouter un intervalle de poll
+let cpu = FileSource::new("/proc/loadavg")
+    .poll_every(Duration::from_secs(2))
+    .watch(cx, |text| text.split_whitespace().next().map(str::to_string))
+    .track(cx);
+
+// 4. Socket UNIX : chaque ligne envoyée par un client devient un T
+let inbox = Source::listen_unix(cx, "/tmp/mon-widget.sock", |line| (!line.is_empty()).then(|| line.to_string()))
+    .track(cx);
+```
+
+Dans la vue (`render`) :
+- Lecture : `let val = self.temp.read(cx).value();` (`Option<&T>`).
+- Statut / Erreur : `self.temp.read(cx).error()` (`Option<&str>`) et `.state()` (`SourceState`).
+- Compteur de mises à jour : `self.temp.read(cx).updates()` (`u64`).
+
+**Nettoyage automatique** : quand l'entité `Source<T>` est détruite (ex. fermeture de la fenêtre), le processus enfant reçoit `SIGTERM` et le fichier de socket UNIX est supprimé du disque.
+
 ### Étape 10 — Fenêtres : afficher, cacher, contrôler
 
 - Depuis un widget (cas général) : appel direct en mémoire, sans IPC,

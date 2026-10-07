@@ -222,11 +222,45 @@ bind = $mainMod, B, exec, widgetctl toggle dock
 
 ---
 
+## Ad-Hoc Data Sources (`Source<T>`)
+
+A [`Service`](crates/wk-services/src/service.rs) is the right tool for shared, type-keyed desktop subsystems (battery, audio, mpris). For ad-hoc data needs (temperature in sysfs, streaming script stdout, or pushing messages over a socket), [`Source<T>`](crates/wk-services/src/source.rs) lets you stream events directly into a plain GPUI entity without writing a full service:
+
+```rust
+use widgetkit::prelude::*;
+
+// 1. Stream stdout lines from a child process (auto-kills child on drop)
+let ticker = ProcessSource::new("sh")
+    .args(["-c", "while true; do date +%s; sleep 1; done"])
+    .restart_after(Duration::from_secs(1))
+    .lines(cx, |line| Some(line.to_string()))
+    .track(cx);
+
+// 2. Watch a file via inotify (re-read when writers finish)
+let temp = Source::watch_file(cx, "/tmp/temperature", |s| s.trim().parse::<i32>().ok())
+    .track(cx);
+
+// 3. Listen on a private UNIX socket (mode 0600, unlinked on drop)
+let inbox = Source::listen_unix(cx, "/tmp/my-widget.sock", |line| (!line.is_empty()).then(|| line.to_string()))
+    .track(cx);
+```
+
+In your view's `render(&mut self, _, cx)`:
+```rust
+let val = self.temp.read(cx).value(); // Option<&i32>
+div().child(format!("Temp: {val:?} C"))
+```
+
+---
+
 ## Running the Examples
 
 ```bash
 # The whole shell (rail + launcher + tasks switcher + calendar + powermenu + clipboard + notifications) in a single process
 cargo run --release --package shell-example
+
+# Event-driven data sources demo (process stdout, inotify file watch, unix socket)
+cargo run --package sources-example
 
 # The PAM lockscreen (separate process on purpose, no IPC)
 cargo run --release --package lockscreen-example
@@ -237,5 +271,6 @@ cargo run --release --package lockscreen-example
 ## Roadmap
 
 - [x] **V1**: GPUI wgpu backend, Zero Idle CPU, LayerShell wrappers, event-driven UPower/Audio/MPRIS/Tray/Network services, Hyprland/Sway/Niri IPC, **single-instance shell** with a single control socket and CLI, in-process `cx.toggle_window(..)`.
-- [ ] **V2**: ergonomic helpers to build *your own* event-driven data sources (stream a process' stdout, watch a file, listen on a socket) without writing a full `Service`. No UI components: layout stays entirely yours.
+- [x] **V2**: ergonomic helpers to build *your own* event-driven data sources (stream a process' stdout, watch a file, listen on a socket) without writing a full `Service`. No UI components: layout stays entirely yours.
+
 

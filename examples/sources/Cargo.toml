@@ -1,0 +1,15 @@
+[package]
+name = "sources-example"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Event-driven data sources (process, file, socket) feeding a plain GPUI view"
+
+[[bin]]
+name = "sources"
+path = "src/main.rs"
+
+[dependencies]
+widgetkit = { path = "../../crates/widgetkit" }
+gpui = { workspace = true }
