@@ -4895,8 +4895,11 @@ version = "0.1.0"
 dependencies = [
  "async-io",
  "gpui",
+ "image",
+ "smallvec",
  "time",
  "widgetkit",
+ "wk-pam",
 ]
 
 [[package]]

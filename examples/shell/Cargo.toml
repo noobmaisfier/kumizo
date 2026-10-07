@@ -15,3 +15,6 @@ widgetkit = { path = "../../crates/widgetkit" }
 gpui = { workspace = true }
 async-io = { workspace = true }
 time = { workspace = true }
+smallvec = { workspace = true }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+wk-pam = { path = "../../crates/wk-pam" }

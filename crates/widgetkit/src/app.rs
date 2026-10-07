@@ -444,6 +444,12 @@ fn handle_ipc_request(
         }
 
         Request::ShowWindow { ref name } | Request::HideWindow { ref name } | Request::ToggleWindow { ref name } => {
+            if (matches!(req, Request::HideWindow { .. }) || matches!(req, Request::ToggleWindow { .. })) && name == "lock" {
+                return Response::Error {
+                    message: "The lock window cannot be dismissed via IPC for security reasons".into(),
+                };
+            }
+
             let Some(tx) = window_registry.lookup(name) else {
                 let known = window_registry.names();
                 return Response::Error {
