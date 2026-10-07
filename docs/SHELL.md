@@ -32,6 +32,18 @@ WidgetKit is a high-performance Wayland desktop shell SDK written in pure Rust, 
 3. **Zero Idle CPU**:
    Every service is strictly event-driven (kernel uevents, D-Bus signal subscription, compositor IPC sockets). If nothing on the system changes, the shell consumes **0.0% CPU** and does not wake the GPU. Views only redraw when notified (`cx.notify()`).
 
+### Creative Mandate: Anti-Anchoring Directive (CRITICAL FOR AI AGENTS)
+
+> [!IMPORTANT]
+> **DO NOT DEFAULT TO A STANDARD 32px HORIZONTAL TOP-BAR.**
+> Large Language Models naturally suffer from *anchoring bias* — instinctively outputting the stereotypical Linux bar pattern:
+> `[Workspaces (left) | Window Title (center) | Clock & Battery (right)]`.
+>
+> **WidgetKit is not a clone of Waybar or Polybar.** It is a blank GPU canvas with Wayland multi-window composition. When designing a shell:
+> - **Rethink Topologies**: Does the desktop need a persistent top bar? Or would it be superior with an edge-anchored vertical command rail, decoupled floating corner pods, an event-driven dynamic island, an ambient wallpaper layer dashboard, or zero permanent chrome with sliding gesture drawers?
+> - **Rethink Visual Identities**: Avoid regurgitating ubiquitous community palettes (such as generic Catppuccin Mocha or Nord) unless specifically requested. Craft an intentional, bespoke visual universe with distinctive typography, geometry, contrast, and interactive feedback.
+> - **Respect Display Ergonomics**: Ultra-wide displays, laptop screens, and multi-monitor setups thrive on non-traditional spatial layouts. Explore designs that maximize usable work area.
+
 ---
 
 ## 2. Shell Structure Anatomy
@@ -319,15 +331,15 @@ Never hardcode colors directly in views. Structure tokens in a dedicated `mod pa
 mod pal {
     use gpui::{rgb, rgba, Rgba};
 
-    // Semantic roles, not raw color names:
-    pub fn bg() -> Rgba { rgb(0x1e1e2e) }
-    pub fn surface() -> Rgba { rgb(0x313244) }
-    pub fn text() -> Rgba { rgb(0xcdd6f4) }
-    pub fn text_muted() -> Rgba { rgb(0x6c7086) }
-    pub fn accent() -> Rgba { rgb(0x89b4fa) }
-    pub fn secondary() -> Rgba { rgb(0xf38ba8) }
-    pub fn border() -> Rgba { rgb(0x45475a) }
-    pub fn urgent() -> Rgba { rgb(0xf38ba8) }
+    // Semantic roles, resolved from active theme or runtime config:
+    pub fn bg() -> Rgba { rgb(0x0f111a) }
+    pub fn surface() -> Rgba { rgb(0x1a1d2e) }
+    pub fn text() -> Rgba { rgb(0xf0f2f5) }
+    pub fn text_muted() -> Rgba { rgb(0x5c6370) }
+    pub fn accent() -> Rgba { rgb(0x00e8c6) }
+    pub fn secondary() -> Rgba { rgb(0xff5370) }
+    pub fn border() -> Rgba { rgb(0x282c3f) }
+    pub fn urgent() -> Rgba { rgb(0xff5370) }
 }
 ```
 
@@ -342,28 +354,28 @@ Themes are stored as `.toml` files in `~/.config/<shell-name>/themes/*.toml` (wi
 #### Standard Theme TOML Schema:
 ```toml
 [meta]
-name = "Catppuccin Mocha"
-author = "Kumizo Community"
+name = "Bespoke Aesthetic Name"
+author = "Designer Name"
 variant = "dark" # "dark" | "light"
 
 # Mandatory: wallpaper is an integral part of the desktop identity!
 [wallpaper]
-path = "~/Pictures/wallpapers/catppuccin.png"
+path = "~/Pictures/wallpapers/bespoke_universe.png"
 mode = "fill" # "fill" | "fit" | "stretch" | "center"
 
 [colors]
-bg = "#1e1e2e"
-surface = "#313244"
-text = "#cdd6f4"
-text_muted = "#6c7086"
-accent = "#89b4fa"
-secondary = "#f38ba8"
-border = "#45475a"
-urgent = "#f38ba8"
+bg = "#0f111a"
+surface = "#1a1d2e"
+text = "#f0f2f5"
+text_muted = "#5c6370"
+accent = "#00e8c6"
+secondary = "#ff5370"
+border = "#282c3f"
+urgent = "#ff5370"
 
 [style]
-border_width = 2.0
-corner_radius = 8.0
+border_width = 1.5
+corner_radius = 6.0
 shadow_size = 4.0
 ```
 
@@ -384,11 +396,12 @@ A Wayland shell and the desktop wallpaper form a single cohesive aesthetic. When
 
 When an AI agent or developer creates a shell proposal, they **must** follow these two rules:
 
-1. **Provide At Least 3 Curated TOML Presets**:
-   Always ship at least 3 distinct built-in presets representing varied moods:
-   - A dark/modern theme (e.g. `catppuccin-mocha.toml` or `tokyo-night.toml`)
-   - A light/clean paper theme (e.g. `paper-light.toml` or `latte.toml`)
-   - A bold/vibrant or retro theme (e.g. `riso-electric.toml` or `cyberpunk.toml`)
+1. **Invent At Least 3 Bespoke TOML Presets (Unique Aesthetic Universes)**:
+   Do NOT copy standard community palettes (e.g., standard Catppuccin Mocha or Nord) unless explicitly requested. **Invent 3 distinct, thoughtfully curated aesthetic worlds** crafted specifically for the shell's philosophy:
+   - **Universe A (Low-luminance / High-focus)**: E.g., deep obsidian with bioluminescent emerald accents or monochromatic carbon.
+   - **Universe B (High-luminance / Editorial)**: E.g., warm architectural parchment, warm gray ink, crisp contrasting type.
+   - **Universe C (Expressive / Thematic)**: E.g., risograph electric cyan & cadmium red, industrial caution amber & slate, or retro-futuristic CRT amber.
+   Each preset must provide its own paired `[wallpaper]` path and layout parameters (`border_width`, `corner_radius`, etc.).
 
 2. **Always Implement a `ThemeSwitcher` Widget**:
    Every shell must include an interactive `ThemeSwitcher` modal or popup window:
@@ -400,51 +413,59 @@ When an AI agent or developer creates a shell proposal, they **must** follow the
 
 ---
 
-## 9. Complete Starter Template: Clean Shell
+## 9. Mechanical Starter Skeleton (Structure & Wiring Reference)
 
-Below is a complete, minimal, working multi-window shell ready to be customized:
+> [!IMPORTANT]
+> **Anti-Anchoring Notice**: This skeleton demonstrates **pure system wiring and architecture** (registering services, configuring layer-shell surfaces, querying service state, and triggering inter-window actions).
+> **It intentionally avoids prescribing a visual layout.** Do NOT simply copy-paste a traditional 3-section horizontal bar unless specifically asked — design the spatial form factor that best fits your shell's purpose!
 
 ```rust
-use std::time::Duration;
 use gpui::prelude::*;
 use widgetkit::prelude::*;
 
 fn main() {
     WidgetKit::new()
+        // 1. Register required background services
         .service::<Clock>()
         .service::<Battery>()
         .service::<Compositor>()
-        .window(bar_window(), |cx| cx.new(StatusBar::new))
-        .window(launcher_window(), |cx| cx.new(LauncherModal::new))
+
+        // 2. Register layer-shell surfaces (bars, islands, rails, pods, drawers, overlays)
+        .window(primary_surface_window(), |cx| cx.new(PrimarySurface::new))
+        .window(overlay_surface_window(), |cx| cx.new(OverlaySurface::new))
+
+        // 3. Start unified event loop
         .run();
 }
 
-fn bar_window() -> LayerWindow {
-    LayerWindow::new("bar")
+fn primary_surface_window() -> LayerWindow {
+    // Configure anchors, exclusive zone, and dimensions according to your topology:
+    LayerWindow::new("primary_surface")
         .layer(Layer::Top)
-        .anchor(Anchor::TOP_BAR)
-        .height(36.0)
+        .anchor(Anchor::TOP | Anchor::LEFT | Anchor::RIGHT) // Or LEFT_BAR, or TOP floating island, or Corner Pod
         .exclusive_zone(36)
-        .namespace("wk-bar")
+        .namespace("my-shell-surface")
 }
 
-fn launcher_window() -> LayerWindow {
-    LayerWindow::new("launcher")
+fn overlay_surface_window() -> LayerWindow {
+    LayerWindow::new("overlay_surface")
         .layer(Layer::Overlay)
         .anchor(Anchor::FULLSCREEN)
         .exclusive_zone(-1)
         .keyboard_interactivity(KeyboardInteractivity::OnDemand)
         .start_hidden(true)
-        .namespace("wk-launcher")
+        .namespace("my-shell-overlay")
 }
 
-struct StatusBar {
+/// Structural component demonstrating service access and event handling.
+/// The layout, orientation, and visual structure inside `render()` are completely yours to define.
+struct PrimarySurface {
     clock: Entity<Clock>,
     battery: Entity<Battery>,
     compositor: Entity<Compositor>,
 }
 
-impl StatusBar {
+impl PrimarySurface {
     fn new(cx: &mut Context<Self>) -> Self {
         Self {
             clock: cx.service::<Clock>(),
@@ -454,109 +475,73 @@ impl StatusBar {
     }
 }
 
-impl Render for StatusBar {
+impl Render for PrimarySurface {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let clock = self.clock.read(cx);
         let bat = self.battery.read(cx);
         let comp = self.compositor.read(cx);
 
+        // Blank layout container: shape, flex direction, and alignment are yours to decide
         div()
-            .flex()
-            .flex_row()
-            .items_center()
-            .justify_between()
             .size_full()
-            .px_4()
-            .bg(rgb(0x11111b))
-            .text_color(rgb(0xcdd6f4))
-            .text_size(px(13.0))
-            // Left: Launcher Button & Workspaces
+            .bg(pal::bg())
+            .text_color(pal::text())
+            // 1. Triggering another shell window (zero-latency in-memory call)
             .child(
                 div()
-                    .flex()
-                    .items_center()
-                    .gap_3()
-                    .child(
-                        div()
-                            .id("launcher-btn")
-                            .px_2()
-                            .py_1()
-                            .bg(rgb(0x89b4fa))
-                            .text_color(rgb(0x11111b))
-                            .font_weight(gpui::FontWeight::BOLD)
-                            .rounded_md()
-                            .cursor_pointer()
-                            .child("Apps")
-                            .on_click(|_, _, cx| cx.toggle_window("launcher")),
-                    )
-                    .child(
-                        div().flex().gap_1().children(
-                            comp.workspaces().iter().map(|ws| {
-                                let id = ws.id;
-                                let is_active = ws.is_active;
-                                div()
-                                    .id(format!("ws-{}", id))
-                                    .px_2()
-                                    .py_1()
-                                    .rounded_md()
-                                    .when(is_active, |s| s.bg(rgb(0x313244)).text_color(rgb(0x89b4fa)))
-                                    .child(ws.name.clone())
-                                    .cursor_pointer()
-                                    .on_click(move |_, _, cx| {
-                                        let comp = cx.service::<Compositor>();
-                                        comp.update(cx, |c, _| c.switch_workspace(id));
-                                    })
-                            })
-                        )
-                    )
+                    .id("action-trigger")
+                    .cursor_pointer()
+                    .child("Toggle Overlay")
+                    .on_click(|_, _, cx| cx.toggle_window("overlay_surface")),
             )
-            // Center: Active Window Title
-            .child(
-                div()
-                    .min_w_0()
-                    .max_w(px(300.0))
-                    .truncate()
-                    .child(comp.active_window().map(|w| w.title.as_str()).unwrap_or("Desktop"))
+            // 2. Interacting with compositor workspaces
+            .children(
+                comp.workspaces().iter().map(|ws| {
+                    let id = ws.id;
+                    let is_active = ws.is_active;
+                    div()
+                        .id(format!("ws-{}", id))
+                        .cursor_pointer()
+                        .when(is_active, |s| s.text_color(pal::accent()))
+                        .child(ws.name.clone())
+                        .on_click(move |_, _, cx| {
+                            cx.service::<Compositor>().update(cx, |c, _| c.switch_workspace(id));
+                        })
+                })
             )
-            // Right: Battery & Clock
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_3()
-                    .child(format!("{}%", bat.percent()))
-                    .child(clock.time_hm())
-            )
+            // 3. Displaying reactive system telemetry
+            .child(clock.time_hm())
+            .child(format!("{}%", bat.percent()))
     }
 }
 
-struct LauncherModal;
+/// Interactive modal/drawer overlay component.
+struct OverlaySurface;
 
-impl LauncherModal {
+impl OverlaySurface {
     fn new(_cx: &mut Context<Self>) -> Self {
         Self
     }
 }
 
-impl Render for LauncherModal {
+impl Render for OverlaySurface {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // Veil covering the background
+        // Fullscreen backdrop
         div()
             .size_full()
             .flex()
             .items_center()
             .justify_center()
-            .bg(rgba(0x000000aa))
-            .on_click(|_, _, cx| cx.hide_window("launcher"))
+            .bg(gpui::rgba(0x000000bb))
+            .on_click(|_, _, cx| cx.hide_window("overlay_surface"))
             .child(
                 div()
-                    .w(px(480.0))
-                    .p_6()
-                    .bg(rgb(0x1e1e2e))
+                    .p_8()
+                    .bg(pal::surface())
                     .border_1()
-                    .border_color(rgb(0x313244))
-                    .rounded_xl()
-                    .child("Your Custom App Launcher Here")
+                    .border_color(pal::border())
+                    .rounded_lg()
+                    .child("Interactive Modal / Drawer Canvas"),
             )
     }
 }
@@ -564,20 +549,38 @@ impl Render for LauncherModal {
 
 ---
 
-## 10. Design Explorations & Inspiration
+## 10. Architectural Topologies & Aesthetic Inspirations
 
-You are encouraged to propose innovative, distinctive shell concepts:
+WidgetKit is an unconstrained engine. You are encouraged to propose innovative, distinctive shell concepts across diverse topologies and aesthetic movements:
 
-1. **Riso Print / Neo-Brutalist (Reference)**:
-   - High-contrast electric colors (fluo pink `#ff2a85`, electric blue `#0055ff`, sunflower yellow `#ffcc00`, ink `#111118`).
-   - Square corners, 2px borders, zero-blur hard offset drop shadows (`shadow(hard(color, 4.0))`).
-   - Misregistered offset print effects on active typography.
-2. **Dynamic Island / Ambient Shell**:
-   - No permanent edge bar. A single floating pill at the top that expands dynamically on events (incoming song change, notification arrival, volume change).
-3. **Nordic Frosted Glass**:
-   - Soft translucent background layers (`rgba(...)`), rounded corners, subtle separators, compositor background blur enabled via `.namespace("wk-island")`.
-4. **Tiling Companion**:
-   - Ultra-dense vertical strip or status line integrated seamlessly with window borders, displaying git branches, system temperatures, and task windows.
+### 1. Architectural Topologies (Beyond the Traditional Bar)
+
+1. **The Dynamic Island / Ambient Satellite**:
+   - **Layer**: `Top` or `Overlay`, anchored `TOP`.
+   - **Behavior**: A compact floating capsule (e.g. 240px wide) at the top of the screen that dynamically expands horizontally or drops down cards when events happen (track change, incoming notification, volume adjustment), retracting back to an ambient indicator.
+2. **The Vertical Command Rail (Optimized for 16:9 / 21:9 Screens)**:
+   - **Layer**: `Top`, anchored `LEFT` or `RIGHT`.
+   - **Behavior**: Takes advantage of modern horizontal screen real estate. Thin, high-density utility strip with vertical icon clusters, rotated text or glyphs, and bottom-aligned power & control triggers.
+3. **The Corner HUD Pods (Decoupled Multi-Window Architecture)**:
+   - **Layer**: Multiple independent `LayerWindow` surfaces.
+   - **Behavior**: Instead of one monolithic edge-to-edge bar, declare 2 or 3 tiny floating pods: Pod A at `TOP | LEFT` for workspaces & media, Pod B at `TOP | RIGHT` for telemetry & time, Pod C at `BOTTOM | LEFT` for a quick launcher. Zero reserved exclusive zone between pods leaves the screen uncluttered.
+4. **The Ambient Desktop Underlay (Living Wallpaper Layer)**:
+   - **Layer**: `Background` or `Bottom`.
+   - **Behavior**: Positioned underneath application windows. Displays living system telemetry graphs, large typographic clocks, and calendar agendas directly on the desktop background, visible when workspaces are clear or tiled with margins.
+5. **The Zero-Chrome Sliding Command Drawer**:
+   - **Layer**: `Overlay`, initially hidden (`.start_hidden(true)`).
+   - **Behavior**: No permanent screen chrome reserved. The entire interface reveals itself smoothly from screen edges on hotkey (`Super+Space`), touchpad gesture, or screen edge hover.
+
+### 2. Aesthetic Movements & Visual Identities
+
+- **Neo-Brutalist & Risograph Print**:
+  Raw ink outlines (2px borders), zero-blur hard offset drop shadows (`HardShadow`), high-saturation spot inks (cadmium red, electric cyan, sunflower yellow, warm off-white newsprint), bold blocky typography.
+- **Industrial Cyberdeck / Mil-Spec Terminal**:
+  Monospace data density, tabular telemetry, status tags, caution stripes, high-contrast amber or phosphorus green telemetry with zero decorative fluff.
+- **Nordic Editorial & Swiss Modernism**:
+  Generous negative space, elegant serif or crisp neo-grotesque type, warm architectural paper backgrounds, subtle hairline dividers, literary poise.
+- **Aerospace HUD / Minimalist Wireframe**:
+  Monochromatic wireframes, hairline gauges, circular progress rings, clean geometric glyphs, translucent dark backdrops with subtle borders.
 
 ---
 
