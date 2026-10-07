@@ -10,8 +10,8 @@ pub mod widgets;
 use gpui::prelude::*;
 use widgetkit::prelude::*;
 use widgets::{
-    calendar, clipboard, kanban, launcher, lock, notifications, osd, powermenu, rail, stamp,
-    tasks, tray,
+    bluetooth, calendar, clipboard, kanban, launcher, lock, notifications, osd, powermenu, rail,
+    stamp, tasks, tray,
 };
 
 fn main() {
@@ -19,6 +19,7 @@ fn main() {
         .service::<Clock>()
         .service::<Battery>()
         .service::<Network>()
+        .service::<Bluetooth>()
         .service::<Tray>()
         .service::<Audio>()
         .service::<Brightness>()
@@ -32,6 +33,7 @@ fn main() {
         .window(osd::window(), |cx: &mut gpui::App| cx.new(osd::VolumeOsd::new))
         .window(tray::window(), |cx: &mut gpui::App| cx.new(tray::TrayMenu::new))
         .window(calendar::window(), |cx: &mut gpui::App| cx.new(calendar::Calendar::new))
+        .window(bluetooth::window(), |cx: &mut gpui::App| cx.new(bluetooth::BluetoothMenu::new))
         .window(launcher::window(), |cx: &mut gpui::App| cx.new(launcher::AppLauncher::new))
         .window(powermenu::window(), |cx: &mut gpui::App| cx.new(powermenu::PowerMenu::new))
         .window(notifications::toasts_window(), |cx: &mut gpui::App| {

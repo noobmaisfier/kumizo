@@ -15,6 +15,7 @@
 pub mod apps;
 pub mod audio;
 pub mod battery;
+pub mod bluetooth;
 pub mod brightness;
 pub mod clipboard;
 pub mod clock;
@@ -29,6 +30,7 @@ pub mod window;
 pub use apps::{AppInfo, Apps};
 pub use audio::Audio;
 pub use battery::{Battery, BatteryState};
+pub use bluetooth::{Bluetooth, BluetoothDevice};
 pub use brightness::Brightness;
 pub use clipboard::{Clipboard, ClipboardItem};
 pub use clock::{Clock, ClockResolution};

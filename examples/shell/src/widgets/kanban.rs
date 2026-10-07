@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use gpui::prelude::*;
 use gpui::{
-    Context, FocusHandle, KeyDownEvent, ParentElement, Render, Rgba, Styled,
-    Window,
+    Context, Div, ElementId, FocusHandle, KeyDownEvent, ParentElement, Render, Rgba, Stateful,
+    Styled, Window,
 };
 use serde::{Deserialize, Serialize};
 use widgetkit::prelude::*;
@@ -29,6 +29,15 @@ pub enum NoteColor {
 }
 
 impl NoteColor {
+    pub const ALL: [NoteColor; 6] = [
+        NoteColor::Yellow,
+        NoteColor::Peach,
+        NoteColor::Pink,
+        NoteColor::Green,
+        NoteColor::Blue,
+        NoteColor::Purple,
+    ];
+
     pub fn bg(&self) -> Rgba {
         match self {
             NoteColor::Yellow => pal::yellow(),
@@ -61,15 +70,6 @@ impl NoteColor {
             NoteColor::Purple => "Iris",
         }
     }
-
-    pub const ALL: [NoteColor; 6] = [
-        NoteColor::Yellow,
-        NoteColor::Peach,
-        NoteColor::Pink,
-        NoteColor::Green,
-        NoteColor::Blue,
-        NoteColor::Purple,
-    ];
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -81,6 +81,8 @@ pub enum ColumnId {
 }
 
 impl ColumnId {
+    pub const ALL: [ColumnId; 4] = [ColumnId::Todo, ColumnId::Doing, ColumnId::Done, ColumnId::Notes];
+
     pub fn label(&self) -> &'static str {
         match self {
             ColumnId::Todo => "To Do",
@@ -103,17 +105,24 @@ impl ColumnId {
         match self {
             ColumnId::Todo => Some(ColumnId::Doing),
             ColumnId::Doing => Some(ColumnId::Done),
-            ColumnId::Done => None,
-            ColumnId::Notes => None,
+            ColumnId::Done | ColumnId::Notes => None,
         }
     }
 
     pub fn prev(&self) -> Option<ColumnId> {
         match self {
-            ColumnId::Todo => None,
             ColumnId::Doing => Some(ColumnId::Todo),
             ColumnId::Done => Some(ColumnId::Doing),
-            ColumnId::Notes => None,
+            ColumnId::Todo | ColumnId::Notes => None,
+        }
+    }
+
+    fn empty_hint(&self) -> &'static str {
+        match self {
+            ColumnId::Todo => "Nothing planned. Press N to add a card.",
+            ColumnId::Doing => "Nothing in flight right now.",
+            ColumnId::Done => "Finished cards land here.",
+            ColumnId::Notes => "No notes yet. Press S to pin one.",
         }
     }
 }
@@ -129,55 +138,79 @@ pub struct KanbanCard {
     pub updated_at: String,
 }
 
+impl KanbanCard {
+    fn is_note(&self) -> bool {
+        self.is_sticky || self.column == ColumnId::Notes
+    }
+
+    /// `q` must already be lowercase.
+    fn matches(&self, q: &str) -> bool {
+        q.is_empty() || self.title.to_lowercase().contains(q) || self.body.to_lowercase().contains(q)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KanbanStore {
     pub cards: Vec<KanbanCard>,
 }
 
+fn stamp() -> String {
+    let now = time::OffsetDateTime::now_utc();
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}",
+        now.year(),
+        u8::from(now.month()),
+        now.day(),
+        now.hour(),
+        now.minute()
+    )
+}
+
 impl Default for KanbanStore {
     fn default() -> Self {
+        let mk = |id: &str, title: &str, body: &str, column, color, is_sticky| KanbanCard {
+            id: id.into(),
+            title: title.into(),
+            body: body.into(),
+            column,
+            color,
+            is_sticky,
+            updated_at: stamp(),
+        };
         Self {
             cards: vec![
-                KanbanCard {
-                    id: "card-welcome".into(),
-                    title: "Welcome to Kumizo Kanban".into(),
-                    body: "Use this fullscreen board for agile tasks, quick sticky memos, and sprint planning."
-                        .into(),
-                    column: ColumnId::Todo,
-                    color: NoteColor::Blue,
-                    is_sticky: false,
-                    updated_at: "Today".into(),
-                },
-                KanbanCard {
-                    id: "note-scratchpad".into(),
-                    title: "💡 Fast Idea Pin".into(),
-                    body: "Sticky notes can be created with 📌 and pinned anywhere. Press N for new card, S for note."
-                        .into(),
-                    column: ColumnId::Notes,
-                    color: NoteColor::Yellow,
-                    is_sticky: true,
-                    updated_at: "Today".into(),
-                },
-                KanbanCard {
-                    id: "card-sample-doing".into(),
-                    title: "Deep focus session".into(),
-                    body: "Move cards across columns using the ← and → arrows or keyboard shortcuts."
-                        .into(),
-                    column: ColumnId::Doing,
-                    color: NoteColor::Peach,
-                    is_sticky: false,
-                    updated_at: "Today".into(),
-                },
-                KanbanCard {
-                    id: "card-sample-done".into(),
-                    title: "Risograph theme setup".into(),
-                    body: "Neobrutalist cards with hard ink shadows and tactile Flexoki colors."
-                        .into(),
-                    column: ColumnId::Done,
-                    color: NoteColor::Green,
-                    is_sticky: false,
-                    updated_at: "Today".into(),
-                },
+                mk(
+                    "card-welcome",
+                    "Welcome to Kumizo Kanban",
+                    "Use this fullscreen board for agile tasks, quick sticky memos, and sprint planning.",
+                    ColumnId::Todo,
+                    NoteColor::Blue,
+                    false,
+                ),
+                mk(
+                    "note-scratchpad",
+                    "💡 Fast Idea Pin",
+                    "Press N for a new card, S for a sticky note, / to search, Ctrl+Z to undo a delete.",
+                    ColumnId::Notes,
+                    NoteColor::Yellow,
+                    true,
+                ),
+                mk(
+                    "card-sample-doing",
+                    "Deep focus session",
+                    "Move cards across columns using the ← and → buttons.",
+                    ColumnId::Doing,
+                    NoteColor::Peach,
+                    false,
+                ),
+                mk(
+                    "card-sample-done",
+                    "Risograph theme setup",
+                    "Neobrutalist cards with hard ink shadows and tactile Flexoki colors.",
+                    ColumnId::Done,
+                    NoteColor::Green,
+                    false,
+                ),
             ],
         }
     }
@@ -199,8 +232,13 @@ impl KanbanStore {
     pub fn load() -> Self {
         let p = Self::path();
         if let Ok(bytes) = std::fs::read(&p) {
-            if let Ok(store) = serde_json::from_slice::<KanbanStore>(&bytes) {
-                return store;
+            match serde_json::from_slice::<KanbanStore>(&bytes) {
+                Ok(store) => return store,
+                Err(e) => {
+                    // Never silently clobber a file we failed to parse.
+                    eprintln!("kanban: failed to parse {}: {e}; keeping a .bak copy", p.display());
+                    let _ = std::fs::copy(&p, p.with_extension("json.bak"));
+                }
             }
         }
         let def = KanbanStore::default();
@@ -208,10 +246,17 @@ impl KanbanStore {
         def
     }
 
+    /// Atomic save: write to a temp file, then rename over the original.
     pub fn save(&self) {
         let p = Self::path();
-        if let Ok(json) = serde_json::to_string_pretty(self) {
-            let _ = std::fs::write(p, json);
+        let tmp = p.with_extension("json.tmp");
+        match serde_json::to_string_pretty(self) {
+            Ok(json) => {
+                if let Err(e) = std::fs::write(&tmp, json).and_then(|_| std::fs::rename(&tmp, &p)) {
+                    eprintln!("kanban: failed to save {}: {e}", p.display());
+                }
+            }
+            Err(e) => eprintln!("kanban: failed to serialize store: {e}"),
         }
     }
 }
@@ -222,15 +267,24 @@ impl KanbanStore {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewMode {
-    Board,      // 4 columns: To Do, In Progress, Done, Sticky Notes
+    Board,      // To Do, In Progress, Done, Sticky Notes
     StickyWall, // Wall of colored sticky notes
-    Flow,       // Kanban flow only (To Do, Doing, Done)
+    Flow,       // To Do, In Progress, Done only
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditField {
     Title,
     Body,
+}
+
+impl EditField {
+    fn toggle(self) -> Self {
+        match self {
+            EditField::Title => EditField::Body,
+            EditField::Body => EditField::Title,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -244,12 +298,47 @@ pub struct EditDraft {
     pub field: EditField,
 }
 
+impl EditDraft {
+    fn active_mut(&mut self) -> &mut String {
+        match self.field {
+            EditField::Title => &mut self.title,
+            EditField::Body => &mut self.body,
+        }
+    }
+}
+
+/// Text produced by a keystroke, ignoring command chords.
+fn typed_text(event: &KeyDownEvent) -> Option<String> {
+    let m = &event.keystroke.modifiers;
+    if m.control || m.platform {
+        return None;
+    }
+    if let Some(ref text) = event.keystroke.key_char {
+        let s: String = text.chars().filter(|c| !c.is_control()).collect();
+        if !s.is_empty() {
+            return Some(s);
+        }
+    }
+    let key = event.keystroke.key.as_str();
+    if key == "space" {
+        return Some(" ".into());
+    }
+    let mut chars = key.chars();
+    match (chars.next(), chars.next()) {
+        (Some(c), None) if !c.is_control() => Some(c.to_string()),
+        _ => None,
+    }
+}
+
 pub struct KanbanScreen {
     focus: FocusHandle,
     pub store: KanbanStore,
     pub view_mode: ViewMode,
     pub search_query: String,
+    pub search_active: bool,
     pub draft: Option<EditDraft>,
+    /// Most recently deleted card + its index, for undo.
+    pub last_deleted: Option<(usize, KanbanCard)>,
 }
 
 impl KanbanScreen {
@@ -259,93 +348,45 @@ impl KanbanScreen {
             store: KanbanStore::load(),
             view_mode: ViewMode::Board,
             search_query: String::new(),
+            search_active: false,
             draft: None,
+            last_deleted: None,
         }
     }
 
-    fn on_key(&mut self, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
-        let key = event.keystroke.key.as_str();
+    // ---- Keyboard ---------------------------------------------------------
 
-        // If editing a card/note in modal:
-        if let Some(ref mut draft) = self.draft {
-            match key {
-                "escape" => {
-                    self.draft = None;
-                    cx.notify();
-                    return;
-                }
-                "enter" => {
-                    if event.keystroke.modifiers.control || event.keystroke.modifiers.platform {
-                        self.save_draft(cx);
-                        return;
-                    }
-                    if draft.field == EditField::Title {
-                        draft.field = EditField::Body;
-                        cx.notify();
-                        return;
-                    } else {
-                        draft.body.push('\n');
-                        cx.notify();
-                        return;
-                    }
-                }
-                "tab" => {
-                    draft.field = match draft.field {
-                        EditField::Title => EditField::Body,
-                        EditField::Body => EditField::Title,
-                    };
-                    cx.notify();
-                    return;
-                }
-                "backspace" => {
-                    match draft.field {
-                        EditField::Title => {
-                            draft.title.pop();
-                        }
-                        EditField::Body => {
-                            draft.body.pop();
-                        }
-                    }
-                    cx.notify();
-                    return;
-                }
-                _ => {
-                    if let Some(ref text) = event.keystroke.key_char {
-                        for c in text.chars() {
-                            if !c.is_control() || c == '\n' {
-                                match draft.field {
-                                    EditField::Title => draft.title.push(c),
-                                    EditField::Body => draft.body.push(c),
-                                }
-                            }
-                        }
-                        cx.notify();
-                        return;
-                    } else if key == "space" {
-                        match draft.field {
-                            EditField::Title => draft.title.push(' '),
-                            EditField::Body => draft.body.push(' '),
-                        }
-                        cx.notify();
-                        return;
-                    } else if key.chars().count() == 1 {
-                        if let Some(c) = key.chars().next() {
-                            if !c.is_control() {
-                                match draft.field {
-                                    EditField::Title => draft.title.push(c),
-                                    EditField::Body => draft.body.push(c),
-                                }
-                                cx.notify();
-                                return;
-                            }
-                        }
-                    }
-                }
-            }
+    fn on_key(&mut self, event: &KeyDownEvent, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.draft.is_some() {
+            self.on_key_draft(event, cx);
             return;
         }
 
-        // Global shortcuts when no draft is open:
+        let key = event.keystroke.key.as_str();
+        let m = &event.keystroke.modifiers;
+        let cmd = m.control || m.platform;
+
+        // Search mode: every printable key goes into the query, so words
+        // containing "n" or "s" no longer trigger shortcuts.
+        if self.search_active {
+            match key {
+                "escape" => {
+                    self.search_query.clear();
+                    self.search_active = false;
+                }
+                "enter" => self.search_active = false,
+                "backspace" => {
+                    self.search_query.pop();
+                }
+                _ => match typed_text(event) {
+                    Some(t) => self.search_query.push_str(&t),
+                    None => return,
+                },
+            }
+            cx.notify();
+            return;
+        }
+
         match key {
             "escape" => {
                 if !self.search_query.is_empty() {
@@ -355,38 +396,73 @@ impl KanbanScreen {
                     cx.hide_window("kanban");
                 }
             }
-            "n" if !event.keystroke.modifiers.control => {
-                self.start_new_card(ColumnId::Todo, false, cx);
-            }
-            "s" if !event.keystroke.modifiers.control => {
-                self.start_new_card(ColumnId::Notes, true, cx);
-            }
-            "backspace" => {
-                self.search_query.pop();
+            "/" => {
+                self.search_active = true;
                 cx.notify();
             }
-            "space" => {
-                self.search_query.push(' ');
+            "f" if cmd => {
+                self.search_active = true;
                 cx.notify();
             }
-            _ => {
-                if let Some(ref text) = event.keystroke.key_char {
-                    for c in text.chars() {
-                        if !c.is_control() {
-                            self.search_query.push(c);
-                        }
-                    }
-                    cx.notify();
-                } else if key.chars().count() == 1 {
-                    if let Some(c) = key.chars().next() {
-                        if !c.is_control() {
-                            self.search_query.push(c);
-                            cx.notify();
-                        }
-                    }
+            "z" if cmd => self.undo_delete(cx),
+            "n" if !cmd => self.start_new_card(ColumnId::Todo, false, cx),
+            "s" if !cmd => self.start_new_card(ColumnId::Notes, true, cx),
+            "1" if !cmd => self.set_view(ViewMode::Board, cx),
+            "2" if !cmd => self.set_view(ViewMode::StickyWall, cx),
+            "3" if !cmd => self.set_view(ViewMode::Flow, cx),
+            _ => {}
+        }
+    }
+
+    fn on_key_draft(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
+        let key = event.keystroke.key.as_str();
+        let m = &event.keystroke.modifiers;
+        let cmd = m.control || m.platform;
+
+        if key == "escape" {
+            self.draft = None;
+            cx.notify();
+            return;
+        }
+        if key == "enter" && cmd {
+            self.save_draft(cx);
+            return;
+        }
+
+        let Some(draft) = self.draft.as_mut() else { return };
+        match key {
+            "enter" => {
+                if draft.field == EditField::Title {
+                    draft.field = EditField::Body;
+                } else {
+                    draft.body.push('\n');
                 }
             }
+            "tab" => draft.field = draft.field.toggle(),
+            "backspace" => {
+                draft.active_mut().pop();
+            }
+            "v" if cmd => {
+                let single_line = draft.field == EditField::Title;
+                if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
+                    let text = if single_line { text.replace(['\n', '\r'], " ") } else { text };
+                    draft.active_mut().push_str(&text);
+                }
+            }
+            _ if cmd => return,
+            _ => match typed_text(event) {
+                Some(t) => draft.active_mut().push_str(&t),
+                None => return,
+            },
         }
+        cx.notify();
+    }
+
+    // ---- Actions ----------------------------------------------------------
+
+    fn set_view(&mut self, mode: ViewMode, cx: &mut Context<Self>) {
+        self.view_mode = mode;
+        cx.notify();
     }
 
     fn start_new_card(&mut self, column: ColumnId, is_sticky: bool, cx: &mut Context<Self>) {
@@ -417,39 +493,39 @@ impl KanbanScreen {
 
     fn save_draft(&mut self, cx: &mut Context<Self>) {
         if let Some(draft) = self.draft.take() {
-            if draft.title.trim().is_empty() && draft.body.trim().is_empty() {
+            let title = draft.title.trim();
+            let body = draft.body.trim();
+            if title.is_empty() && body.is_empty() {
                 cx.notify();
                 return;
             }
-            let title = if draft.title.trim().is_empty() {
-                "Untitled Note".to_string()
-            } else {
-                draft.title.trim().to_string()
-            };
+            let title = if title.is_empty() { "Untitled Note".to_string() } else { title.to_string() };
+            let body = body.to_string();
+            let timestamp = stamp();
 
-            let now = time::OffsetDateTime::now_utc();
-            let timestamp = format!("{:02}:{:02}", now.hour(), now.minute());
-
-            if let Some(id) = draft.id {
-                if let Some(card) = self.store.cards.iter_mut().find(|c| c.id == id) {
-                    card.title = title;
-                    card.body = draft.body.trim().to_string();
-                    card.column = draft.column;
-                    card.color = draft.color;
-                    card.is_sticky = draft.is_sticky;
-                    card.updated_at = timestamp;
+            match draft.id {
+                Some(id) => {
+                    if let Some(card) = self.store.cards.iter_mut().find(|c| c.id == id) {
+                        card.title = title;
+                        card.body = body;
+                        card.column = draft.column;
+                        card.color = draft.color;
+                        card.is_sticky = draft.is_sticky;
+                        card.updated_at = timestamp;
+                    }
                 }
-            } else {
-                let id = format!("card-{}", time::OffsetDateTime::now_utc().unix_timestamp_nanos());
-                self.store.cards.push(KanbanCard {
-                    id,
-                    title,
-                    body: draft.body.trim().to_string(),
-                    column: draft.column,
-                    color: draft.color,
-                    is_sticky: draft.is_sticky,
-                    updated_at: timestamp,
-                });
+                None => {
+                    let id = format!("card-{}", time::OffsetDateTime::now_utc().unix_timestamp_nanos());
+                    self.store.cards.push(KanbanCard {
+                        id,
+                        title,
+                        body,
+                        column: draft.column,
+                        color: draft.color,
+                        is_sticky: draft.is_sticky,
+                        updated_at: timestamp,
+                    });
+                }
             }
             self.store.save();
         }
@@ -457,18 +533,61 @@ impl KanbanScreen {
     }
 
     fn delete_card(&mut self, id: &str, cx: &mut Context<Self>) {
-        self.store.cards.retain(|c| c.id != id);
-        self.store.save();
-        cx.notify();
-    }
-
-    fn move_card(&mut self, id: &str, to_column: ColumnId, cx: &mut Context<Self>) {
-        if let Some(card) = self.store.cards.iter_mut().find(|c| c.id == id) {
-            card.column = to_column;
+        if let Some(pos) = self.store.cards.iter().position(|c| c.id == id) {
+            let card = self.store.cards.remove(pos);
+            self.last_deleted = Some((pos, card));
             self.store.save();
             cx.notify();
         }
     }
+
+    fn undo_delete(&mut self, cx: &mut Context<Self>) {
+        if let Some((pos, card)) = self.last_deleted.take() {
+            let pos = pos.min(self.store.cards.len());
+            self.store.cards.insert(pos, card);
+            self.store.save();
+            cx.notify();
+        }
+    }
+
+    /// Moves a card to another column; it lands at the bottom of that column.
+    fn move_card(&mut self, id: &str, to_column: ColumnId, cx: &mut Context<Self>) {
+        if let Some(pos) = self.store.cards.iter().position(|c| c.id == id) {
+            let mut card = self.store.cards.remove(pos);
+            card.column = to_column;
+            card.updated_at = stamp();
+            self.store.cards.push(card);
+            self.store.save();
+            cx.notify();
+        }
+    }
+
+    /// (done, total) over the flow columns, ignoring sticky notes.
+    fn progress(&self) -> (usize, usize) {
+        let flow = self.store.cards.iter().filter(|c| !c.is_note());
+        let total = flow.clone().count();
+        let done = flow.filter(|c| c.column == ColumnId::Done).count();
+        (done, total)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Small UI helpers
+// ---------------------------------------------------------------------------
+
+fn icon_btn(id: impl Into<ElementId>, label: &'static str, hover: Rgba) -> Stateful<Div> {
+    gpui::div()
+        .id(id)
+        .cursor_pointer()
+        .px_1p5()
+        .bg(pal::white())
+        .border_1()
+        .border_color(pal::ink())
+        .hover(move |h| h.bg(hover))
+        .text_size(gpui::px(10.0))
+        .font_weight(gpui::FontWeight::BOLD)
+        .text_color(pal::ink())
+        .child(label)
 }
 
 // ---------------------------------------------------------------------------
@@ -484,15 +603,17 @@ impl Render for KanbanScreen {
         let search = self.search_query.trim().to_lowercase();
 
         let visible_columns: Vec<ColumnId> = match self.view_mode {
-            ViewMode::Board => vec![ColumnId::Todo, ColumnId::Doing, ColumnId::Done, ColumnId::Notes],
+            ViewMode::Board => ColumnId::ALL.to_vec(),
             ViewMode::StickyWall => vec![ColumnId::Notes],
             ViewMode::Flow => vec![ColumnId::Todo, ColumnId::Doing, ColumnId::Done],
         };
 
-        // Fullscreen backdrop container
+        let deleted_title = self.last_deleted.as_ref().map(|(_, c)| c.title.clone());
+
         div()
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::on_key))
+            .relative()
             .w_full()
             .h_full()
             .bg(pal::paper())
@@ -501,13 +622,13 @@ impl Render for KanbanScreen {
             .p_6()
             .gap_4()
             .child(self.render_header(cx))
-            .child(
-                if self.view_mode == ViewMode::StickyWall {
-                    self.render_sticky_wall(&search, cx).into_any_element()
-                } else {
-                    self.render_columns(&visible_columns, &search, cx).into_any_element()
-                }
-            )
+            .child(if self.view_mode == ViewMode::StickyWall {
+                self.render_sticky_wall(&search, cx).into_any_element()
+            } else {
+                self.render_columns(&visible_columns, &search, cx).into_any_element()
+            })
+            .child(self.render_hint_bar())
+            .when_some(deleted_title, |this, title| this.child(self.render_toast(title, cx)))
             .when_some(self.draft.clone(), |this, draft| {
                 this.child(self.render_draft_modal(&draft, cx))
             })
@@ -519,6 +640,9 @@ impl KanbanScreen {
         let q = &self.search_query;
         let mode = self.view_mode;
         let total = self.store.cards.len();
+        let search_active = self.search_active;
+        let (done, flow_total) = self.progress();
+        let frac = if flow_total == 0 { 0.0 } else { done as f32 / flow_total as f32 };
 
         div()
             .flex()
@@ -529,7 +653,7 @@ impl KanbanScreen {
             .pb_4()
             .border_b_2()
             .border_color(pal::ink())
-            // Left: Title & Badge
+            // Left: title, count badge, progress
             .child(
                 div()
                     .flex()
@@ -538,11 +662,10 @@ impl KanbanScreen {
                     .gap_3()
                     .child(
                         div()
-                            .relative()
                             .text_size(px(24.0))
                             .font_weight(gpui::FontWeight::BLACK)
                             .text_color(pal::ink())
-                            .child("KANBAN // NOTES")
+                            .child("KANBAN // NOTES"),
                     )
                     .child(
                         div()
@@ -554,17 +677,39 @@ impl KanbanScreen {
                             .text_size(px(12.0))
                             .font_weight(gpui::FontWeight::BOLD)
                             .text_color(pal::ink())
-                            .child(format!("{total} items"))
+                            .child(format!("{total} items")),
                     )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .w(px(100.0))
+                                    .h(px(10.0))
+                                    .bg(pal::white())
+                                    .border_1()
+                                    .border_color(pal::ink())
+                                    .child(div().h_full().w(px(98.0 * frac)).bg(pal::green())),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(11.0))
+                                    .font_weight(gpui::FontWeight::BOLD)
+                                    .text_color(pal::ink())
+                                    .child(format!("{done}/{flow_total} done")),
+                            ),
+                    ),
             )
-            // Center: View switcher tabs & Search input
+            // Center: view tabs + search
             .child(
                 div()
                     .flex()
                     .flex_row()
                     .items_center()
                     .gap_3()
-                    // View tabs
                     .child(
                         div()
                             .flex()
@@ -572,19 +717,19 @@ impl KanbanScreen {
                             .border_2()
                             .border_color(pal::ink())
                             .shadow(hard(pal::ink(), 3.0))
-                            .child(
-                                self.render_tab_btn("Board", ViewMode::Board, mode == ViewMode::Board, cx)
-                            )
-                            .child(
-                                self.render_tab_btn("Sticky Wall", ViewMode::StickyWall, mode == ViewMode::StickyWall, cx)
-                            )
-                            .child(
-                                self.render_tab_btn("Flow", ViewMode::Flow, mode == ViewMode::Flow, cx)
-                            )
+                            .child(self.render_tab_btn("Board", ViewMode::Board, mode == ViewMode::Board, cx))
+                            .child(self.render_tab_btn(
+                                "Sticky Wall",
+                                ViewMode::StickyWall,
+                                mode == ViewMode::StickyWall,
+                                cx,
+                            ))
+                            .child(self.render_tab_btn("Flow", ViewMode::Flow, mode == ViewMode::Flow, cx)),
                     )
-                    // Search box
                     .child(
                         div()
+                            .id("kanban-search-box")
+                            .cursor_pointer()
                             .flex()
                             .flex_row()
                             .items_center()
@@ -593,27 +738,32 @@ impl KanbanScreen {
                             .px_3()
                             .bg(pal::white())
                             .border_2()
-                            .border_color(pal::ink())
+                            .border_color(if search_active { pal::blue() } else { pal::ink() })
                             .shadow(hard(pal::ink(), 2.0))
-                            .child(
-                                div()
-                                    .text_color(pal::gray())
-                                    .pr_2()
-                                    .child("\u{f002}")
-                            )
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.search_active = true;
+                                cx.notify();
+                            }))
+                            .child(div().text_color(pal::gray()).pr_2().child("\u{f002}"))
                             .child(
                                 div()
                                     .flex_1()
                                     .text_size(px(13.0))
                                     .font_weight(gpui::FontWeight::MEDIUM)
                                     .text_color(if q.is_empty() { pal::gray() } else { pal::ink() })
-                                    .child(if q.is_empty() { "Search cards & memos...".into() } else { q.clone() })
+                                    .child(if q.is_empty() {
+                                        if search_active { "Type to search...".into() } else { "Press / to search...".into() }
+                                    } else {
+                                        q.clone()
+                                    }),
                             )
+                            .when(search_active, |s| s.child(div().w(px(2.0)).h(px(16.0)).bg(pal::blue())))
                             .when(!q.is_empty(), |s| {
                                 s.child(
                                     div()
                                         .id("clear-kanban-search-btn")
                                         .cursor_pointer()
+                                        .pl_2()
                                         .text_size(px(11.0))
                                         .font_weight(gpui::FontWeight::BOLD)
                                         .text_color(pal::ink())
@@ -622,12 +772,12 @@ impl KanbanScreen {
                                             cx.stop_propagation();
                                             this.search_query.clear();
                                             cx.notify();
-                                        }))
+                                        })),
                                 )
-                            })
-                    )
+                            }),
+                    ),
             )
-            // Right: New Card / Sticky Note buttons + Close
+            // Right: actions
             .child(
                 div()
                     .flex()
@@ -642,7 +792,6 @@ impl KanbanScreen {
                             .px_3()
                             .flex()
                             .items_center()
-                            .gap_2()
                             .bg(pal::peach())
                             .border_2()
                             .border_color(pal::ink())
@@ -654,7 +803,7 @@ impl KanbanScreen {
                             .child("+ New Card")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.start_new_card(ColumnId::Todo, false, cx);
-                            }))
+                            })),
                     )
                     .child(
                         div()
@@ -664,7 +813,6 @@ impl KanbanScreen {
                             .px_3()
                             .flex()
                             .items_center()
-                            .gap_2()
                             .bg(pal::yellow())
                             .border_2()
                             .border_color(pal::ink())
@@ -676,7 +824,7 @@ impl KanbanScreen {
                             .child("📌 Sticky Note")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.start_new_card(ColumnId::Notes, true, cx);
-                            }))
+                            })),
                     )
                     .child(
                         div()
@@ -696,12 +844,18 @@ impl KanbanScreen {
                             .text_color(pal::ink())
                             .hover(|h| h.bg(pal::pink()))
                             .child("✕")
-                            .on_click(|_, _, cx| cx.hide_window("kanban"))
-                    )
+                            .on_click(|_, _, cx| cx.hide_window("kanban")),
+                    ),
             )
     }
 
-    fn render_tab_btn(&self, label: &'static str, mode: ViewMode, active: bool, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_tab_btn(
+        &self,
+        label: &'static str,
+        mode: ViewMode,
+        active: bool,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         div()
             .id(format!("tab-btn-{}", label))
             .cursor_pointer()
@@ -712,17 +866,75 @@ impl KanbanScreen {
             .justify_center()
             .text_size(px(12.0))
             .font_weight(gpui::FontWeight::BOLD)
-            .when(active, |s| {
-                s.bg(pal::blue()).text_color(pal::paper())
-            })
+            .when(active, |s| s.bg(pal::blue()).text_color(pal::paper()))
             .when(!active, |s| {
                 s.bg(pal::white()).text_color(pal::ink()).hover(|h| h.bg(pal::tint()))
             })
             .child(label)
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.view_mode = mode;
-                cx.notify();
-            }))
+            .on_click(cx.listener(move |this, _, _, cx| this.set_view(mode, cx)))
+    }
+
+    fn render_hint_bar(&self) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_row()
+            .gap_4()
+            .text_size(px(11.0))
+            .font_weight(gpui::FontWeight::MEDIUM)
+            .text_color(pal::gray())
+            .child("N new card")
+            .child("S sticky note")
+            .child("/ search")
+            .child("1 / 2 / 3 views")
+            .child("Ctrl+Z undo delete")
+            .child("Esc close")
+    }
+
+    fn render_toast(&self, title: String, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .absolute()
+            .bottom(px(28.0))
+            .left(px(0.0))
+            .w_full()
+            .flex()
+            .justify_center()
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_3()
+                    .px_4()
+                    .h(px(40.0))
+                    .bg(pal::ink())
+                    .border_2()
+                    .border_color(pal::ink())
+                    .shadow(hard(pal::yellow(), 3.0))
+                    .text_size(px(12.0))
+                    .font_weight(gpui::FontWeight::BOLD)
+                    .text_color(pal::paper())
+                    .child(format!("Deleted “{}”", title))
+                    .child(
+                        div()
+                            .id("toast-undo-btn")
+                            .cursor_pointer()
+                            .px_2()
+                            .bg(pal::yellow())
+                            .text_color(pal::ink())
+                            .child("Undo")
+                            .on_click(cx.listener(|this, _, _, cx| this.undo_delete(cx))),
+                    )
+                    .child(
+                        div()
+                            .id("toast-dismiss-btn")
+                            .cursor_pointer()
+                            .child("✕")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.last_deleted = None;
+                                cx.notify();
+                            })),
+                    ),
+            )
     }
 
     fn render_columns(&self, cols: &[ColumnId], q: &str, cx: &mut Context<Self>) -> impl IntoElement {
@@ -731,26 +943,24 @@ impl KanbanScreen {
             .flex_row()
             .gap_4()
             .flex_1()
+            .min_h_0()
             .w_full()
             .overflow_hidden()
             .children(cols.iter().map(|&col| self.render_column(col, q, cx)))
     }
 
     fn render_column(&self, col: ColumnId, q: &str, cx: &mut Context<Self>) -> impl IntoElement {
-        let cards: Vec<_> = self.store.cards.iter()
-            .filter(|c| c.column == col)
-            .filter(|c| {
-                if q.is_empty() {
-                    true
-                } else {
-                    c.title.to_lowercase().contains(q) || c.body.to_lowercase().contains(q)
-                }
-            })
+        let cards: Vec<_> = self
+            .store
+            .cards
+            .iter()
+            .filter(|c| c.column == col && c.matches(q))
             .cloned()
             .collect();
 
         let count = cards.len();
         let accent = col.accent();
+        let searching = !q.is_empty();
 
         div()
             .flex()
@@ -764,7 +974,6 @@ impl KanbanScreen {
             .shadow(hard(pal::ink(), 4.0))
             .p_3()
             .gap_3()
-            // Column Header
             .child(
                 div()
                     .flex()
@@ -780,20 +989,13 @@ impl KanbanScreen {
                             .flex_row()
                             .items_center()
                             .gap_2()
-                            .child(
-                                div()
-                                    .w(px(10.0))
-                                    .h(px(10.0))
-                                    .bg(accent)
-                                    .border_1()
-                                    .border_color(pal::ink())
-                            )
+                            .child(div().w(px(10.0)).h(px(10.0)).bg(accent).border_1().border_color(pal::ink()))
                             .child(
                                 div()
                                     .text_size(px(15.0))
                                     .font_weight(gpui::FontWeight::BLACK)
                                     .text_color(pal::ink())
-                                    .child(col.label())
+                                    .child(col.label()),
                             )
                             .child(
                                 div()
@@ -804,8 +1006,8 @@ impl KanbanScreen {
                                     .text_size(px(11.0))
                                     .font_weight(gpui::FontWeight::BOLD)
                                     .text_color(pal::ink())
-                                    .child(format!("{count}"))
-                            )
+                                    .child(format!("{count}")),
+                            ),
                     )
                     .child(
                         div()
@@ -823,31 +1025,44 @@ impl KanbanScreen {
                             .child("+")
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.start_new_card(col, col == ColumnId::Notes, cx);
-                            }))
-                    )
+                            })),
+                    ),
             )
-            // Cards List
+            // Scrollable card list (previously clipped with overflow_hidden)
             .child(
                 div()
+                    .id(format!("col-scroll-{}", col.label()))
                     .flex()
                     .flex_col()
                     .gap_3()
                     .flex_1()
-                    .overflow_hidden()
-                    .children(cards.into_iter().map(|card| self.render_card(&card, cx)))
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .when(cards.is_empty(), |this| {
+                        this.child(
+                            div()
+                                .p_4()
+                                .border_1()
+                                .border_color(pal::faint())
+                                .text_size(px(12.0))
+                                .text_color(pal::gray())
+                                .child(if searching { "No matches" } else { col.empty_hint() }),
+                        )
+                    })
+                    .children(cards.into_iter().map(|card| self.render_card(&card, cx))),
             )
     }
 
     fn render_card(&self, card: &KanbanCard, cx: &mut Context<Self>) -> impl IntoElement {
-        let card_id = card.id.clone();
-        let card_clone = card.clone();
-        let card_clone2 = card.clone();
-        let card_clone3 = card.clone();
         let col = card.column;
-        let is_sticky = card.is_sticky || col == ColumnId::Notes;
-
-        let next_col = col.next();
+        let is_sticky = card.is_note();
         let prev_col = col.prev();
+        let next_col = col.next();
+
+        let edit_card = card.clone();
+        let left_id = card.id.clone();
+        let right_id = card.id.clone();
+        let del_id = card.id.clone();
 
         div()
             .id(format!("kanban-card-{}", card.id))
@@ -861,30 +1076,21 @@ impl KanbanScreen {
             .gap_2()
             .cursor_pointer()
             .hover(|h| h.shadow(hard(pal::ink(), 5.0)))
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.start_edit_card(&card_clone, cx);
-            }))
-            // Sticky note physical tape accent at the top
+            .when(col == ColumnId::Done, |s| s.opacity(0.7))
+            .on_click(cx.listener(move |this, _, _, cx| this.start_edit_card(&edit_card, cx)))
             .when(is_sticky, |this| {
                 this.child(
-                    div()
-                        .w_full()
-                        .flex()
-                        .justify_center()
-                        .mt(px(-16.0))
-                        .mb_1()
-                        .child(
-                            div()
-                                .w(px(38.0))
-                                .h(px(8.0))
-                                .bg(pal::paper())
-                                .border_1()
-                                .border_color(pal::ink())
-                                .opacity(0.85)
-                        )
+                    div().w_full().flex().justify_center().mb_1().child(
+                        div()
+                            .w(px(38.0))
+                            .h(px(8.0))
+                            .bg(card.color.bg())
+                            .border_1()
+                            .border_color(pal::ink())
+                            .opacity(0.85),
+                    ),
                 )
             })
-            // Card Title & Tag
             .child(
                 div()
                     .flex()
@@ -898,18 +1104,10 @@ impl KanbanScreen {
                             .text_size(px(14.0))
                             .font_weight(gpui::FontWeight::BOLD)
                             .text_color(pal::ink())
-                            .child(card.title.clone())
+                            .child(card.title.clone()),
                     )
-                    .child(
-                        div()
-                            .w(px(12.0))
-                            .h(px(12.0))
-                            .bg(card.color.bg())
-                            .border_1()
-                            .border_color(pal::ink())
-                    )
+                    .child(div().w(px(12.0)).h(px(12.0)).bg(card.color.bg()).border_1().border_color(pal::ink())),
             )
-            // Card Body (if not empty)
             .when(!card.body.is_empty(), |this| {
                 this.child(
                     div()
@@ -917,10 +1115,9 @@ impl KanbanScreen {
                         .line_height(px(16.0))
                         .text_color(pal::ink())
                         .opacity(0.8)
-                        .child(card.body.clone())
+                        .child(card.body.clone()),
                 )
             })
-            // Footer: timestamp & quick actions
             .child(
                 div()
                     .flex()
@@ -935,7 +1132,7 @@ impl KanbanScreen {
                             .text_size(px(10.0))
                             .font_weight(gpui::FontWeight::MEDIUM)
                             .text_color(pal::gray())
-                            .child(card.updated_at.clone())
+                            .child(card.updated_at.clone()),
                     )
                     .child(
                         div()
@@ -943,88 +1140,54 @@ impl KanbanScreen {
                             .flex_row()
                             .items_center()
                             .gap_1p5()
-                            // Move Left button
                             .when_some(prev_col, |this, prev| {
                                 this.child(
-                                    div()
-                                        .id(format!("card-left-{}", card_clone2.id))
-                                        .cursor_pointer()
-                                        .px_1p5()
-                                        .bg(pal::white())
-                                        .border_1()
-                                        .border_color(pal::ink())
-                                        .hover(|h| h.bg(pal::yellow()))
-                                        .text_size(px(10.0))
-                                        .font_weight(gpui::FontWeight::BOLD)
-                                        .text_color(pal::ink())
-                                        .child("←")
-                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                    icon_btn(format!("card-left-{}", left_id), "←", pal::yellow()).on_click(
+                                        cx.listener(move |this, _, _, cx| {
                                             cx.stop_propagation();
-                                            this.move_card(&card_clone2.id, prev, cx);
-                                        }))
+                                            this.move_card(&left_id, prev, cx);
+                                        }),
+                                    ),
                                 )
                             })
-                            // Move Right button
                             .when_some(next_col, |this, next| {
                                 this.child(
-                                    div()
-                                        .id(format!("card-right-{}", card_clone3.id))
-                                        .cursor_pointer()
-                                        .px_1p5()
-                                        .bg(pal::white())
-                                        .border_1()
-                                        .border_color(pal::ink())
-                                        .hover(|h| h.bg(pal::yellow()))
-                                        .text_size(px(10.0))
-                                        .font_weight(gpui::FontWeight::BOLD)
-                                        .text_color(pal::ink())
-                                        .child("→")
-                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                    icon_btn(format!("card-right-{}", right_id), "→", pal::yellow()).on_click(
+                                        cx.listener(move |this, _, _, cx| {
                                             cx.stop_propagation();
-                                            this.move_card(&card_clone3.id, next, cx);
-                                        }))
+                                            this.move_card(&right_id, next, cx);
+                                        }),
+                                    ),
                                 )
                             })
-                            // Delete button
                             .child(
-                                div()
-                                    .id(format!("card-del-{}", card_id))
-                                    .cursor_pointer()
-                                    .px_1p5()
-                                    .bg(pal::white())
-                                    .border_1()
-                                    .border_color(pal::ink())
-                                    .hover(|h| h.bg(pal::pink()))
-                                    .text_size(px(10.0))
-                                    .font_weight(gpui::FontWeight::BOLD)
-                                    .text_color(pal::ink())
-                                    .child("✕")
-                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                icon_btn(format!("card-del-{}", del_id), "✕", pal::pink()).on_click(
+                                    cx.listener(move |this, _, _, cx| {
                                         cx.stop_propagation();
-                                        this.delete_card(&card_id, cx);
-                                    }))
-                            )
-                    )
+                                        this.delete_card(&del_id, cx);
+                                    }),
+                                ),
+                            ),
+                    ),
             )
     }
 
     fn render_sticky_wall(&self, q: &str, cx: &mut Context<Self>) -> impl IntoElement {
-        let notes: Vec<_> = self.store.cards.iter()
-            .filter(|c| c.is_sticky || c.column == ColumnId::Notes)
-            .filter(|c| {
-                if q.is_empty() {
-                    true
-                } else {
-                    c.title.to_lowercase().contains(q) || c.body.to_lowercase().contains(q)
-                }
-            })
+        let notes: Vec<_> = self
+            .store
+            .cards
+            .iter()
+            .filter(|c| c.is_note() && c.matches(q))
             .cloned()
             .collect();
+        let empty = notes.is_empty();
+        let searching = !q.is_empty();
 
         div()
             .flex()
             .flex_col()
             .flex_1()
+            .min_h_0()
             .w_full()
             .bg(pal::white())
             .border_2()
@@ -1044,7 +1207,7 @@ impl KanbanScreen {
                             .text_size(px(16.0))
                             .font_weight(gpui::FontWeight::BOLD)
                             .text_color(pal::ink())
-                            .child("📌 STICKY WALL // QUICK PINNED MEMOS")
+                            .child("📌 STICKY WALL // QUICK PINNED MEMOS"),
                     )
                     .child(
                         div()
@@ -1065,21 +1228,29 @@ impl KanbanScreen {
                             .child("+ Pin New Sticky Note")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.start_new_card(ColumnId::Notes, true, cx);
-                            }))
-                    )
+                            })),
+                    ),
             )
             .child(
                 div()
+                    .id("sticky-wall-scroll")
                     .flex()
                     .flex_row()
                     .flex_wrap()
+                    .content_start()
                     .gap_4()
                     .flex_1()
-                    .children(notes.into_iter().map(|note| {
-                        div()
-                            .w(px(280.0))
-                            .child(self.render_card(&note, cx))
-                    }))
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .when(empty, |this| {
+                        this.child(
+                            div()
+                                .text_size(px(13.0))
+                                .text_color(pal::gray())
+                                .child(if searching { "No matching notes" } else { "The wall is empty. Press S to pin a note." }),
+                        )
+                    })
+                    .children(notes.into_iter().map(|note| div().w(px(280.0)).child(self.render_card(&note, cx)))),
             )
     }
 
@@ -1088,6 +1259,14 @@ impl KanbanScreen {
         let field = draft.field;
         let selected_col = draft.column;
         let selected_color = draft.color;
+
+        let section_label = |text: &'static str| {
+            div()
+                .text_size(px(11.0))
+                .font_weight(gpui::FontWeight::BOLD)
+                .text_color(pal::ink())
+                .child(text)
+        };
 
         div()
             .id("draft-backdrop")
@@ -1117,7 +1296,6 @@ impl KanbanScreen {
                     .flex_col()
                     .gap_4()
                     .on_click(|_, _, cx| cx.stop_propagation())
-                    // Modal Header
                     .child(
                         div()
                             .flex()
@@ -1132,7 +1310,7 @@ impl KanbanScreen {
                                     .text_size(px(16.0))
                                     .font_weight(gpui::FontWeight::BLACK)
                                     .text_color(pal::ink())
-                                    .child(if is_editing { "EDIT NOTE / CARD" } else { "NEW NOTE / CARD" })
+                                    .child(if is_editing { "EDIT NOTE / CARD" } else { "NEW NOTE / CARD" }),
                             )
                             .child(
                                 div()
@@ -1146,22 +1324,16 @@ impl KanbanScreen {
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.draft = None;
                                         cx.notify();
-                                    }))
-                            )
+                                    })),
+                            ),
                     )
-                    // Title Input Box
+                    // Title
                     .child(
                         div()
                             .flex()
                             .flex_col()
                             .gap_1()
-                            .child(
-                                div()
-                                    .text_size(px(11.0))
-                                    .font_weight(gpui::FontWeight::BOLD)
-                                    .text_color(pal::ink())
-                                    .child("TITLE (press Enter to move to body)")
-                            )
+                            .child(section_label("TITLE (Enter or Tab to move to body)"))
                             .child(
                                 div()
                                     .id("draft-title-input-box")
@@ -1186,26 +1358,24 @@ impl KanbanScreen {
                                             .text_size(px(14.0))
                                             .font_weight(gpui::FontWeight::BOLD)
                                             .text_color(if draft.title.is_empty() { pal::gray() } else { pal::ink() })
-                                            .child(if draft.title.is_empty() { "Enter task or note title...".into() } else { draft.title.clone() })
+                                            .child(if draft.title.is_empty() {
+                                                "Enter task or note title...".into()
+                                            } else {
+                                                draft.title.clone()
+                                            }),
                                     )
                                     .when(field == EditField::Title, |s| {
                                         s.child(div().w(px(2.0)).h(px(16.0)).bg(pal::blue()))
-                                    })
-                            )
+                                    }),
+                            ),
                     )
-                    // Body / Notes Input Box
+                    // Body
                     .child(
                         div()
                             .flex()
                             .flex_col()
                             .gap_1()
-                            .child(
-                                div()
-                                    .text_size(px(11.0))
-                                    .font_weight(gpui::FontWeight::BOLD)
-                                    .text_color(pal::ink())
-                                    .child("CONTENT / MEMO")
-                            )
+                            .child(section_label("CONTENT / MEMO"))
                             .child(
                                 div()
                                     .id("draft-body-input-box")
@@ -1230,129 +1400,126 @@ impl KanbanScreen {
                                             .text_size(px(13.0))
                                             .line_height(px(18.0))
                                             .text_color(if draft.body.is_empty() { pal::gray() } else { pal::ink() })
-                                            .child(if draft.body.is_empty() { "Write task details or sticky notes here...".into() } else { draft.body.clone() })
+                                            .child(if draft.body.is_empty() {
+                                                "Write task details or sticky notes here...".into()
+                                            } else {
+                                                draft.body.clone()
+                                            }),
                                     )
                                     .when(field == EditField::Body, |s| {
                                         s.child(div().w(px(2.0)).h(px(14.0)).bg(pal::blue()))
-                                    })
-                            )
+                                    }),
+                            ),
                     )
-                    // Column selection pills
+                    // Column pills
                     .child(
                         div()
                             .flex()
                             .flex_col()
                             .gap_1()
-                            .child(
-                                div()
-                                    .text_size(px(11.0))
-                                    .font_weight(gpui::FontWeight::BOLD)
-                                    .text_color(pal::ink())
-                                    .child("DESTINATION COLUMN")
-                            )
+                            .child(section_label("DESTINATION COLUMN"))
                             .child(
                                 div()
                                     .flex()
                                     .flex_row()
                                     .gap_2()
-                                    .child(self.render_col_select_btn(ColumnId::Todo, selected_col == ColumnId::Todo, cx))
-                                    .child(self.render_col_select_btn(ColumnId::Doing, selected_col == ColumnId::Doing, cx))
-                                    .child(self.render_col_select_btn(ColumnId::Done, selected_col == ColumnId::Done, cx))
-                                    .child(self.render_col_select_btn(ColumnId::Notes, selected_col == ColumnId::Notes, cx))
-                            )
+                                    .children(
+                                        ColumnId::ALL
+                                            .iter()
+                                            .map(|&c| self.render_col_select_btn(c, selected_col == c, cx)),
+                                    ),
+                            ),
                     )
-                    // Color selection swatches
+                    // Color swatches
                     .child(
                         div()
                             .flex()
                             .flex_col()
                             .gap_1()
-                            .child(
+                            .child(section_label("NOTE COLOR TAG"))
+                            .child(div().flex().flex_row().gap_2().children(NoteColor::ALL.iter().map(|&color| {
+                                let is_sel = selected_color == color;
                                 div()
-                                    .text_size(px(11.0))
-                                    .font_weight(gpui::FontWeight::BOLD)
-                                    .text_color(pal::ink())
-                                    .child("NOTE COLOR TAG")
-                            )
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_row()
-                                    .gap_2()
-                                    .children(NoteColor::ALL.iter().map(|&color| {
-                                        let is_sel = selected_color == color;
-                                        div()
-                                            .id(format!("color-swatch-{}", color.label()))
-                                            .cursor_pointer()
-                                            .w(px(28.0))
-                                            .h(px(28.0))
-                                            .bg(color.bg())
-                                            .border_2()
-                                            .border_color(pal::ink())
-                                            .when(is_sel, |s| s.shadow(hard(pal::ink(), 3.0)))
-                                            .on_click(cx.listener(move |this, _, _, cx| {
-                                                if let Some(ref mut d) = this.draft {
-                                                    d.color = color;
-                                                    cx.notify();
-                                                }
-                                            }))
+                                    .id(format!("color-swatch-{}", color.label()))
+                                    .cursor_pointer()
+                                    .w(px(28.0))
+                                    .h(px(28.0))
+                                    .bg(color.bg())
+                                    .border_2()
+                                    .border_color(pal::ink())
+                                    .when(is_sel, |s| s.shadow(hard(pal::ink(), 3.0)))
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        if let Some(ref mut d) = this.draft {
+                                            d.color = color;
+                                            cx.notify();
+                                        }
                                     }))
-                            )
+                            }))),
                     )
-                    // Actions Footer
+                    // Footer
                     .child(
                         div()
                             .flex()
                             .flex_row()
-                            .justify_end()
-                            .gap_3()
+                            .items_center()
+                            .justify_between()
                             .pt_2()
                             .border_t_2()
                             .border_color(pal::ink())
                             .child(
                                 div()
-                                    .id("draft-cancel-btn")
-                                    .cursor_pointer()
-                                    .px_4()
-                                    .h(px(36.0))
-                                    .flex()
-                                    .items_center()
-                                    .bg(pal::white())
-                                    .border_2()
-                                    .border_color(pal::ink())
-                                    .shadow(hard(pal::ink(), 2.0))
-                                    .text_size(px(13.0))
-                                    .font_weight(gpui::FontWeight::BOLD)
-                                    .text_color(pal::ink())
-                                    .hover(|h| h.bg(pal::tint()))
-                                    .child("Cancel")
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.draft = None;
-                                        cx.notify();
-                                    }))
+                                    .text_size(px(11.0))
+                                    .text_color(pal::gray())
+                                    .child("Ctrl+Enter save · Esc cancel · Ctrl+V paste"),
                             )
                             .child(
                                 div()
-                                    .id("draft-save-btn")
-                                    .cursor_pointer()
-                                    .px_5()
-                                    .h(px(36.0))
                                     .flex()
-                                    .items_center()
-                                    .bg(pal::yellow())
-                                    .border_2()
-                                    .border_color(pal::ink())
-                                    .shadow(hard(pal::ink(), 3.0))
-                                    .text_size(px(13.0))
-                                    .font_weight(gpui::FontWeight::BOLD)
-                                    .text_color(pal::ink())
-                                    .hover(|h| h.bg(pal::pink()))
-                                    .child("Save Card")
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.save_draft(cx);
-                                    }))
-                            )
-                    )
+                                    .flex_row()
+                                    .gap_3()
+                                    .child(
+                                        div()
+                                            .id("draft-cancel-btn")
+                                            .cursor_pointer()
+                                            .px_4()
+                                            .h(px(36.0))
+                                            .flex()
+                                            .items_center()
+                                            .bg(pal::white())
+                                            .border_2()
+                                            .border_color(pal::ink())
+                                            .shadow(hard(pal::ink(), 2.0))
+                                            .text_size(px(13.0))
+                                            .font_weight(gpui::FontWeight::BOLD)
+                                            .text_color(pal::ink())
+                                            .hover(|h| h.bg(pal::tint()))
+                                            .child("Cancel")
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.draft = None;
+                                                cx.notify();
+                                            })),
+                                    )
+                                    .child(
+                                        div()
+                                            .id("draft-save-btn")
+                                            .cursor_pointer()
+                                            .px_5()
+                                            .h(px(36.0))
+                                            .flex()
+                                            .items_center()
+                                            .bg(pal::yellow())
+                                            .border_2()
+                                            .border_color(pal::ink())
+                                            .shadow(hard(pal::ink(), 3.0))
+                                            .text_size(px(13.0))
+                                            .font_weight(gpui::FontWeight::BOLD)
+                                            .text_color(pal::ink())
+                                            .hover(|h| h.bg(pal::pink()))
+                                            .child("Save Card")
+                                            .on_click(cx.listener(|this, _, _, cx| this.save_draft(cx))),
+                                    ),
+                            ),
+                    ),
             )
     }
 
@@ -1368,9 +1535,7 @@ impl KanbanScreen {
             .border_color(pal::ink())
             .text_size(px(12.0))
             .font_weight(gpui::FontWeight::BOLD)
-            .when(is_selected, |s| {
-                s.bg(col.accent()).text_color(pal::paper()).shadow(hard(pal::ink(), 2.0))
-            })
+            .when(is_selected, |s| s.bg(col.accent()).text_color(pal::paper()).shadow(hard(pal::ink(), 2.0)))
             .when(!is_selected, |s| {
                 s.bg(pal::white()).text_color(pal::ink()).hover(|h| h.bg(pal::tint()))
             })

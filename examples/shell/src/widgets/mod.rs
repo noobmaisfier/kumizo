@@ -1,3 +1,4 @@
+pub mod bluetooth;
 pub mod calendar;
 pub mod clipboard;
 pub mod kanban;
@@ -11,6 +12,7 @@ pub mod stamp;
 pub mod tasks;
 pub mod tray;
 
+pub use bluetooth::BluetoothMenu;
 pub use calendar::Calendar;
 pub use clipboard::ClipboardManager;
 pub use kanban::KanbanScreen;

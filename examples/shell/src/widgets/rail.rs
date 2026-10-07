@@ -21,6 +21,7 @@ pub fn window() -> LayerWindow {
 pub struct Rail {
     battery: Entity<Battery>,
     network: Entity<Network>,
+    bluetooth: Entity<Bluetooth>,
     tray: Entity<Tray>,
     audio: Entity<Audio>,
     mpris: Entity<Mpris>,
@@ -33,6 +34,7 @@ impl Rail {
         Self {
             battery: cx.service::<Battery>(),
             network: cx.service::<Network>(),
+            bluetooth: cx.service::<Bluetooth>(),
             tray: cx.service::<Tray>(),
             audio: cx.service::<Audio>(),
             mpris: cx.service::<Mpris>(),
@@ -178,6 +180,28 @@ impl Render for Rail {
                 batt_inner.into_any_element()
             };
 
+        let bt = self.bluetooth.read(cx);
+        let bt_powered = bt.is_powered();
+        let bt_connected_count = bt.connected_count();
+
+        let bt_row = div()
+            .id("wk-bluetooth-toggle")
+            .cursor_pointer()
+            .when(!bt_powered, |s| s.bg(pal::tint()))
+            .when(bt_powered && bt_connected_count > 0, |s| s.bg(pal::blue()).text_color(pal::paper()))
+            .hover(|h| h.bg(pal::yellow()).text_color(pal::ink()))
+            .child(status_row(
+                div().child(bt.icon()).into_any_element(),
+                if !bt_powered {
+                    "off".to_string()
+                } else if bt_connected_count > 0 {
+                    format!("{bt_connected_count}")
+                } else {
+                    "on".to_string()
+                },
+            ))
+            .on_click(|_, _w, cx| cx.toggle_window("bluetooth"));
+
         let status_block = div()
             .flex()
             .flex_col()
@@ -188,6 +212,8 @@ impl Render for Rail {
             .child(audio_row)
             .child(div().h(px(2.0)).w_full().bg(pal::ink()))
             .child(net_row)
+            .child(div().h(px(2.0)).w_full().bg(pal::ink()))
+            .child(bt_row)
             .child(div().h(px(2.0)).w_full().bg(pal::ink()))
             .child(batt_row);
 
