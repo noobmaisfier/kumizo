@@ -32,18 +32,6 @@ WidgetKit is a high-performance Wayland desktop shell SDK written in pure Rust, 
 3. **Zero Idle CPU**:
    Every service is strictly event-driven (kernel uevents, D-Bus signal subscription, compositor IPC sockets). If nothing on the system changes, the shell consumes **0.0% CPU** and does not wake the GPU. Views only redraw when notified (`cx.notify()`).
 
-### Creative Mandate: Anti-Anchoring Directive (CRITICAL FOR AI AGENTS)
-
-> [!IMPORTANT]
-> **DO NOT DEFAULT TO A STANDARD 32px HORIZONTAL TOP-BAR.**
-> Large Language Models naturally suffer from *anchoring bias* — instinctively outputting the stereotypical Linux bar pattern:
-> `[Workspaces (left) | Window Title (center) | Clock & Battery (right)]`.
->
-> **WidgetKit is not a clone of Waybar or Polybar.** It is a blank GPU canvas with Wayland multi-window composition. When designing a shell:
-> - **Rethink Topologies**: Does the desktop need a persistent top bar? Or would it be superior with an edge-anchored vertical command rail, decoupled floating corner pods, an event-driven dynamic island, an ambient wallpaper layer dashboard, or zero permanent chrome with sliding gesture drawers?
-> - **Rethink Visual Identities**: Avoid regurgitating ubiquitous community palettes (such as generic Catppuccin Mocha or Nord) unless specifically requested. Craft an intentional, bespoke visual universe with distinctive typography, geometry, contrast, and interactive feedback.
-> - **Respect Display Ergonomics**: Ultra-wide displays, laptop screens, and multi-monitor setups thrive on non-traditional spatial layouts. Explore designs that maximize usable work area.
-
 ---
 
 ## 2. Shell Structure Anatomy
@@ -183,8 +171,79 @@ let comp = self.compositor.read(cx);
 | **`Apps`** | `apps() -> &[AppInfo]`, `search(query) -> Vec<AppInfo>`, `launch(&app)`, `find_icon(app_id_or_class) -> Option<Arc<RenderImage>>` | Application launcher, task switcher icons with fuzzy matching and GPU textures. |
 | **`Mpris`** | `title() -> Option<&str>`, `artist() -> Option<&str>`, `status() -> PlaybackStatus`, `play_pause()`, `next()`, `previous()` | Media player widget, music equalizer, dynamic topbar label. |
 | **`Tray`** | `items() -> Vec<TrayItem>`, `activate(id)`, `open_menu(id)`, `close_menu()` | System tray icons (StatusNotifierItem) and context menus. |
-| **`Notifications`**| `toasts() -> &[Notification]`, `unread_count() -> usize`, `is_dnd() -> bool`, `toggle_dnd()`, `dismiss_toast(id)` | In-process notification server (replaces dunst/mako). |
+| **`Notifications`**| `toasts() -> &[Notification]`, `history() -> &[Notification]`, `unread_count() -> usize`, `is_dnd() -> bool`, `toggle_dnd()`, `dismiss_toast(id)`, `remove_history(id)`, `clear_history()`, `invoke_action(id, key)` | In-process notification server (replaces dunst/mako). |
 | **`Clipboard`** | `items() -> &[ClipboardItem]`, `search(query)`, `copy_item(id)`, `clear()` | Clipboard history manager overlay. |
+
+### Key Compositor & Notification Types
+
+#### Compositor Types (`wk-compositor` / `Compositor`)
+
+```rust
+/// Wayland workspace descriptor
+pub struct Workspace {
+    pub id: i32,                // e.g. 1, 2, 3
+    pub name: String,           // Display label (e.g. "1", "2:web", "term")
+    pub is_active: bool,        // True if workspace has focus on its monitor
+    pub is_urgent: bool,        // True if workspace contains an urgent window
+    pub window_count: usize,    // Number of managed windows
+    pub monitor: String,        // Output/monitor name (e.g. "eDP-1")
+}
+
+/// Description of an open application window on the desktop
+pub struct AppWindow {
+    pub id: i64,                // Compositor container/window ID
+    pub title: String,          // Window title
+    pub class: String,          // Application class/app_id (e.g. "firefox", "kitty")
+    pub workspace_id: i32,      // Workspace ID where window resides
+    pub workspace_name: String, // Workspace name
+    pub is_focused: bool,       // True if window currently has focus
+}
+
+/// Description of the currently focused window on the desktop
+pub struct ActiveWindow {
+    pub title: String,          // Window title
+    pub class: String,          // Application class/app_id
+    pub workspace_id: i32,      // Workspace ID
+}
+```
+
+#### Notification Types (`wk-services` / `Notifications`)
+
+```rust
+pub enum Urgency {
+    Low,
+    Normal,
+    Critical,
+}
+
+pub struct NotificationAction {
+    pub key: String,            // Action identifier (e.g. "default", "reply")
+    pub label: String,          // Button label shown to user
+}
+
+pub struct Notification {
+    pub id: u32,
+    pub app_name: String,
+    pub summary: String,
+    pub body: String,
+    pub app_icon: Option<Arc<RenderImage>>,
+    pub urgency: Urgency,
+    pub actions: Vec<NotificationAction>,
+    pub created_at: time::OffsetDateTime,
+    pub generation: u64,
+}
+```
+
+Methods on `Notifications`:
+- `toasts(&self) -> &[Notification]`: Ephemeral popups currently active on screen.
+- `history(&self) -> &[Notification]`: Complete notification history (newest first).
+- `unread_count(&self) -> usize`: Number of notifications stored in history.
+- `is_dnd(&self) -> bool`: Whether Do Not Disturb is enabled.
+- `toggle_dnd(&mut self)`: Toggle Do Not Disturb mode.
+- `dismiss_toast(&mut self, id: u32)`: Dismiss popup from screen (keeps history).
+- `remove_history(&mut self, id: u32)`: Remove notification from history and screen.
+- `clear_history(&mut self)`: Clear all history and toasts.
+- `invoke_action(&self, id: u32, key: &str)`: Trigger interactive action on notification.
 
 ---
 
@@ -311,17 +370,50 @@ div().with_animation(
 )
 ```
 
-```
+### GPUI Signatures & API Specifics
+
+- **Asynchronous Tasks (`cx.spawn`)**:
+  In GPUI, `cx.spawn` takes an `async move` closure receiving `(this, cx)` where `this` is `WeakEntity<Self>` and `cx` is `&mut AsyncContext<Self>`:
+  ```rust
+  cx.spawn(async move |this, cx| {
+      // Async work (channels, timers, IO)...
+      let _ = this.update(cx, |view, cx| {
+          // Mutate view state
+          cx.notify();
+      });
+  }).detach();
+  ```
+
+- **Focus Management (`window.focus`)**:
+  In GPUI's `Render::render(&mut self, window: &mut Window, cx: &mut Context<Self>)`, focusing an element is done through the `window` reference, NOT `cx.focus`:
+  ```rust
+  if !self.focus.is_focused(window) {
+      window.focus(&self.focus, cx);
+  }
+  ```
+  Elements track focus using `.track_focus(&self.focus)`.
+
+- **View Re-rendering (`cx.notify()`)**:
+  Call `cx.notify()` on the context whenever local view state changes to trigger a redraw.
+  There is no `cx.refresh_windows()`; each window/view re-renders reactively upon `cx.notify()` or when an observed service/source updates.
+
+- **Relative & Absolute Positioning**:
+  Positioning modifiers are methods on element builders, NOT standalone functions:
+  ```rust
+  div().relative()  // Element sets position: relative
+  div().absolute()  // Element sets position: absolute
+  ```
+  Do not use `gpui::relative(...)` or `gpui::absolute(...)` as standalone functions.
 
 ---
 
-## 8. Theme System, TOML Presets & Wallpapers (Mandatory Standard)
+## 8. Theme System
 
-To give users total customization and prevent hardcoded styling spaghetti, **every shell must implement a decoupled Theme System**.
+To keep styling decoupled and modular:
 
-### 1. Code Architecture: Design Tokens Module (`mod pal`)
+### 1. Design Tokens Module (`mod pal`)
 
-Never hardcode colors directly in views. Structure tokens in a dedicated `mod pal` or `ThemeManager`:
+Structure tokens in a dedicated `mod pal` or palette resolver:
 
 ```rust
 // ---------------------------------------------------------------------------
@@ -337,87 +429,19 @@ mod pal {
     pub fn text() -> Rgba { rgb(0xf0f2f5) }
     pub fn text_muted() -> Rgba { rgb(0x5c6370) }
     pub fn accent() -> Rgba { rgb(0x00e8c6) }
-    pub fn secondary() -> Rgba { rgb(0xff5370) }
     pub fn border() -> Rgba { rgb(0x282c3f) }
-    pub fn urgent() -> Rgba { rgb(0xff5370) }
 }
 ```
 
 When building dynamic shells, `pal::...` functions read from an active theme state (or a theme entity registered in GPUI globals), allowing the entire shell to re-render instantly on theme changes (`cx.notify()`).
 
----
-
-### 2. External Themes Specification: TOML Files
+### 2. External Themes Configuration
 
 Themes are stored as `.toml` files in `~/.config/<shell-name>/themes/*.toml` (with built-in embedded strings as fallback if the directory is empty).
-
-#### Standard Theme TOML Schema:
-```toml
-[meta]
-name = "Bespoke Aesthetic Name"
-author = "Designer Name"
-variant = "dark" # "dark" | "light"
-
-# Mandatory: wallpaper is an integral part of the desktop identity!
-[wallpaper]
-path = "~/Pictures/wallpapers/bespoke_universe.png"
-mode = "fill" # "fill" | "fit" | "stretch" | "center"
-
-[colors]
-bg = "#0f111a"
-surface = "#1a1d2e"
-text = "#f0f2f5"
-text_muted = "#5c6370"
-accent = "#00e8c6"
-secondary = "#ff5370"
-border = "#282c3f"
-urgent = "#ff5370"
-
-[style]
-border_width = 1.5
-corner_radius = 6.0
-shadow_size = 4.0
-```
-
----
-
-### 3. Automatic Desktop Wallpaper Synchronization
-
-A Wayland shell and the desktop wallpaper form a single cohesive aesthetic. When a theme is loaded or switched:
-1. The shell parses the `[wallpaper]` section of the theme TOML.
-2. The shell automatically invokes the compositor's wallpaper command:
-   - **Sway**: `swaymsg output * bg "<expanded_path>" fill`
-   - **Hyprland / Generic Wayland**: `swww img "<expanded_path>"` or `wbg "<expanded_path>"`
-3. The desktop background changes instantly in sync with the bar and widgets.
-
----
-
-### 4. Mandatory Requirements for AI Agents & Developers
-
-When an AI agent or developer creates a shell proposal, they **must** follow these two rules:
-
-1. **Invent At Least 3 Bespoke TOML Presets (Unique Aesthetic Universes)**:
-   Do NOT copy standard community palettes (e.g., standard Catppuccin Mocha or Nord) unless explicitly requested. **Invent 3 distinct, thoughtfully curated aesthetic worlds** crafted specifically for the shell's philosophy:
-   - **Universe A (Low-luminance / High-focus)**: E.g., deep obsidian with bioluminescent emerald accents or monochromatic carbon.
-   - **Universe B (High-luminance / Editorial)**: E.g., warm architectural parchment, warm gray ink, crisp contrasting type.
-   - **Universe C (Expressive / Thematic)**: E.g., risograph electric cyan & cadmium red, industrial caution amber & slate, or retro-futuristic CRT amber.
-   Each preset must provide its own paired `[wallpaper]` path and layout parameters (`border_width`, `corner_radius`, etc.).
-
-2. **Always Implement a `ThemeSwitcher` Widget**:
-   Every shell must include an interactive `ThemeSwitcher` modal or popup window:
-   - Scans the themes directory (or lists built-in presets).
-   - Displays each theme with live visual color swatches and the wallpaper filename.
-   - Interactive keyboard navigation (arrow keys + `Enter` to apply, `Esc` to close) and click support.
-   - Toggled via a dedicated hotkey (e.g. `Super+t` / `kumizo-ctl toggle theme`) and a button in the bar/rail.
-   - Applies the new palette **in-memory with zero process restart**, and updates the wallpaper immediately.
 
 ---
 
 ## 9. Mechanical Starter Skeleton (Structure & Wiring Reference)
-
-> [!IMPORTANT]
-> **Anti-Anchoring Notice**: This skeleton demonstrates **pure system wiring and architecture** (registering services, configuring layer-shell surfaces, querying service state, and triggering inter-window actions).
-> **It intentionally avoids prescribing a visual layout.** Do NOT simply copy-paste a traditional 3-section horizontal bar unless specifically asked — design the spatial form factor that best fits your shell's purpose!
 
 ```rust
 use gpui::prelude::*;
@@ -549,42 +573,7 @@ impl Render for OverlaySurface {
 
 ---
 
-## 10. Architectural Topologies & Aesthetic Inspirations
-
-WidgetKit is an unconstrained engine. You are encouraged to propose innovative, distinctive shell concepts across diverse topologies and aesthetic movements:
-
-### 1. Architectural Topologies (Beyond the Traditional Bar)
-
-1. **The Dynamic Island / Ambient Satellite**:
-   - **Layer**: `Top` or `Overlay`, anchored `TOP`.
-   - **Behavior**: A compact floating capsule (e.g. 240px wide) at the top of the screen that dynamically expands horizontally or drops down cards when events happen (track change, incoming notification, volume adjustment), retracting back to an ambient indicator.
-2. **The Vertical Command Rail (Optimized for 16:9 / 21:9 Screens)**:
-   - **Layer**: `Top`, anchored `LEFT` or `RIGHT`.
-   - **Behavior**: Takes advantage of modern horizontal screen real estate. Thin, high-density utility strip with vertical icon clusters, rotated text or glyphs, and bottom-aligned power & control triggers.
-3. **The Corner HUD Pods (Decoupled Multi-Window Architecture)**:
-   - **Layer**: Multiple independent `LayerWindow` surfaces.
-   - **Behavior**: Instead of one monolithic edge-to-edge bar, declare 2 or 3 tiny floating pods: Pod A at `TOP | LEFT` for workspaces & media, Pod B at `TOP | RIGHT` for telemetry & time, Pod C at `BOTTOM | LEFT` for a quick launcher. Zero reserved exclusive zone between pods leaves the screen uncluttered.
-4. **The Ambient Desktop Underlay (Living Wallpaper Layer)**:
-   - **Layer**: `Background` or `Bottom`.
-   - **Behavior**: Positioned underneath application windows. Displays living system telemetry graphs, large typographic clocks, and calendar agendas directly on the desktop background, visible when workspaces are clear or tiled with margins.
-5. **The Zero-Chrome Sliding Command Drawer**:
-   - **Layer**: `Overlay`, initially hidden (`.start_hidden(true)`).
-   - **Behavior**: No permanent screen chrome reserved. The entire interface reveals itself smoothly from screen edges on hotkey (`Super+Space`), touchpad gesture, or screen edge hover.
-
-### 2. Aesthetic Movements & Visual Identities
-
-- **Neo-Brutalist & Risograph Print**:
-  Raw ink outlines (2px borders), zero-blur hard offset drop shadows (`HardShadow`), high-saturation spot inks (cadmium red, electric cyan, sunflower yellow, warm off-white newsprint), bold blocky typography.
-- **Industrial Cyberdeck / Mil-Spec Terminal**:
-  Monospace data density, tabular telemetry, status tags, caution stripes, high-contrast amber or phosphorus green telemetry with zero decorative fluff.
-- **Nordic Editorial & Swiss Modernism**:
-  Generous negative space, elegant serif or crisp neo-grotesque type, warm architectural paper backgrounds, subtle hairline dividers, literary poise.
-- **Aerospace HUD / Minimalist Wireframe**:
-  Monochromatic wireframes, hairline gauges, circular progress rings, clean geometric glyphs, translucent dark backdrops with subtle borders.
-
----
-
-## 11. Verification & Quality Checklist
+## 10. Verification & Quality Checklist
 
 Before considering your shell complete:
 - [ ] **Build Check**: `cargo check --package <your-shell> --offline` compiles with 0 errors and warnings.
