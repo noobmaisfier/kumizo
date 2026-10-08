@@ -21,6 +21,7 @@ mod pomodoro;
 mod power;
 mod tasks;
 mod theme;
+mod theme_ctl;
 mod toasts;
 mod ui;
 
@@ -57,6 +58,7 @@ fn main() {
         .service::<Mpris>()
         .service::<Tray>()
         .service::<Notifications>()
+        .service::<theme_ctl::Theme>()
         // ── Barre ───────────────────────────────────────────────────────────
         .window(
             LayerWindow::new(ids::BAR)

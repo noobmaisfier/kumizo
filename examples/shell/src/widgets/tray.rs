@@ -18,13 +18,27 @@ pub fn window() -> LayerWindow {
 
 pub struct TrayMenu {
     tray: Entity<Tray>,
+    menu_open: bool,
 }
 
 impl TrayMenu {
     pub fn new(cx: &mut Context<Self>) -> Self {
-        Self {
-            tray: cx.service::<Tray>(),
-        }
+        let tray = cx.service::<Tray>();
+        // The service is pure data: this view owns the menu window and only
+        // opens it while a menu is open.
+        cx.observe(&tray, |this, tray, cx| {
+            let open = tray.read(cx).menu().is_some();
+            if open != this.menu_open {
+                this.menu_open = open;
+                if open {
+                    cx.show_window("traymenu");
+                } else {
+                    cx.hide_window("traymenu");
+                }
+            }
+        })
+        .detach();
+        Self { tray, menu_open: false }
     }
 }
 
@@ -53,7 +67,10 @@ fn render_menu_items(items: &[TrayMenuItem], tray: &Entity<Tray>) -> Vec<gpui::A
                 .hover(|h| h.bg(pal::yellow()))
                 .cursor_pointer()
                 .on_click(move |_, _, cx| {
-                    tray_entity.update(cx, |t, _| t.click_menu_item(id));
+                    tray_entity.update(cx, |t, cx| {
+                        t.click_menu_item(id);
+                        cx.notify();
+                    });
                 });
         }
         let check = match item.toggle {
@@ -90,7 +107,10 @@ impl Render for TrayMenu {
             .pr(px(8.0))
             .pb(px(8.0))
             .on_click(move |_, _, cx| {
-                tray_entity.update(cx, |t, _| t.close_menu());
+                tray_entity.update(cx, |t, cx| {
+                    t.close_menu();
+                    cx.notify();
+                });
             })
             .child(printed(
                 div()

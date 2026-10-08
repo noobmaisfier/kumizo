@@ -395,7 +395,7 @@ impl Service for Bluetooth {
         initial
     }
 
-    fn ipc_action(&mut self, action: &str, _payload: Option<&str>) -> bool {
+    fn ipc_action(&mut self, _cx: &mut Context<Self>, action: &str, _payload: Option<&str>) -> bool {
         match action {
             "toggle" | "toggle_power" => {
                 self.toggle_power();

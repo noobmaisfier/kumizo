@@ -24,7 +24,7 @@ impl<S: Service> ErasedService for Entity<S> {
 
     fn ipc_action(&mut self, cx: &mut App, action: &str, payload: Option<&str>) -> bool {
         self.update(cx, |service, cx| {
-            let handled = service.ipc_action(action, payload);
+            let handled = service.ipc_action(cx, action, payload);
             if handled {
                 // Re-render whoever observes this service.
                 cx.notify();

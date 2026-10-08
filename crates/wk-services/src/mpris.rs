@@ -105,7 +105,7 @@ impl Mpris {
 }
 
 impl Service for Mpris {
-    fn ipc_action(&mut self, action: &str, _payload: Option<&str>) -> bool {
+    fn ipc_action(&mut self, _cx: &mut Context<Self>, action: &str, _payload: Option<&str>) -> bool {
         match action {
             "play_pause" | "play-pause" => {
                 self.play_pause();

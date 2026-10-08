@@ -10,7 +10,6 @@ use zbus::message::Header;
 use zbus::object_server::SignalContext;
 use zbus::Connection;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
-use wk_ipc::WindowControl;
 use crate::service::Service;
 
 /// Well-known name of the tray host. Owning it makes this daemon the
@@ -18,8 +17,6 @@ use crate::service::Service;
 const WATCHER_BUS: &str = "org.kde.StatusNotifierWatcher";
 /// Object path of the watcher, per the StatusNotifier specification.
 const WATCHER_PATH: &str = "/StatusNotifierWatcher";
-/// Name of the context-menu window (declared by the application builder).
-const MENU_WINDOW: &str = "traymenu";
 
 /// Item visibility as reported by the application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,15 +84,14 @@ struct TrackedItem {
 ///
 /// Owns `org.kde.StatusNotifierWatcher`, decodes item pixmaps into GPU
 /// textures, and fetches dbusmenu layouts on demand. The topbar renders
-/// [`Tray::items`]; right-click opens the [`Tray::menu`] in the `traymenu`
-/// window via [`WindowControl`], so no surface exists while closed.
+/// [`Tray::items`]; the shell's view observes [`Tray::menu`] and owns the
+/// context-menu window itself, so no surface exists while closed.
 #[derive(Debug, Default)]
 pub struct Tray {
     items: HashMap<String, TrackedItem>,
     /// Insertion order, for a stable icon row.
     order: Vec<String>,
     open_menu: Option<OpenMenu>,
-    control: Option<WindowControl>,
 }
 
 impl Tray {
@@ -221,20 +217,14 @@ impl Tray {
             title,
             items,
         });
-        if let Some(control) = &self.control {
-            control.show(MENU_WINDOW);
-        }
     }
 
-    /// Close the menu window and forget its items.
+    /// Forget the open menu (the shell's view closes the window).
     pub fn close_menu(&mut self) {
         if self.open_menu.is_none() {
             return;
         }
         self.open_menu = None;
-        if let Some(control) = &self.control {
-            control.hide(MENU_WINDOW);
-        }
     }
 
     /// Click a menu entry: fire `clicked` then close.
@@ -672,7 +662,7 @@ impl Service for Tray {
     /// `list`, `activate <id>`, `menu-open <id>`, `menu-click <id>`,
     /// `menu-close`. Item ids come from the topbar tooltips; `list` prints
     /// the inventory to the daemon log.
-    fn ipc_action(&mut self, action: &str, payload: Option<&str>) -> bool {
+    fn ipc_action(&mut self, _cx: &mut Context<Self>, action: &str, payload: Option<&str>) -> bool {
         match action {
             "list" => {
                 tracing::info!("Tray items: {}", self.describe());
@@ -715,13 +705,7 @@ impl Service for Tray {
     }
 
     fn init(cx: &mut Context<Self>) -> Self {
-        // The builder publishes the window control before starting services.
-        let initial = Tray {
-            control: cx
-                .try_global::<crate::window::WindowControlGlobal>()
-                .map(|g| g.0.clone()),
-            ..Tray::default()
-        };
+        let initial = Tray::default();
         let (tx, rx) = async_channel::unbounded::<TrayBusEvent>();
 
         cx.spawn(async move |this, cx| {

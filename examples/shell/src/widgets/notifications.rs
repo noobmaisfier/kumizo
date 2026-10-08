@@ -32,11 +32,27 @@ pub fn center_window() -> LayerWindow {
 
 pub struct NotificationToasts {
     notifications: Entity<Notifications>,
+    toasts_open: bool,
 }
 
 impl NotificationToasts {
     pub fn new(cx: &mut Context<Self>) -> Self {
-        Self { notifications: cx.service::<Notifications>() }
+        let notifications = cx.service::<Notifications>();
+        // The service is pure data: this view owns the toast window and only
+        // opens it while at least one toast is on screen.
+        cx.observe(&notifications, |this, notifs, cx| {
+            let any = !notifs.read(cx).toasts().is_empty();
+            if any != this.toasts_open {
+                this.toasts_open = any;
+                if any {
+                    cx.show_window("notifications");
+                } else {
+                    cx.hide_window("notifications");
+                }
+            }
+        })
+        .detach();
+        Self { notifications, toasts_open: false }
     }
 }
 

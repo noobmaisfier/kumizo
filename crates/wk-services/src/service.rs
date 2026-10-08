@@ -17,11 +17,17 @@ pub trait Service: 'static + Sized {
 
     /// Apply an action requested through `widgetctl service <name> <action> [payload]`.
     ///
-    /// Runs on the GPUI main thread, so implementations may touch their own
-    /// state and call `cx.notify()`. Returns `true` when the action was
-    /// recognised; unknown actions must return `false` so the caller can report
-    /// them instead of silently doing nothing.
-    fn ipc_action(&mut self, action: &str, payload: Option<&str>) -> bool {
+    /// Runs on the GPUI main thread. `cx` derefs to `App`, so implementations
+    /// may touch their own state, call `cx.notify()`, or trigger a global
+    /// repaint (e.g. `cx.refresh_windows()` for a theme switch). Returns `true`
+    /// when the action was recognised; unknown actions must return `false` so
+    /// the caller can report them instead of silently doing nothing.
+    fn ipc_action(
+        &mut self,
+        _cx: &mut Context<Self>,
+        action: &str,
+        payload: Option<&str>,
+    ) -> bool {
         let _ = (action, payload);
         false
     }

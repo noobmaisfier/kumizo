@@ -311,16 +311,15 @@ vérifiés). `WifiBackend` : `NetworkManager | Iwd | Fallback`.
 
 **`Tray`** — hôte system tray (StatusNotifierItem + dbusmenu). Méthodes :
 `items() -> Vec<TrayItem>` (icônes visibles, `Passive` exclu),
-`menu() -> Option<OpenMenu>`, `set_control(WindowControl)` (une fois,
-depuis la vue qui lit le global — voir §2 étape 10),
+`menu() -> Option<OpenMenu>`,
 `activate(id)`, `open_menu(id)`, `close_menu()`,
 `click_menu_item(id)`. `TrayItem` : `id`, `title`, `icon:
 Option<Arc<RenderImage>>`, `attention`. `TrayMenuItem` : `id`, `label`,
 `enabled`, `separator`, `toggle: Option<bool>`, `children` (récursif).
 `id` accepte la clé exacte, le nom de bus ou un fragment de titre.
 Actions IPC : `list`, `activate`, `menu-open`, `menu-click`, `menu-close`.
-La fenêtre `traymenu` (`start_hidden`) s'ouvre/ferme via le contrôle de
-fenêtre, jamais à la main.
+Ne gère **aucune** fenêtre : la vue shell observe `menu()` et ouvre/ferme
+elle-même sa fenêtre `traymenu` (`start_hidden`).
 
 **`Compositor`** — Sway/Hyprland/Niri + repli (`CompositorKind`,
 auto-détection, même pattern que `WifiBackend`). Méthodes :
@@ -351,8 +350,9 @@ Méthodes : `toasts() -> &[Notification]`, `history() -> &[Notification]`, `unre
 `is_dnd() -> bool`, `toggle_dnd()`, `dismiss_toast(id)`, `remove_history(id)`, `clear_history()`,
 `invoke_action(id, key)`. `Notification` : `id`, `app_name`, `summary`, `body`,
 `app_icon: Option<Arc<RenderImage>>`, `urgency: Urgency`, `actions: Vec<NotificationAction>`.
-Contrôle automatiquement la fenêtre `notifications` (`show_window`/`hide_window`) lors de l'arrivée et
-de l'expiration des toasts éphémères.
+Ne gère **aucune** fenêtre : la vue shell observe `toasts()` et ouvre/ferme
+elle-même sa fenêtre (voir les exemples `shell` et `aurora`), ce qui garde les
+noms de fenêtres propres au shell.
 
 **`Clipboard`** — gestionnaire de presse-papier Wayland natif via `wl-clipboard`.
 Surveille les copies de texte, déduplique, conserve l'historique et gère la ré-injection.
@@ -375,7 +375,7 @@ impl MonService {
 // Le trait : init lance la tâche de fond, ipc_action expose le contrôle CLI.
 impl Service for MonService {
     fn init(cx: &mut Context<Self>) -> Self { ... }
-    fn ipc_action(&mut self, action: &str, payload: Option<&str>) -> bool { ... } // défaut: false
+    fn ipc_action(&mut self, cx: &mut Context<Self>, action: &str, payload: Option<&str>) -> bool { ... } // défaut: false
 }
 ```
 
@@ -453,11 +453,12 @@ Dans la vue (`render`) :
   vers `App`, donc les mêmes méthodes marchent dans une vue. Les appels ne
   bloquent jamais l'appelant (thread dédié + timeout 5 s) ; un nom de fenêtre
   inconnu est journalisé en `warn!`.
-- Depuis un service (popup piloté par un service, ex. le menu du tray) : lire
-  le global `WindowControlGlobal` dans la vue (`cx.try_global::<WindowControlGlobal>()`
-  puis `.0.clone()`), le remettre au service via `set_control`-équivalent,
-  puis `control.show("traymenu")` / `control.hide("traymenu")` /
-  `control.toggle("..")`.
+- Pour un popup déclenché par un service (ex. le menu du tray) : le service
+  ne touche pas aux fenêtres. La vue observe l'état du service
+  (`cx.observe(&service, ...)`) et ouvre/ferme sa propre fenêtre
+  (`cx.show_window("..")` / `cx.hide_window("..")`). Le service doit
+  `cx.notify()` après chaque changement d'état, sinon l'observer ne se
+  déclenche pas.
 - Runtime (scripts, raccourcis du compositeur) :
   `widgetctl show|hide|toggle <fenêtre>`, `reload`, `status`. Un seul socket :
   `widgetkit.sock` dans `XDG_RUNTIME_DIR`.

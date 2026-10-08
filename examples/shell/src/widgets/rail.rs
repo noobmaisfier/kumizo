@@ -355,7 +355,10 @@ impl Render for Rail {
                         tray_entity.update(cx, |t, _| t.activate(&activate_id));
                     })
                     .on_mouse_down(gpui::MouseButton::Right, move |_, _, cx| {
-                        tray_entity2.update(cx, |t, _| t.open_menu(&menu_id));
+                        tray_entity2.update(cx, |t, cx| {
+                            t.open_menu(&menu_id);
+                            cx.notify();
+                        });
                     })
             }))
             .child(status_block)

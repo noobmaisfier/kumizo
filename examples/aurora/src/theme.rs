@@ -99,6 +99,17 @@ pub fn current() -> &'static Theme {
     &THEMES[current_index()]
 }
 
+/// Résout une cible CLI (« Flexoki Light » ou un index « 3 ») en index de
+/// thème. Les noms sont comparés sans tenir compte de la casse ; un index
+/// numérique est accepté tel quel (`set` borne ensuite).
+pub fn resolve(target: &str) -> Option<usize> {
+    let t = target.trim();
+    if let Ok(i) = t.parse::<usize>() {
+        return Some(i);
+    }
+    THEMES.iter().position(|th| th.name.eq_ignore_ascii_case(t))
+}
+
 /// Change de thème, le mémorise, et redessine toutes les fenêtres.
 pub fn set(index: usize, cx: &mut App) {
     let index = index.min(THEMES.len() - 1);

@@ -2,6 +2,10 @@
 //!
 //! Replaces external notification daemons (dunst, mako, swaync) by hosting the
 //! standard D-Bus notification server in the same process as the shell.
+//!
+//! Pure data + D-Bus: this service never opens or closes a window. A shell view
+//! observes `toasts()` and owns the toast window itself (see the `shell` and
+//! `aurora` examples), which keeps window names shell-specific.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -18,7 +22,6 @@ use zbus::zvariant::{OwnedValue, Value};
 use zbus::Connection;
 
 use crate::service::Service;
-use crate::window::WindowControlExt;
 
 const BUS_NAME: &str = "org.freedesktop.Notifications";
 const OBJECT_PATH: &str = "/org/freedesktop/Notifications";
@@ -215,7 +218,7 @@ impl Service for Notifications {
         Self::new(cx)
     }
 
-    fn ipc_action(&mut self, action: &str, _payload: Option<&str>) -> bool {
+    fn ipc_action(&mut self, _cx: &mut Context<Self>, action: &str, _payload: Option<&str>) -> bool {
         match action {
             "toggle_dnd" => {
                 self.toggle_dnd();
@@ -274,10 +277,9 @@ async fn handle_incoming(
                         notifs.history.truncate(100);
                     }
 
-                    // Unless DND is active, push as toast popup
+                    // Unless DND is active, push as toast popup. The shell's
+                    // view watches `toasts()` and owns the window.
                     if !notifs.dnd {
-                        cx.show_window("notifications");
-
                         // Replace existing toast if id already visible
                         notifs.toasts.retain(|t| t.id != id);
                         notifs.toasts.insert(0, notif);
@@ -296,9 +298,6 @@ async fn handle_incoming(
                                 async_io::Timer::after(Duration::from_millis(timeout_ms)).await;
                                 let _ = this.update(cx, |notifs, cx| {
                                     notifs.toasts.retain(|t| t.id != id || t.generation != gen);
-                                    if notifs.toasts.is_empty() {
-                                        cx.hide_window("notifications");
-                                    }
                                     cx.notify();
                                 });
                             })
@@ -312,9 +311,6 @@ async fn handle_incoming(
             NotificationEvent::Close { id } => {
                 let _ = this.update(cx, |notifs, cx| {
                     notifs.toasts.retain(|t| t.id != id);
-                    if notifs.toasts.is_empty() {
-                        cx.hide_window("notifications");
-                    }
                     cx.notify();
                 });
             }

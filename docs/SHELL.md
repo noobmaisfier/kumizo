@@ -175,7 +175,11 @@ widgetctl ping                        # Health check
 widgetctl status                      # WHO answers? check window list first
 widgetctl toggle my_launcher          # Bind to a free key in sway/hyprland
 widgetctl service audio toggle_mute
+widgetctl service theme next          # service défini par le shell (ex. examples/aurora)
+widgetctl service theme set "Flexoki Light"
 ```
+Custom actions are added by registering a shell-owned `Service`; its CLI name is
+the last path segment of the type, lowercased (`Theme` → `widgetctl service theme`).
 
 ---
 
@@ -633,6 +637,12 @@ mod pal {
 ```
 
 When building dynamic shells, `pal::...` functions read from an active theme state (or a theme entity registered in GPUI globals), allowing the entire shell to re-render instantly on theme changes (`cx.refresh_windows()` on `&mut App`). Static shells: ignore `pal` and inline your colors.
+
+A shell can expose theme switching over IPC by implementing a small `Service`
+whose `ipc_action(&mut self, cx: &mut Context<Self>, action, payload)` calls its
+own `set(index, cx)` (e.g. actions `set <name|index>`, `next`, `prev`). `cx`
+derefs to `App`, so `cx.refresh_windows()` repaints every window. See
+`examples/aurora/src/theme_ctl.rs` for a complete, ~40-line example.
 
 ### 2. External Themes Configuration
 

@@ -100,7 +100,7 @@ impl Brightness {
 impl Service for Brightness {
     /// Actions for `widgetctl service brightness …`:
     /// `up` / `down` (±5) and `set <0-100>`.
-    fn ipc_action(&mut self, action: &str, payload: Option<&str>) -> bool {
+    fn ipc_action(&mut self, _cx: &mut Context<Self>, action: &str, payload: Option<&str>) -> bool {
         match action {
             "up" | "brightness_up" => {
                 self.increase();

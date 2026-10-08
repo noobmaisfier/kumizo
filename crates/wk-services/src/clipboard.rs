@@ -201,7 +201,7 @@ impl Service for Clipboard {
         Self::new(cx)
     }
 
-    fn ipc_action(&mut self, action: &str, payload: Option<&str>) -> bool {
+    fn ipc_action(&mut self, _cx: &mut Context<Self>, action: &str, payload: Option<&str>) -> bool {
         match action {
             "clear" => {
                 self.clear();
