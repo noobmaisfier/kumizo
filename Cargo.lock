@@ -456,6 +456,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "aurora"
+version = "0.1.0"
+dependencies = [
+ "async-io",
+ "gpui",
+ "libc",
+ "widgetkit",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

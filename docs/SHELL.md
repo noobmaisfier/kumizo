@@ -138,6 +138,16 @@ cx.spawn(async move |this, cx| {
 
 Windows declared with `.start_hidden(true)` do not occupy Wayland resources until displayed. You can toggle or show them from any event handler **without IPC**:
 
+> [!IMPORTANT]
+> Entity-vs-surface lifecycle (`crates/widgetkit/src/app.rs:107-132`):
+> the VIEW (`Entity`, your struct) is built at startup for EVERY window,
+> including `start_hidden` ones — `new()` runs and `cx.observe(...)`
+> subscriptions are live immediately. Only the Wayland SURFACE is lazy:
+> `show` creates it from the existing entity, `hide` destroys it and keeps
+> the state. So a hidden OSD/toasts view CAN observe services itself and
+> call `cx.show_window("itself")` — driving it from another view (e.g. the
+> bar) is a design choice, never a necessity.
+
 ```rust
 // Inside any GPUI event handler or context (ids are yours — examples only):
 cx.toggle_window("my_launcher");
@@ -290,6 +300,90 @@ pub struct Notification {
     pub generation: u64,
 }
 ```
+
+#### Data Types: All Fields & Variants (from `crates/wk-services/src/`, `wk-compositor/src/`)
+
+Methods are not enough — views also read struct FIELDS. Exact shapes:
+
+```rust
+// Bluetooth (bluetooth.rs)
+pub struct BluetoothDevice {
+    pub path: String,       // D-Bus object path — pass to toggle_device_connection
+    pub address: String,     // MAC, fallback display name
+    pub name: String,        // may be empty: prefer display_name()
+    pub icon: Option<String>,// BlueZ icon name: "audio-headset", "input-mouse", ...
+    pub paired: bool,
+    pub connected: bool,
+    pub trusted: bool,
+    pub battery_percent: Option<u8>,
+}
+// helpers: display_name() -> &str, type_icon() -> glyph
+
+// Apps (apps.rs)
+pub struct AppInfo {
+    pub id: String,         // desktop file id, e.g. "firefox"
+    pub name: String,
+    pub comment: String,
+    pub exec: String,       // sanitized launch command
+    pub icon_name: String,  // original icon name/path
+    pub icon: Option<Arc<RenderImage>>, // decoded GPU texture (PNG & SVG)
+    pub categories: Vec<String>,
+    pub keywords: Vec<String>,
+}
+
+// Tray (tray.rs)
+pub struct TrayItem {
+    pub id: String,   // registry key (bus + path) — use for clicks
+    pub title: String, // tooltip
+    pub icon: Option<Arc<RenderImage>>, // None while loading
+    pub attention: bool,
+}
+pub struct TrayMenuItem {
+    pub id: i32,             // pass to click_menu_item(id: i32)
+    pub label: String,
+    pub enabled: bool,       // skip interaction when false
+    pub separator: bool,
+    pub toggle: Option<bool>,// Some(checked) for checkmark/radio items
+    pub children: Vec<TrayMenuItem>, // recursive
+}
+pub struct OpenMenu {
+    pub owner: String, // registry key of the owning item
+    pub title: String,
+    pub items: Vec<TrayMenuItem>,
+}
+pub enum TrayStatus { Active, Passive, NeedsAttention } // Passive items excluded from items()
+
+// Media (mpris.rs)
+pub enum PlaybackStatus { Playing, Paused, Stopped } // helpers: icon(), is_playing()
+// title(), artist(), album(), player_name() -> Option<&str> (borrowed!)
+// display_label() -> String ("artist - title")
+
+// Battery (battery.rs)
+pub enum BatteryState {
+    Charging, Discharging, Empty, FullyCharged,
+    PendingCharge, PendingDischarge, Unknown, // helpers: as_str(), icon(percent)
+}
+// energy_rate_watts() -> Option<f64>, time_to_empty/full() -> Option<Duration>
+
+// Network (network.rs)
+pub enum WifiBackend { NetworkManager, Iwd, Fallback }
+// ssid() -> Option<&str>, signal_percent() -> Option<u8> (both borrowed/optional!)
+// display_label() -> String, icon() -> glyph
+
+// Clock (clock.rs)
+pub enum ClockResolution { Seconds, Minutes } // set_resolution() lowers wakeups to 1/min
+
+// Clipboard (clipboard.rs)
+pub struct ClipboardItem {
+    pub id: u64,              // pass to copy_item(id: u64) / remove_item(id: u64)
+    pub text: String,
+    pub timestamp: time::OffsetDateTime,
+}
+// helpers: preview() -> String, line_count() -> usize, char_count() -> usize
+```
+
+Borrow rule reminder (§5 CAUTION): `&str` / `&[...]` fields and getters borrow
+the `read()` guard — copy what you display before leaving `render`.
 
 Methods on `Notifications`:
 - `toasts(&self) -> &[Notification]`: Ephemeral popups currently active on screen.
@@ -643,6 +737,10 @@ registry with widgets. Wiring, from `examples/lockscreen/src/main.rs`:
   service) on the background executor — never block the UI thread.
 - Never reuse a shell view or service inside the locker; duplicate the few
   lines (clock display) instead of sharing code that widens the attack surface.
+- Honest limit: this is a layer-shell surface, NOT `ext-session-lock`. A
+  compositor still honors system shortcuts (TTY switch, etc.) over it. For a
+  strict-security locker, WidgetKit would need an `ext-session-lock` backend —
+  it does not have one today.
 
 ## 12. Verification & Quality Checklist (`docs/REFERENTIEL.md:697-705`)
 
