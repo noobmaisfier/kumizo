@@ -243,7 +243,7 @@ let comp = self.compositor.read(cx);
 | **`Mpris`** | `title() -> Option<&str>`, `artist() -> Option<&str>`, `status() -> PlaybackStatus`, `play_pause()`, `next()`, `previous()` | Media player widget, music equalizer, dynamic topbar label. |
 | **`Tray`** | `items(&self) -> Vec<TrayItem>`, `activate(&self, id: &str)`, `open_menu(id: &str) [&mut]`, `close_menu() [&mut]` | System tray icons (StatusNotifierItem) and context menus. |
 | **`Notifications`**| `toasts(&self)`, `history(&self)`, `unread_count(&self)`, `is_dnd(&self)`, `toggle_dnd() [&mut]`, `dismiss_toast(id: u32) [&mut]`, `remove_history(id: u32) [&mut]`, `clear_history() [&mut]`, `invoke_action(&self, id: u32, key: &str)` | In-process notification server (replaces dunst/mako). |
-| **`Clipboard`** | `items(&self)`, `search(&self, query: &str)`, `copy_item(id: u64) [&mut]`, `clear() [&mut]`, `copy_text(&self, text: &str)` | Clipboard history manager overlay. |
+| **`Clipboard`** | `items(&self)`, `search(&self, query: &str)`, `copy_item(id: u64) [&mut]`, `remove_item(id: u64) [&mut]`, `clear() [&mut]`, `copy_text(&self, text: &str)` | Clipboard history manager overlay. |
 
 ### Key Compositor & Notification Types
 

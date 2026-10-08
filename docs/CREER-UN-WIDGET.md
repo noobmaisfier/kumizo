@@ -11,10 +11,12 @@ autre document n'est nécessaire) :
 1. Environnement : Linux + Wayland (Sway ici), Rust stable, `cargo`
    utilisable **hors-ligne** (`--offline`, voir §3 point 1).
 2. Règle du dépôt : **ne jamais committer sans demande explicite.**
-3. GPUI suit le `main` de Zed **sans version stable** : `Cargo.lock`
-   épingle le commit testé. Ne jamais lancer `cargo update` sur `gpui` /
-   `gpui_platform`, cela casse la compilation. Ne jamais deviner une API
-   GPUI de mémoire : vérifier dans les checkouts locaux (`~/.cargo/...`).
+3. GPUI est **épinglé** sur le snapshot crates.io `gpui-pre` `=0.3.8`
+   (voir le `Cargo.toml` du workspace et `docs/REFERENTIEL.md` § procédure
+   de bump). Ne jamais lancer `cargo update -p gpui-pre
+   -p gpui-pre-platform` hors d'un bump volontaire, cela casse la
+   compilation. Ne jamais deviner une API GPUI de mémoire : vérifier
+   dans les sources locales (`~/.cargo/registry/src/*/gpui-pre-*/`).
 
 ---
 
@@ -535,11 +537,11 @@ si une méthode manque, c'est le code qui fait foi, pas ce guide).
 Tout ce qui suit a été appris à coups d'échecs réels sur ce dépôt. C'est
 normatif, pas décoratif.
 
-**API GPUI (vérifiée sur le checkout local, à revérifier si `Cargo.lock`
-change de commit) :**
+**API GPUI (vérifiée sur les sources locales `gpui-pre =0.3.8`, à
+revérifier à chaque bump volontaire — voir `docs/REFERENTIEL.md`) :**
 
 - `App::primary_display()` retourne `None` **inconditionnellement** sur
-  Wayland (codé en dur côté `gpui_linux`). Pour la taille d'un écran :
+  Wayland (codé en dur côté `gpui-pre-linux`). Pour la taille d'un écran :
   `cx.displays()`. `LayerWindow` gère déjà ça : ne construire des
   `WindowOptions` à la main que si `LayerWindow` ne suffit pas, et dans ce
   cas tous les ~17 champs doivent être renseignés (`..Default::default()`
@@ -551,7 +553,7 @@ change de commit) :**
   Les types `Context` portent une durée de vie explicite
   (`Context<'_, V>`).
 - `Styled::scale` n'existe pas. Toute méthode d'effet visuel doit être
-  vérifiée dans le checkout avant usage.
+  vérifiée dans les sources locales avant usage.
 - Toute dépendance utilisée doit être **déclarée** dans le `Cargo.toml`
   du crate qui l'emploie (`anyhow`, `async-channel`, etc.) : le workspace
   ne les propage pas.
@@ -584,5 +586,6 @@ change de commit) :**
 1. Relire la section correspondante ci-dessus (§5 d'abord).
 2. Lire le code cité (chemins exacts dans ce guide) : le code fait foi,
    pas la mémoire.
-3. Vérifier l'API amont dans les checkouts locaux (`~/.cargo/...`) plutôt
-   que de mémoire : GPUI suit un `main` mouvant, la mémoire est fausse.
+3. Vérifier l'API amont dans les sources locales (`~/.cargo/registry/src/*/gpui-pre-*/`)
+   plutôt que de mémoire : GPUI est un snapshot épinglé (`=0.3.8`), et la
+   mémoire d'une autre version est fausse.

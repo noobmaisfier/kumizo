@@ -30,7 +30,8 @@ largeur de l'écran), alors que le code de calcul de taille est correct.
 **Cause.** Sur Wayland, gpui renvoie `None` *inconditionnellement* :
 
 ```rust
-// crates/gpui_linux/src/linux/wayland/client.rs:1208
+// gpui-pre-linux-0.3.8/src/linux/wayland/client.rs:1208 (snapshot épinglé,
+// ~/.cargo/registry/src/*/gpui-pre-linux-0.3.8/...)
 pub(crate) fn primary_display(&self) -> Option<Rc<dyn PlatformDisplay>> {
     None
 }
@@ -397,8 +398,8 @@ Règles à appliquer :
 ## 7. Les outils
 
 ```bash
-# lire la vraie API gpui, toujours
-grep -rn 'fn primary_display' ~/.cargo/git/checkouts/zed-*/crates/gpui_linux/src/
+# lire la vraie API gpui, toujours (snapshot épinglé, pas le main amont)
+grep -rn 'fn primary_display' ~/.cargo/registry/src/*/gpui-pre-linux-0.3.8/src/
 
 # lire une dépendance locale plutôt que docs.rs
 sed -n '570,590p' ~/.cargo/registry/src/*/zbus-*/src/proxy/mod.rs
