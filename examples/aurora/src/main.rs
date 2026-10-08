@@ -12,6 +12,7 @@
 
 mod adapt;
 mod bar;
+mod clipboard;
 mod control;
 mod icons;
 mod launcher;
@@ -55,6 +56,7 @@ fn main() {
         .service::<Network>()
         .service::<Compositor>()
         .service::<Apps>()
+        .service::<Clipboard>()
         .service::<Mpris>()
         .service::<Tray>()
         .service::<Notifications>()
@@ -92,6 +94,10 @@ fn main() {
         .window(
             fullscreen(ids::POWER, "aurora-power", KeyboardInteractivity::Exclusive),
             |cx: &mut gpui::App| cx.new(power::PowerMenu::new),
+        )
+        .window(
+            fullscreen(ids::CLIPBOARD, "aurora-clipboard", KeyboardInteractivity::Exclusive),
+            |cx: &mut gpui::App| cx.new(clipboard::ClipboardPanel::new),
         )
         // ── Toasts (ouverts/fermés par la barre selon `toasts()`) ───────────
         .window(

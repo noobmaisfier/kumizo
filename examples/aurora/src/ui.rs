@@ -14,6 +14,7 @@ pub mod ids {
     pub const LAUNCHER: &str = "aurora-launcher";
     pub const TASKS: &str = "aurora-tasks";
     pub const POWER: &str = "aurora-power";
+    pub const CLIPBOARD: &str = "aurora-clipboard";
     pub const CONTROL: &str = "aurora-control";
     pub const NOTIFS: &str = "aurora-notifs";
     pub const TOASTS: &str = "aurora-toasts";
@@ -113,6 +114,7 @@ pub fn toggle_exclusive(target: &'static str, cx: &mut App) {
         ids::LAUNCHER,
         ids::TASKS,
         ids::POWER,
+        ids::CLIPBOARD,
     ] {
         if id != target {
             cx.hide_window(id);

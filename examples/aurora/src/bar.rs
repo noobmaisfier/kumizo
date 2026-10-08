@@ -175,7 +175,13 @@ impl TopBar {
                     .child(n_windows.to_string()),
             );
 
-        let mut row = pill().child(launcher).child(ws_row).child(tasks);
+        let clipboard = btn("bar-clipboard")
+            .w(px(28.))
+            .hover(|s| s.bg(pal::raised()))
+            .on_click(|_, _, cx| ui::toggle_exclusive(ids::CLIPBOARD, cx))
+            .child(ui::glyph(icons::CLIPBOARD, 14., pal::text()));
+
+        let mut row = pill().child(launcher).child(ws_row).child(tasks).child(clipboard);
         if let Some(t) = title {
             row = row.child(
                 div()

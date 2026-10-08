@@ -28,6 +28,7 @@ pub const NEXT: &str = "\u{f051}";
 pub const PREV: &str = "\u{f048}";
 pub const MUSIC: &str = "\u{f001}";
 pub const WINDOWS: &str = "\u{f2d2}";
+pub const CLIPBOARD: &str = "\u{f0ea}";
 pub const CLOSE: &str = "\u{f00d}";
 pub const TRASH: &str = "\u{f1f8}";
 pub const HOURGLASS: &str = "\u{f252}";
