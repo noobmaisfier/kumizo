@@ -1,12 +1,24 @@
 # Référentiel WidgetKit — pièges GPUI, erreurs à ne pas répéter
 
 Notes concrètes accumulées en faisant compiler et tourner ce projet contre
-`gpui` (commit `a846890`, version `0.2.2`). Tout ce qui suit a été **vérifié**
-soit par le compilateur, soit en lisant la source de gpui, soit à l'écran.
+`gpui`. Le moteur est **épinglé** sur le snapshot crates.io `gpui-pre` `=0.3.8`
+(snapshot de `zed@279fe07`, nom de lib `gpui`), et non plus sur la branche
+`main` de Zed. Tout ce qui suit a été **vérifié** soit par le compilateur, soit
+en lisant la source de gpui, soit à l'écran.
 
-Le projet ne compile pas « pour de vrai » tant que ces points ne sont pas
-respectés : la crate n'a pas de version stable, l'API change à chaque commit de
-`main`.
+GPUI n'a pas d'API stable : chaque snapshot peut casser l'API. On épingle donc
+une version **exacte**, et on ne bouge que par un bump volontaire.
+
+### Procédure de bump (`gpui-pre`)
+
+1. Choisir la nouvelle version `gpui-pre` (`=X.Y.Z`).
+2. Mettre à jour **ensemble** `gpui` et `gpui_platform` dans le `Cargo.toml` du
+   workspace (`package = "gpui-pre"` / `"gpui-pre-platform"`, même `=X.Y.Z`).
+3. `cargo update -p gpui-pre -p gpui-pre-platform` puis
+   `cargo check --workspace --all-targets`.
+4. Corriger les nouveaux pièges d'API (ce document).
+5. Règle : **une seule** version `gpui-pre` dans tout le graphe de dépendances —
+   sinon cargo compile deux GPUI et leurs types cessent d'être interchangeables.
 
 ---
 

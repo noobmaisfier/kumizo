@@ -12,7 +12,7 @@ Unlike existing web- or interpreted-based solutions (AGS, Eww, Waybar, QuickShel
 - **You write the widgets**: a widget is a plain Rust struct implementing `gpui::Render`. Total layout freedom, no imposed UI kit.
 - **Zero Idle CPU**: services are event-driven (D-Bus signals, compositor sockets, `pactl subscribe`); nothing redraws unless `cx.notify()` is called.
 - **Unified Event Loop**: GPUI's native async executor drives both UI layout and background D-Bus/IPC requests.
-- **Zero Fork**: Depends on upstream `gpui` directly.
+- **Pinned upstream engine**: built on the `gpui-pre` snapshot of Zed's GPUI, pinned to an exact version (`=0.3.8`) instead of a floating git `main`.
 
 > **Mental model.** A *widget* is a GPUI view. A *window* (`LayerWindow`) is a Wayland layer-shell surface that hosts one root view. The *shell* is your `main()`: it registers services and windows once, in one process. Windows talk to each other in-memory (`cx.toggle_window("calendar")`), never through IPC.
 
@@ -20,7 +20,7 @@ Unlike existing web- or interpreted-based solutions (AGS, Eww, Waybar, QuickShel
 
 ## Contributing
 
-**Before touching this codebase, read [`docs/REFERENTIEL.md`](docs/REFERENTIEL.md).** GPUI has no stable API and this project tracks its `main` branch, so the diff between one working commit and the next is large. The reference documents the API traps, the mistakes not to repeat, and how to verify a change actually works.
+**Before touching this codebase, read [`docs/REFERENTIEL.md`](docs/REFERENTIEL.md).** GPUI has no stable API; this project pins an exact `gpui-pre` snapshot (`=0.3.8`) instead of tracking Zed's `main`, so upgrades are deliberate and the diff between snapshots is large. The reference documents the API traps, the mistakes not to repeat, and how to verify a change actually works.
 
 **To create a widget, read [`docs/CREER-UN-WIDGET.md`](docs/CREER-UN-WIDGET.md).** It is self-sufficient: recipe, exact signatures, services, verification. The running reference is [`examples/shell`](examples/shell/src/main.rs).
 

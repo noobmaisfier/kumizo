@@ -26,14 +26,21 @@ keywords = ["wayland", "gpui", "status-bar", "desktop", "widgets"]
 categories = ["gui", "os::unix-apis"]
 
 [workspace.dependencies]
-# Upstream GPUI main branch (zero fork)
-gpui = { git = "https://github.com/zed-industries/zed", default-features = true }
+# GPUI engine, pinned to an exact crates.io snapshot (`gpui-pre`) published by
+# the GPUI Kit project. It is a snapshot of Zed's upstream `gpui` (same code,
+# Apache-2.0, notices intact) republished under a semver version, so the pin is
+# explicit and no longer relies on the git `main` branch + Cargo.lock alone.
+# `package = "gpui-pre"` keeps the import name `gpui`.
+# RULE: exactly ONE `gpui-pre` version in the whole dependency graph. Anything
+# downstream (e.g. `gpui-kit`) MUST resolve to this same snapshot, otherwise
+# Cargo compiles two GPUI copies and their types stop being interchangeable.
+gpui = { package = "gpui-pre", version = "=0.3.8", default-features = true }
 
 # Platform bootstrap. GPUI no longer exposes `Application::new()`, so an
 # `Application` has to be built from a concrete `Platform`; `gpui_platform` is
-# the upstream convenience crate that provides `application()` for the host OS.
-# Same git source as `gpui` above, so both resolve to the same commit.
-gpui_platform = { git = "https://github.com/zed-industries/zed", default-features = false, features = [
+# the convenience crate that provides `application()` for the host OS.
+# Same snapshot as `gpui` above, so both resolve to the same commit.
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.8", default-features = false, features = [
     "font-kit",
     "wayland",
     "x11",

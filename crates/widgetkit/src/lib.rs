@@ -9,7 +9,7 @@
 //! - **Zero Idle CPU**: Interfaces never redraw unless explicitly requested via `cx.notify()`.
 //! - **100% GPU Rendering**: Direct rendering pipeline via wgpu.
 //! - **Unified Event Loop**: GPUI's native async executor drives both UI layout and background D-Bus/IPC requests.
-//! - **Zero Fork**: Uses upstream GPUI main branch directly.
+//! - **Pinned upstream engine**: built on a `gpui-pre` snapshot of Zed's GPUI, pinned to an exact version rather than a floating `main`.
 //! - **Bring Your Own UI**: No bloated UI widget kit — you design your interface freely with GPUI primitives.
 //!
 //! ## Quickstart
