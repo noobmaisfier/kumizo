@@ -8,6 +8,7 @@ members = [
     "crates/wk-pam",
     "crates/wk-ctl",
     "examples/shell",
+    "examples/kiln",
     "examples/sources",
     "examples/lockscreen",
 ]

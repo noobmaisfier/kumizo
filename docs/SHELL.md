@@ -1,6 +1,10 @@
 # WidgetKit Shell Creation Guide (AI Agents & Developers Reference)
 
 > **Role of this document**: This document is a complete, self-sufficient developer and AI prompt specification for building custom Wayland desktop shells using **WidgetKit**. Any AI agent or developer provided with this guide has full technical and design freedom to propose, architect, and implement complete desktop environments (bars, docks, launchers, notifications, panels, OSDs, control centers).
+>
+> **How to read this doc — MUST vs SHOULD:**
+> - **MUST** = hard constraint. Violating it fails to compile, panics, or silently shows nothing. Marked with [!CAUTION] / [!WARNING] or the word MUST.
+> - **SHOULD** = starting point that worked once on one machine. Adapt numbers, names, palettes and topology to the target hardware and taste. Every pixel value, window id and hex color below is an example, not a default.
 
 ---
 
@@ -14,23 +18,17 @@ WidgetKit is a high-performance Wayland desktop shell SDK written in pure Rust, 
    - One GPU / Vulkan context initialized.
    - One font cache and layout pipeline.
    - One system connection per service (D-Bus, Sway/Hyprland IPC).
-   - In-memory zero-latency communication between windows (`cx.toggle_window("launcher")`).
+   - In-memory zero-latency communication between windows (`cx.toggle_window("my_popup")` — your own ids, see §4).
    - ~80 MB RAM total footprint vs 250+ MB for multi-daemon setups.
    *(Exception: Lockscreen runs as an isolated binary for PAM security reasons).*
 
 2. **Bring Your Own UI ("Headless SDK")**:
    WidgetKit imposes **no styling framework, no CSS stylesheets, no fixed layouts, and no default themes**.
    You build the UI using GPUI's declarative, Tailwind-like layout engine directly in Rust.
-   Whether you want:
-   - Minimalist text-only tiling bars,
-   - Mac-style floating pill docks with magnification,
-   - Cyberpunk neo-brutalist interfaces with harsh borders and misregistered offset shadows (like the reference *Riso* theme),
-   - Glassmorphism / Frosted acrylic blur with gradients,
-   - Dynamic Island style expandable status bubbles,
    **you have 100% aesthetic and layout freedom.**
 
 3. **Zero Idle CPU**:
-   Every service is strictly event-driven (kernel uevents, D-Bus signal subscription, compositor IPC sockets). If nothing on the system changes, the shell consumes **0.0% CPU** and does not wake the GPU. Views only redraw when notified (`cx.notify()`).
+   Every service is strictly event-driven (kernel uevents, D-Bus signal subscription, compositor IPC sockets). If nothing on the system changes, the shell stays near idle and does not wake the GPU (a clock bar wakes at 1 Hz, ~0.4% — not strict 0.0%, see §10). Views only redraw when notified (`cx.notify()`).
 
 ---
 
@@ -54,12 +52,12 @@ fn main() {
         .service::<Notifications>()
         .service::<Clipboard>()
         
-        // 2. Declare layer-shell surfaces (windows)
-        .window(bar_window(), |cx| cx.new(TopBar::new))
-        .window(launcher_window(), |cx| cx.new(AppLauncher::new))
-        .window(tasks_window(), |cx| cx.new(TaskSwitcher::new))
-        .window(notifications_window(), |cx| cx.new(NotificationToasts::new))
-        .window(osd_window(), |cx| cx.new(VolumeOsd::new))
+        // 2. Declare layer-shell surfaces (windows) — ids below are placeholders
+        .window(bar_window(), |cx: &mut gpui::App| cx.new(TopBar::new))
+        .window(launcher_window(), |cx: &mut gpui::App| cx.new(AppLauncher::new))
+        .window(tasks_window(), |cx: &mut gpui::App| cx.new(TaskSwitcher::new))
+        .window(notifications_window(), |cx: &mut gpui::App| cx.new(NotificationToasts::new))
+        .window(osd_window(), |cx: &mut gpui::App| cx.new(VolumeOsd::new))
         
         // 3. Start the unified event loop (never returns)
         .run();
@@ -81,28 +79,58 @@ LayerWindow::new("unique_window_id")
     .exclusive_zone(32)                        // Reserved space for tiled windows
     .size(Some(800.0), Some(32.0))             // Width, Height in logical pixels
     .margins(Margins::new(8, 8, 0, 8))         // Top, Right, Bottom, Left
-    .namespace("wk-mybar")                     // Compositor layer-rule selector (blur/shadow)
+    .namespace("my-shell-bar")                    // Compositor layer-rule selector (blur/shadow); prefix per shell (§4)
     .keyboard_interactivity(KeyboardInteractivity::None) // None | OnDemand | Exclusive
     .transparent(true)                         // Transparent background buffer
     .start_hidden(true)                        // Surface not created until first opened
+    // .monitor(MonitorTarget::Primary)        // Which output (default: Primary, see §10)
 ```
 
 ### Essential Window Archetypes
 
 | Archetype | Layer | Anchor | Exclusive Zone | Keyboard Interactivity | Sizing / Notes |
 |---|---|---|---|---|---|
-| **Top/Bottom Bar** | `Top` | `TOP_BAR` (`TOP \| LEFT \| RIGHT`) | `height` (e.g. `32`) | `None` | `.height(32.0)` (width stretches automatically) |
-| **Vertical Rail / Dock** | `Top` | `LEFT_BAR` (`LEFT \| TOP \| BOTTOM`) | `width + margins` | `None` | `.width(64.0)` (height stretches automatically) |
-| **Floating Island Bar** | `Top` | `TOP` | `0` or `height` | `None` | `.size(Some(600.0), Some(40.0))` with margins |
-| **Fullscreen Modal** (Launcher, Lock) | `Overlay` | `FULLSCREEN` | `-1` (covers bars) | `OnDemand` or `Exclusive` | `.start_hidden(true)`, no size needed |
-| **Popup / Dropdown** (Calendar, Tray) | `Overlay` | `TOP \| RIGHT` | `0` | `None` or `OnDemand` | `.size(Some(320.0), Some(400.0))`, `.start_hidden(true)` |
-| **OSD** (Volume, Brightness) | `Overlay` | `BOTTOM` | `0` | `None` | `.start_hidden(true)` |
+| **Top/Bottom Bar** | `Top` | `TOP_BAR` (`TOP \| LEFT \| RIGHT`) | `height` | `None` | `.height(h)` for your `h` (width stretches automatically) |
+| **Vertical Rail / Dock** | `Top` | `LEFT_BAR` (`LEFT \| TOP \| BOTTOM`) | `width + margins` | `None` | `.width(w)` for your `w` (height stretches automatically) |
+| **Floating Island Bar** | `Top` | `TOP` | `0` or `height` | `None` | `.size(Some(w), Some(h))` with margins |
+| **Fullscreen Modal** | `Overlay` | `FULLSCREEN` | `-1` (covers bars) | `OnDemand` or `Exclusive` | `.start_hidden(true)`, no size needed |
+| **Popup / Dropdown** | `Overlay` | corner of your choice | `0` | `None` or `OnDemand` | explicit `.size(...)`, `.start_hidden(true)` |
+| **OSD** | `Overlay` | edge of your choice | `0` | `None` | explicit `.size(...)`, `.start_hidden(true)` |
+
+> [!NOTE]
+> All pixel values ever shown here (32, 64, 600x40, 320x400) are starting
+> points from one 1080p machine — measure against your own outputs and adapt.
+> Pick anchors for YOUR topology, not the table's example widgets.
 
 > [!IMPORTANT]
 > **Opposite Anchors = Automatic Expansion**:
 > - `Anchor::LEFT | Anchor::RIGHT`: Stretches across the full screen width. Do not set `.width()`.
 > - `Anchor::TOP | Anchor::BOTTOM`: Stretches across the full screen height. Do not set `.height()`.
 > - `Anchor::FULLSCREEN`: Covers the entire monitor.
+>
+> **Sizing priority** (`docs/REFERENTIEL.md:252-273`): explicit `width`/`height`
+> wins first, then opposite-anchor stretch (`output_width - margins`), then the
+> 800px fallback. A layer-shell surface is NOT stretched by the compositor —
+> Sway honors anchors for position only. Never put margins into `origin`; the
+> compositor applies them and they get counted twice.
+
+### OSD Auto-Hide (Generation Token)
+
+Every volume/brightness keypress spawns a hide-timer. Without cancellation the
+first timer hides the OSD mid-adjustment (`docs/REFERENTIEL.md:645-670`):
+```rust
+osd.generation = osd.generation.wrapping_add(1);
+let current_gen = osd.generation;
+cx.spawn(async move |this, cx| {
+    async_io::Timer::after(Duration::from_millis(2000)).await;
+    let _ = this.update(cx, |osd, cx| {
+        if osd.generation == current_gen {
+            osd.visible = false;
+            cx.notify();
+        }
+    });
+}).detach();
+```
 
 ---
 
@@ -111,19 +139,31 @@ LayerWindow::new("unique_window_id")
 Windows declared with `.start_hidden(true)` do not occupy Wayland resources until displayed. You can toggle or show them from any event handler **without IPC**:
 
 ```rust
-// Inside any GPUI event handler or context:
-cx.toggle_window("launcher");
-cx.show_window("calendar");
-cx.hide_window("notifications");
+// Inside any GPUI event handler or context (ids are yours — examples only):
+cx.toggle_window("my_launcher");
+cx.show_window("my_popup");
+cx.hide_window("my_toasts");
 ```
 
-### External CLI / Hotkey Control (`widgetctl` / `kumizo-ctl`)
-The shell automatically exposes a single UNIX socket at `$XDG_RUNTIME_DIR/widgetkit.sock`:
+> [!CAUTION]
+> Window ids are global on the single socket. Two shells (or stale bindings from
+> a previous shell) address the same namespace: `toggle launcher` fires whichever
+> shell owns a window called `launcher` today. MUST: prefix ids per shell
+> (`kiln-launcher`, `wk-calendar`) or verify with `widgetctl status` which shell
+> answers before binding hotkeys.
+
+### External CLI / Hotkey Control (`widgetctl`)
+The shell automatically exposes a single UNIX socket at `$XDG_RUNTIME_DIR/widgetkit.sock`
+(override with `$WIDGETKIT_SOCKET` for tests/nested sessions).
+Single instance is enforced by `Ping`-before-bind (`docs/REFERENTIEL.md:323-341`):
+an existing socket that answers keeps its owner and the second launch exits
+with "already running"; a silent socket is stale (crash) and gets replaced.
+Never `rm widgetkit.sock` of a live shell — it keeps running unreachable.
+The lockscreen opts out (`.ipc(false)`): no socket, no remote control, by design.
 ```bash
-widgetctl ping                   # Health check
-widgetctl toggle launcher        # Bound to Super+Space / Super+a in sway/hyprland
-widgetctl toggle tasks           # Bound to Super+w / Alt+Tab
-widgetctl show notification_center
+widgetctl ping                        # Health check
+widgetctl status                      # WHO answers? check window list first
+widgetctl toggle my_launcher          # Bind to a free key in sway/hyprland
 widgetctl service audio toggle_mute
 ```
 
@@ -131,7 +171,8 @@ widgetctl service audio toggle_mute
 
 ## 5. Built-In Reactive Services
 
-Access any registered service in a view's constructor:
+Register ONLY the services your views consume — each `.service::<S>()` opens real
+system connections. Then access them in a view's constructor:
 ```rust
 struct MyWidget {
     battery: Entity<Battery>,
@@ -158,21 +199,37 @@ let bat = self.battery.read(cx);
 let comp = self.compositor.read(cx);
 ```
 
+> [!CAUTION]
+> The receiver decides HOW you call it (verified in `crates/wk-services/src/`):
+> - `&self` (e.g. `volume()`, `toggle_power()`, `play_pause()`) — call directly
+>   on a `read(cx)` guard.
+> - `&mut self` (e.g. `set_volume(pct: u8)`, `toggle_mute()`, `increase_volume(step: u8)`)
+>   — MUST go through `entity.update(cx, |s, _| s.set_volume(50))`; a `read()`
+>   guard is read-only and won't compile.
+> - Borrowed returns (`-> &str`, `-> &[...]`, e.g. `sink_name()`, `devices()`) —
+>   they borrow the `read()` guard and MUST NOT escape `render` (E0521). Copy
+>   into a `String`/`Vec` (or format inline) before leaving `render`.
+> - Owned args (`path: String` in `toggle_device_connection`) — pass
+>   `dev_path.clone()` / `.to_string()` at the callsite.
+
 ### Services Reference Table
+
+`[&mut]` = requires `entity.update(cx, |s, _| ...)` (see CAUTION in §5). Unmarked methods are `&self`: callable on a `read(cx)` guard.
 
 | Service | Methods & Types | Typical Usage |
 |---|---|---|
 | **`Clock`** | `time_hm()`, `time_hms()`, `date_formatted()`, `hour()`, `minute()`, `second()`, `datetime()` | Time & date widgets. Zero drift, wakes up exactly on boundary. |
 | **`Battery`** | `percent() -> u8`, `is_charging() -> bool`, `state() -> BatteryState`, `energy_rate_watts()`, `time_to_empty()`, `time_to_full()` | Battery badges, power warnings, charging icons. |
-| **`Audio`** | `volume() -> u8`, `is_muted() -> bool`, `sink_name()`, `set_volume(pct)`, `toggle_mute()` | Volume sliders, mute indicators, OSD overlay. |
-| **`Brightness`** | `percent() -> u8`, `device()`, `set_percent(pct)`, `increase(step)`, `decrease(step)` | Backlight brightness bar/OSD. 100% event-driven kernel uevents. |
-| **`Network`** | `is_connected() -> bool`, `ssid() -> Option<&str>`, `signal_percent() -> u8`, `backend()` | Wi-Fi status, network indicators. |
-| **`Compositor`** | `workspaces() -> &[Workspace]`, `switch_workspace(id)`, `windows() -> &[AppWindow]`, `focus_window(con_id)`, `active_window() -> Option<&ActiveWindow>` | Workspace switcher buttons, active window title, task switcher list with Sway/Hyprland IPC. |
+| **`Audio`** | `volume(&self) -> u8`, `is_muted(&self) -> bool`, `sink_name(&self) -> &str`, `icon(&self)`, `set_volume(&mut self, pct: u8)`, `increase_volume(&mut self, step: u8)`, `decrease_volume(&mut self, step: u8)`, `toggle_mute(&mut self)` | Volume sliders, mute indicators, OSD overlay. |
+| **`Bluetooth`** | `is_available(&self)`, `is_powered(&self)`, `is_discovering(&self)`, `devices(&self) -> &[BluetoothDevice]`, `connected_devices(&self)`, `paired_devices(&self)`, `connected_count(&self)`, `toggle_power(&self)`, `toggle_scan(&self)`, `toggle_device_connection(&self, path: String, connected: bool)` | Bluetooth toggles, device lists, per-device connect. All `&self`: callable on a `read()` guard. |
+| **`Brightness`** | `percent() -> u8`, `device()`, `set_percent(pct)`, `increase()`, `decrease()` (±5) | Backlight brightness bar/OSD. Event-driven kernel uevents (`sysfs_notify` + netlink), poll only as fallback. |
+| **`Network`** | `is_connected(&self) -> bool`, `ssid(&self) -> Option<&str>`, `signal_percent(&self) -> Option<u8>`, `backend(&self)` | Wi-Fi status, network indicators. `signal_percent` is `Option`: no signal = `None`, never unwrap blindly. |
+| **`Compositor`** | `workspaces(&self) -> &[Workspace]`, `switch_workspace(id: i32) [&mut]`, `windows(&self) -> &[AppWindow]`, `focus_window(&self, con_id: i64)`, `active_window(&self) -> Option<&ActiveWindow>` | Workspace switcher buttons, active window title, task switcher list with Sway/Hyprland IPC. |
 | **`Apps`** | `apps() -> &[AppInfo]`, `search(query) -> Vec<AppInfo>`, `launch(&app)`, `find_icon(app_id_or_class) -> Option<Arc<RenderImage>>` | Application launcher, task switcher icons with fuzzy matching and GPU textures. |
 | **`Mpris`** | `title() -> Option<&str>`, `artist() -> Option<&str>`, `status() -> PlaybackStatus`, `play_pause()`, `next()`, `previous()` | Media player widget, music equalizer, dynamic topbar label. |
-| **`Tray`** | `items() -> Vec<TrayItem>`, `activate(id)`, `open_menu(id)`, `close_menu()` | System tray icons (StatusNotifierItem) and context menus. |
-| **`Notifications`**| `toasts() -> &[Notification]`, `history() -> &[Notification]`, `unread_count() -> usize`, `is_dnd() -> bool`, `toggle_dnd()`, `dismiss_toast(id)`, `remove_history(id)`, `clear_history()`, `invoke_action(id, key)` | In-process notification server (replaces dunst/mako). |
-| **`Clipboard`** | `items() -> &[ClipboardItem]`, `search(query)`, `copy_item(id)`, `clear()` | Clipboard history manager overlay. |
+| **`Tray`** | `items(&self) -> Vec<TrayItem>`, `activate(&self, id: &str)`, `open_menu(id: &str) [&mut]`, `close_menu() [&mut]` | System tray icons (StatusNotifierItem) and context menus. |
+| **`Notifications`**| `toasts(&self)`, `history(&self)`, `unread_count(&self)`, `is_dnd(&self)`, `toggle_dnd() [&mut]`, `dismiss_toast(id: u32) [&mut]`, `remove_history(id: u32) [&mut]`, `clear_history() [&mut]`, `invoke_action(&self, id: u32, key: &str)` | In-process notification server (replaces dunst/mako). |
+| **`Clipboard`** | `items(&self)`, `search(&self, query: &str)`, `copy_item(id: u64) [&mut]`, `clear() [&mut]`, `copy_text(&self, text: &str)` | Clipboard history manager overlay. |
 
 ### Key Compositor & Notification Types
 
@@ -269,10 +326,16 @@ impl CustomBar {
             .lines(cx, |line| Some(line.to_string()))
             .track(cx); // .track(cx) automatically triggers view re-render!
 
-        // 2. Inotify file watching (re-reads when writer closes or renames)
-        let cpu_temp = Source::watch_file(cx, "/sys/class/thermal/thermal_zone0/temp", |text| {
-            text.trim().parse::<i32>().ok().map(|milli| milli / 1000)
+        // 2. Inotify file watching (re-reads when writer closes or renames).
+        // MUST be a regular file: /proc and /sys never raise inotify events.
+        let temp = Source::watch_file(cx, "/tmp/temperature", |text| {
+            text.trim().parse::<i32>().ok()
         }).track(cx);
+        // For /proc or /sys files use FileSource with an explicit poll instead:
+        // FileSource::new("/sys/class/thermal/thermal_zone0/temp")
+        //     .poll_every(Duration::from_secs(2))
+        //     .watch(cx, |text| text.trim().parse::<i32>().ok().map(|milli| milli / 1000))
+        //     .track(cx);
 
         // 3. Private UNIX socket listener (mode 0600, cleaned up on drop)
         let socket_feed = Source::listen_unix(cx, "/tmp/shell-feed.sock", |line| {
@@ -312,6 +375,8 @@ div()
 
 ### Colors & Borders
 ```rust
+// Hex values below are placeholders — bring your own palette (see §8 if you
+// need runtime-switchable themes, otherwise hardcode).
 div()
     .bg(rgb(0x1e1e2e))           // Hex RGB background
     .bg(rgba(0x181825ee))        // Alpha transparency
@@ -330,7 +395,7 @@ div()
     .hover(|s| s.bg(rgb(0x313244)))
     .active(|s| s.top(px(2.0)))  // Physical press sink effect
     .on_click(|event, window, cx| {
-        cx.toggle_window("launcher");
+        cx.toggle_window("my_popup"); // your own window id (§4)
     })
 ```
 
@@ -373,16 +438,25 @@ div().with_animation(
 ### GPUI Signatures & API Specifics
 
 - **Asynchronous Tasks (`cx.spawn`)**:
-  In GPUI, `cx.spawn` takes an `async move` closure receiving `(this, cx)` where `this` is `WeakEntity<Self>` and `cx` is `&mut AsyncContext<Self>`:
+  `cx.spawn` takes an `async` closure, NOT a closure returning an `async` block.
+  Arity depends on the receiver (`docs/REFERENTIEL.md:97-126`):
   ```rust
+  // On Context<Self>: 2 args, first is WeakEntity
   cx.spawn(async move |this, cx| {
       // Async work (channels, timers, IO)...
-      let _ = this.update(cx, |view, cx| {
+      let _ = this.update(cx, |view, cx| { // cx is already &mut AsyncApp: NO &mut cx
           // Mutate view state
           cx.notify();
       });
   }).detach();
+
+  // On App / AsyncApp: 1 arg — WRONG: cx.spawn(|this, mut cx| async move { ... })
+  cx.spawn(async move |cx| { /* ... */ });
   ```
+  On generic `Source<T>` methods annotate explicitly or E0282 fires:
+  `this: gpui::WeakEntity<Source<T>>, cx: &mut gpui::AsyncApp`.
+  `WeakEntity::update` returns `Result<R>` (entity may be freed) — handle with
+  `let _ = ...` / `.ok()`.
 
 - **Focus Management (`window.focus`)**:
   In GPUI's `Render::render(&mut self, window: &mut Window, cx: &mut Context<Self>)`, focusing an element is done through the `window` reference, NOT `cx.focus`:
@@ -393,9 +467,12 @@ div().with_animation(
   ```
   Elements track focus using `.track_focus(&self.focus)`.
 
-- **View Re-rendering (`cx.notify()`)**:
-  Call `cx.notify()` on the context whenever local view state changes to trigger a redraw.
-  There is no `cx.refresh_windows()`; each window/view re-renders reactively upon `cx.notify()` or when an observed service/source updates.
+- **View Re-rendering (`cx.notify()` vs `cx.refresh_windows()`)**:
+  Call `cx.notify()` on the `Context` whenever local view state changes to trigger
+  a redraw of that view. Views observing a service re-render automatically.
+  For a global restyle (theme switch), call `cx.refresh_windows()` on `&mut App`
+  — it exists (`gpui/src/app.rs:1237`, schedules one redraw for all windows).
+  `Context<V>` derefs to `App`, so both work from a view.
 
 - **Relative & Absolute Positioning**:
   Positioning modifiers are methods on element builders, NOT standalone functions:
@@ -404,12 +481,40 @@ div().with_animation(
   div().absolute()  // Element sets position: absolute
   ```
   Do not use `gpui::relative(...)` or `gpui::absolute(...)` as standalone functions.
+  For fractional fill use `gpui::DefiniteLength::Fraction(ratio)`:
+  ```rust
+  div().h_full().w(gpui::DefiniteLength::Fraction((pct / 100.0).clamp(0.0, 1.0)))
+  ```
+
+- **`Window` Is Not an `AppContext` (`docs/REFERENTIEL.md:206-226`)**:
+  `Entity::read` needs `&App`, `Entity::update` needs `C: AppContext`.
+  `App`, `AsyncApp` implement it — **`Window` does not**. Inside
+  `Render::render(&mut self, window: &mut Window, cx: &mut Context<Self>)`
+  always use `cx` (deref-coerces to `&App`), never `window`, for
+  `entity.read(cx)` / `entity.update(cx, ...)`.
+
+- **Displays Arrive Async; `primary_display()` Is Dead (`docs/REFERENTIEL.md:13-49`)**:
+  On Wayland gpui returns `None` unconditionally for `primary_display()`.
+  Always use `cx.displays()`. `wl_output` globals arrive after startup, so
+  `displays()` is empty in the launch closure — wait before opening windows:
+  ```rust
+  async fn wait_for_displays(cx: &mut gpui::AsyncApp) {
+      for _ in 0..100 {
+          if cx.update(|cx| !cx.displays().is_empty()) { return; }
+          cx.background_executor().timer(Duration::from_millis(20)).await;
+      }
+  }
+  ```
+  `LayerWindow` already handles this in `WidgetKit::run`; only raw
+  `WindowOptions` builders need it.
 
 ---
 
-## 8. Theme System
+## 8. Theme System (OPTIONAL)
 
-To keep styling decoupled and modular:
+Skip this section if your shell has a fixed look — hardcoded colors are simpler
+and perfectly fine. Only build a token + TOML system when themes must switch at
+runtime without recompiling. To keep styling decoupled and modular:
 
 ### 1. Design Tokens Module (`mod pal`)
 
@@ -433,7 +538,7 @@ mod pal {
 }
 ```
 
-When building dynamic shells, `pal::...` functions read from an active theme state (or a theme entity registered in GPUI globals), allowing the entire shell to re-render instantly on theme changes (`cx.notify()`).
+When building dynamic shells, `pal::...` functions read from an active theme state (or a theme entity registered in GPUI globals), allowing the entire shell to re-render instantly on theme changes (`cx.refresh_windows()` on `&mut App`). Static shells: ignore `pal` and inline your colors.
 
 ### 2. External Themes Configuration
 
@@ -441,7 +546,10 @@ Themes are stored as `.toml` files in `~/.config/<shell-name>/themes/*.toml` (wi
 
 ---
 
-## 9. Mechanical Starter Skeleton (Structure & Wiring Reference)
+## 9. Minimal Wiring Skeleton (Copy THIS, Nothing Else Here Has Looks)
+
+Bare wiring — no colors, no layout opinions. For the full recipe see
+`docs/CREER-UN-WIDGET.md` §2.
 
 ```rust
 use gpui::prelude::*;
@@ -449,136 +557,106 @@ use widgetkit::prelude::*;
 
 fn main() {
     WidgetKit::new()
-        // 1. Register required background services
         .service::<Clock>()
         .service::<Battery>()
-        .service::<Compositor>()
-
-        // 2. Register layer-shell surfaces (bars, islands, rails, pods, drawers, overlays)
-        .window(primary_surface_window(), |cx| cx.new(PrimarySurface::new))
-        .window(overlay_surface_window(), |cx| cx.new(OverlaySurface::new))
-
-        // 3. Start unified event loop
+        .window(
+            LayerWindow::new("my_bar")
+                .layer(Layer::Top)
+                .anchor(Anchor::TOP | Anchor::LEFT | Anchor::RIGHT)
+                .exclusive_zone(36)
+                .namespace("my-shell-bar"),
+            |cx: &mut gpui::App| cx.new(MyBar::new),
+        )
+        .window(
+            LayerWindow::new("my_popup")
+                .layer(Layer::Overlay)
+                .anchor(Anchor::FULLSCREEN)
+                .exclusive_zone(-1)
+                .keyboard_interactivity(KeyboardInteractivity::Exclusive)
+                .start_hidden(true)
+                .namespace("my-shell-popup"),
+            |cx: &mut gpui::App| cx.new(MyPopup::new),
+        )
         .run();
 }
 
-fn primary_surface_window() -> LayerWindow {
-    // Configure anchors, exclusive zone, and dimensions according to your topology:
-    LayerWindow::new("primary_surface")
-        .layer(Layer::Top)
-        .anchor(Anchor::TOP | Anchor::LEFT | Anchor::RIGHT) // Or LEFT_BAR, or TOP floating island, or Corner Pod
-        .exclusive_zone(36)
-        .namespace("my-shell-surface")
-}
-
-fn overlay_surface_window() -> LayerWindow {
-    LayerWindow::new("overlay_surface")
-        .layer(Layer::Overlay)
-        .anchor(Anchor::FULLSCREEN)
-        .exclusive_zone(-1)
-        .keyboard_interactivity(KeyboardInteractivity::OnDemand)
-        .start_hidden(true)
-        .namespace("my-shell-overlay")
-}
-
-/// Structural component demonstrating service access and event handling.
-/// The layout, orientation, and visual structure inside `render()` are completely yours to define.
-struct PrimarySurface {
+struct MyBar {
     clock: Entity<Clock>,
-    battery: Entity<Battery>,
-    compositor: Entity<Compositor>,
 }
 
-impl PrimarySurface {
+impl MyBar {
     fn new(cx: &mut Context<Self>) -> Self {
-        Self {
-            clock: cx.service::<Clock>(),
-            battery: cx.service::<Battery>(),
-            compositor: cx.service::<Compositor>(),
-        }
+        Self { clock: cx.service::<Clock>() }
     }
 }
 
-impl Render for PrimarySurface {
+impl Render for MyBar {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let clock = self.clock.read(cx);
-        let bat = self.battery.read(cx);
-        let comp = self.compositor.read(cx);
-
-        // Blank layout container: shape, flex direction, and alignment are yours to decide
         div()
-            .size_full()
-            .bg(pal::bg())
-            .text_color(pal::text())
-            // 1. Triggering another shell window (zero-latency in-memory call)
-            .child(
-                div()
-                    .id("action-trigger")
-                    .cursor_pointer()
-                    .child("Toggle Overlay")
-                    .on_click(|_, _, cx| cx.toggle_window("overlay_surface")),
-            )
-            // 2. Interacting with compositor workspaces
-            .children(
-                comp.workspaces().iter().map(|ws| {
-                    let id = ws.id;
-                    let is_active = ws.is_active;
-                    div()
-                        .id(format!("ws-{}", id))
-                        .cursor_pointer()
-                        .when(is_active, |s| s.text_color(pal::accent()))
-                        .child(ws.name.clone())
-                        .on_click(move |_, _, cx| {
-                            cx.service::<Compositor>().update(cx, |c, _| c.switch_workspace(id));
-                        })
-                })
-            )
-            // 3. Displaying reactive system telemetry
-            .child(clock.time_hm())
-            .child(format!("{}%", bat.percent()))
+            .id("open-popup") // MUST: .id() before any .on_click
+            .child(self.clock.read(cx).time_hm())
+            .on_click(|_, _, cx| cx.toggle_window("my_popup"))
     }
 }
 
-/// Interactive modal/drawer overlay component.
-struct OverlaySurface;
+struct MyPopup;
 
-impl OverlaySurface {
+impl MyPopup {
     fn new(_cx: &mut Context<Self>) -> Self {
         Self
     }
 }
 
-impl Render for OverlaySurface {
+impl Render for MyPopup {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // Fullscreen backdrop
         div()
+            .id("close-popup")
             .size_full()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(gpui::rgba(0x000000bb))
-            .on_click(|_, _, cx| cx.hide_window("overlay_surface"))
-            .child(
-                div()
-                    .p_8()
-                    .bg(pal::surface())
-                    .border_1()
-                    .border_color(pal::border())
-                    .rounded_lg()
-                    .child("Interactive Modal / Drawer Canvas"),
-            )
+            .on_click(|_, _, cx| cx.hide_window("my_popup"))
+            .child("popup content goes here")
     }
 }
 ```
 
 ---
+## 10. Screens, Scale & Accessibility (Not Optional for a Daily Driver)
 
-## 10. Verification & Quality Checklist
+- **Multi-monitor**: layer-shell surfaces open per output. Decide per window:
+  span (`LEFT|RIGHT` stretch), mirror (one surface per monitor via
+  `MonitorTarget`), or primary-only. Test with a second output plugged AND
+  unplugged — unplugging must not strand hidden windows.
+- **HiDPI**: sizes are logical pixels; verify on scale 1 AND scale 2. Borders,
+  gaps and font sizes that look right at 96 DPI look toy-like at 192 DPI —
+  derive them from one scale factor, don't hardcode twice.
+- **Keyboard / a11y**: every pointer action needs a key path (`widgetctl`
+  command + compositor binding). Focus order must be reachable by keyboard
+  alone; never encode state by color only (pair with text/icon).
+
+## 11. Lockscreen (Separate Binary, NOT a Shell Window)
+
+The lockscreen (`examples/lockscreen`) MUST stay out of the shell process:
+passwords + exclusive keyboard must never share memory, socket or service
+registry with widgets. Wiring, from `examples/lockscreen/src/main.rs`:
+- `.ipc(false)` — no socket: no conflict with the shell, no remote control.
+- Fullscreen `Overlay` + `KeyboardInteractivity::Exclusive`.
+- Password verified via real PAM (`wk-pam` raw FFI, `login` or `swaylock`
+  service) on the background executor — never block the UI thread.
+- Never reuse a shell view or service inside the locker; duplicate the few
+  lines (clock display) instead of sharing code that widens the attack surface.
+
+## 12. Verification & Quality Checklist (`docs/REFERENTIEL.md:697-705`)
 
 Before considering your shell complete:
-- [ ] **Build Check**: `cargo check --package <your-shell> --offline` compiles with 0 errors and warnings.
+- [ ] **Build Check**: `cargo check --workspace --all-targets` compiles with 0 errors and **0 warnings**.
 - [ ] **Run & Socket Test**: `widgetctl ping` returns `PONG`.
-- [ ] **Zero Idle CPU**: Check with `top` or `htop` — when undisturbed, your process stays at `0.0%` CPU.
+- [ ] **Idle CPU**: undisturbed process stays near idle — note a clock bar wakes at
+  1 Hz (`~0.4%`, `docs/REFERENTIEL.md:442-444`), not strict `0.0%`. Measure via
+  `/proc` ticks over 15 s, compare PSS not RSS (shared libs triple-count RSS).
 - [ ] **Hotkeys**: Sway/Hyprland hotkeys can toggle your windows (`widgetctl toggle <id>`).
+- [ ] **Proof, not claims**: a screenshot proves only what is visibly identifiable
+  in it; hide/show is proven by **pixel difference** between the two states;
+  compile + `Success` reply proves nothing without visible effect; fullscreen or
+  locked captures prove nothing — retake them.
 - [ ] **Text Boundaries**: All titles use `.truncate()` and `.min_w_0()`; no long URL or song title overflows off-screen.
 - [ ] **Clean Hover**: No double `.hover()` calls on the same element.
+- [ ] **Error paths**: unknown window, unknown service action, dead socket each tested.

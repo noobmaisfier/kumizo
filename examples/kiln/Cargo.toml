@@ -1,0 +1,17 @@
+[package]
+name = "kiln"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Kiln shell: floating rail + dynamic island + launcher + themes + toasts + OSD"
+
+[[bin]]
+name = "kiln"
+path = "src/main.rs"
+
+[dependencies]
+widgetkit = { path = "../../crates/widgetkit" }
+gpui = { workspace = true }
+serde = { workspace = true }
+toml = "0.8"

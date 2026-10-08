@@ -504,13 +504,15 @@ constant ne déclenchait rien. Fix : comparer aussi `is_muted`, et factoriser
 le réveal + auto-hide (1,8 s) dans `reveal_osd()`. Vérifié en capture :
 « Muted » rouge avec barre au clic.
 
-**Pas de luminosité dans le dépôt** (juste un commentaire aspiratif
-« volume/brightness OSD »). Nouveau service `Brightness`
-(`crates/wk-services/src/brightness.rs`) sur le modèle `Audio` : lecture
-sysfs (`/sys/class/backlight`, premier périphérique trié), écriture via
-`brightnessctl set <pct>%` (permissions udev OK ici, sinon `warn!`), mise
-à jour optimiste comme `switch_workspace`, sondage sysfs toutes les 2 s
-(aucun événement n'existe pour le rétroéclairage — assumé et commenté).
+**Service `Brightness`** (`crates/wk-services/src/brightness.rs`) sur le modèle
+`Audio` : lecture sysfs (`/sys/class/backlight`, premier périphérique trié),
+écriture via `brightnessctl set <pct>%` (permissions udev OK ici, sinon
+`warn!`), mise à jour optimiste comme `switch_workspace`. Écoute 100%
+événementielle (plus de sondage) : `sysfs_notify` sur `actual_brightness` +
+uevents netlink `NETLINK_KOBJECT_UEVENT`, zéro CPU idle — voir `mod watch`
+dans le source, qui fait foi. Repli : `WIDGETKIT_BRIGHTNESS_POLL_MS` pour les
+drivers qui ne notifient jamais, sondage 2 s seulement si aucune source
+d'événements n'existe.
 Actions IPC : `up` / `down` (±5) / `set <pct>`.
 
 L'OSD est partagé : `OsdKind { Volume, Brightness }`, la carte affiche
