@@ -366,7 +366,7 @@ impl TopBar {
                 div()
                     .flex()
                     .items_center()
-                    .gap_1()
+                    .gap_2()
                     .child(ui::glyph(
                         ui::vol_glyph(vol, muted),
                         14.,
@@ -382,7 +382,7 @@ impl TopBar {
                 div()
                     .flex()
                     .items_center()
-                    .gap_1()
+                    .gap_2()
                     .child(ui::glyph(ui::bat_glyph(pct), 14., bat_color))
                     .child(
                         div()

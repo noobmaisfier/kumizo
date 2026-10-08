@@ -185,6 +185,8 @@ impl Render for NotificationCenter {
             .child("Tout effacer");
 
         let mut list = div().flex().flex_col().gap_2();
+        // Responsive: voir control.rs — même calcul, même raison.
+        let panel_max_h = window.viewport_size().height - px(82.);
         if items.is_empty() {
             list = list.child(
                 div()
@@ -218,7 +220,7 @@ impl Render for NotificationCenter {
                 div()
                     .occlude()
                     .w(px(400.))
-                    .max_h(px(740.))
+                    .max_h(panel_max_h)
                     .flex()
                     .flex_col()
                     .gap_3()

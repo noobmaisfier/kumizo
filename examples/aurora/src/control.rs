@@ -634,6 +634,9 @@ impl Render for ControlCenter {
             window.focus(&self.focus, cx);
         }
 
+        // Responsive: le panneau ne dépasse jamais le viewport, le contenu
+        // en trop scrolle dans `#cc-scroll` (58px de décalage haut + marges).
+        let panel_max_h = window.viewport_size().height - px(82.);
         let content = div()
             .flex()
             .flex_col()
@@ -662,7 +665,7 @@ impl Render for ControlCenter {
                 div()
                     .occlude()
                     .w(px(400.))
-                    .max_h(px(820.))
+                    .max_h(panel_max_h)
                     .flex()
                     .flex_col()
                     .p_4()

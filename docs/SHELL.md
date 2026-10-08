@@ -726,6 +726,40 @@ impl Render for MyPopup {
   command + compositor binding). Focus order must be reachable by keyboard
   alone; never encode state by color only (pair with text/icon).
 
+### Responsive Panels (MUST for Side Panels & Popups)
+
+Never hardcode `max_h(px(820.))`: on any shorter viewport the content is cut
+with no way to reach it (seen live: theme grid halved at 768p). Constrain to
+the viewport and scroll the overflow:
+
+```rust
+fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    // Panel never exceeds the viewport; excess content scrolls inside.
+    let panel_max_h = window.viewport_size().height - px(82.); // top offset + margins
+    div()
+        .w(px(400.))
+        .max_h(panel_max_h)   // NOT a fixed pixel value
+        .flex()
+        .flex_col()
+        .child(header)
+        .child(
+            div()
+                .id("my-scroll")
+                .flex_1()         // take remaining panel height…
+                .min_h_0()        // …and allow shrinking below content size…
+                .overflow_y_scroll() // …so excess scrolls instead of overflowing
+                .child(content),
+        )
+}
+```
+
+Rules: all three (`flex_1` + `min_h_0` + `overflow_y_scroll`) are required —
+drop `min_h_0` and flex refuses to shrink, drop the scroll and content clips.
+Recompute from `viewport_size()` every `render` (outputs plug/unplug, scale
+changes). Verify by screenshot at the SMALLEST height you support, with the
+LONGEST content (full notification history, longest SSID): bottom border of
+the panel must stay on screen.
+
 ## 11. Lockscreen (Separate Binary, NOT a Shell Window)
 
 The lockscreen (`examples/lockscreen`) MUST stay out of the shell process:
