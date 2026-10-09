@@ -327,7 +327,8 @@ impl TopBar {
 
         // Cluster système
         let net = self.network.read(cx);
-        let wifi_ok = net.is_connected();
+        let (wifi_on, radio, wifi_avail) =
+            (net.is_connected(), net.wifi_enabled(), net.has_radio());
         let bt = self.bluetooth.read(cx);
         let (bt_avail, bt_on, bt_count) = (bt.is_available(), bt.is_powered(), bt.connected_count());
         let a = self.audio.read(cx);
@@ -346,11 +347,21 @@ impl TopBar {
         };
 
         let mut sys = div().flex().flex_row().items_center().gap_3();
-        sys = sys.child(ui::glyph(
-            icons::WIFI,
-            14.,
-            if wifi_ok { pal::text() } else { pal::muted() },
-        ));
+        // Comme le Bluetooth : caché si pas de radio, accent si actif.
+        // Le Wi-Fi garde un état de plus (connecté vs allumé-hors-ligne).
+        if wifi_avail {
+            sys = sys.child(ui::glyph(
+                icons::WIFI,
+                14.,
+                if wifi_on {
+                    pal::accent()
+                } else if radio {
+                    pal::text()
+                } else {
+                    pal::muted()
+                },
+            ));
+        }
         if bt_avail {
             let mut bt_cell = div().flex().items_center().gap_1().child(ui::glyph(
                 icons::BLUETOOTH,

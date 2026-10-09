@@ -227,6 +227,12 @@ Règles :
 - Clic droit (ou autre bouton) :
   `.on_mouse_down(gpui::MouseButton::Right, |_, _, cx| {...})`.
 - Survol : `.hover(|style| style.bg(...))`.
+- Champ texte : GPUI n'en fournit pas — utiliser `wk-ui` (partagé,
+  headless) : `Entity<TextBuffer>` dans la vue (`TextBuffer::masked()`
+  pour un mot de passe), touches routées via `b.handle_key(ev)`
+  (`Submit`/`Cancel`/`Changed`/`Ignored`), dessin avec `text_input(...)`
+  / `text_area(...)` et vos couleurs (`TextStyle`). Détail et règles
+  dans `docs/SHELL.md` §7 « Text Fields ».
 - Couleurs Catppuccin du dépôt (rester cohérent) : fond `rgb(0x1e1e2e)`,
   texte `rgb(0xcdd6f4)`, accent `rgb(0x89b4fa)`, vert `rgb(0xa6e3a1)`,
   rouge `rgb(0xf38ba8)`, jaune `rgb(0xf9e2af)`.
@@ -310,6 +316,17 @@ auto-détection). Méthodes : `backend() -> WifiBackend`,
 `ssid() -> Option<&str>`, `is_connected()`, `signal_percent()`,
 `display_label() -> String` (SSID ou `"Disconnected"`), `icon()` (arcs
 vérifiés). `WifiBackend` : `NetworkManager | Iwd | Fallback`.
+Pilotage (NetworkManager uniquement, `false` + `warn!` ailleurs) :
+`has_radio()` (faux seulement si NM sans périphérique wifi),
+`device()`, `networks() -> &[WifiNetwork]` (`ssid`, `strength`, `secured`,
+`active`, triés actif d'abord), `wifi_enabled()`, `request_scan()`,
+`set_enabled(on)`, `connect(ssid)` (profils enregistrés + réseaux ouverts),
+`connect_with_password(ssid, password)` (PSK, jamais stocké par le shell),
+`disconnect()`. Actions IPC : `scan`, `on`, `off`, `toggle`,
+`connect <ssid>`, `disconnect` (pas de mot de passe sur le CLI).
+Boucles : NM 100 % événementielle (signaux + debounce 750 ms) ; iwd sur
+signaux `State` + refresh RSSI 15 s en roaming (le signal seul ne suit pas
+un déplacement, voir `docs/REFERENTIEL.md` §9).
 
 **`Tray`** — hôte system tray (StatusNotifierItem + dbusmenu). Méthodes :
 `items() -> Vec<TrayItem>` (icônes visibles, `Passive` exclu),

@@ -5,6 +5,7 @@ members = [
     "crates/wk-services",
     "crates/wk-compositor",
     "crates/wk-ipc",
+    "crates/wk-ui",
     "crates/wk-pam",
     "crates/wk-ctl",
     "examples/shell",
@@ -75,6 +76,7 @@ smallvec = "1"
 
 # Internal workspace crates
 widgetkit = { path = "crates/widgetkit" }
+wk-ui = { path = "crates/wk-ui" }
 wk-gpui-ext = { path = "crates/wk-gpui-ext" }
 wk-services = { path = "crates/wk-services" }
 wk-compositor = { path = "crates/wk-compositor" }

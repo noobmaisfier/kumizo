@@ -13,6 +13,7 @@ wk-gpui-ext = { workspace = true }
 wk-services = { workspace = true }
 wk-compositor = { workspace = true }
 wk-ipc = { workspace = true }
+wk-ui = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

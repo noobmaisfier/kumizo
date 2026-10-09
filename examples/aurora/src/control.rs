@@ -24,6 +24,10 @@ pub struct ControlCenter {
     mpris: Entity<Mpris>,
     notifs: Entity<Notifications>,
     pomodoro: Entity<Pomodoro>,
+    /// SSID en cours de saisie mot de passe (`None` = pas de saisie).
+    wifi_pw_for: Option<String>,
+    /// Champ mot de passe (masqué, headless `wk-ui`).
+    wifi_pw: Entity<TextBuffer>,
     focus: FocusHandle,
 }
 
@@ -95,6 +99,12 @@ impl ControlCenter {
             mpris: cx.service::<Mpris>(),
             notifs: cx.service::<Notifications>(),
             pomodoro,
+            wifi_pw_for: None,
+            wifi_pw: cx.new(|_| {
+                let mut b = TextBuffer::masked();
+                b.set_max_chars(63); // PSK WPA : 8..63 caractères
+                b
+            }),
             focus: cx.focus_handle(),
         }
     }
@@ -103,6 +113,8 @@ impl ControlCenter {
     fn toggles(&self, cx: &mut Context<Self>) -> Div {
         let net = self.network.read(cx);
         let (wifi_on, ssid) = (net.is_connected(), net.ssid().map(str::to_string));
+        let radio = net.wifi_enabled();
+        let avail = net.has_radio();
         let signal = net.signal_percent();
         let bt = self.bluetooth.read(cx);
         let (bt_avail, bt_on, bt_count) = (bt.is_available(), bt.is_powered(), bt.connected_count());
@@ -114,14 +126,23 @@ impl ControlCenter {
             "cc-wifi",
             icons::WIFI,
             "Wi-Fi",
-            if wifi_on {
+            if !avail {
+                "Indisponible".into()
+            } else if !radio {
+                "Désactivé".into()
+            } else if wifi_on {
                 let sig = signal.map(|s| format!(" · {s}%")).unwrap_or_default();
                 format!("{}{sig}", ssid.unwrap_or_else(|| "connecté".into()))
             } else {
                 "Hors ligne".into()
             },
-            wifi_on,
-        );
+            radio,
+        )
+        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+            this.network.update(cx, |n, _| {
+                let _ = n.set_enabled(!n.wifi_enabled());
+            });
+        }));
 
         let bluetooth = tile(
             "cc-bt",
@@ -322,6 +343,177 @@ impl ControlCenter {
                         .flex_row()
                         .items_center()
                         .child(div().flex_1().child(section_title("Appareils Bluetooth")))
+                        .child(scan),
+                )
+                .child(list),
+        )
+    }
+
+    // ── Wi-Fi : réseaux ──────────────────────────────────────────────────
+    fn wifi_submit_pw(&mut self, cx: &mut Context<Self>) {
+        if let Some(ssid) = self.wifi_pw_for.clone() {
+            let pw = self.wifi_pw.read(cx).value().to_string();
+            if !pw.is_empty() {
+                self.network.update(cx, |n, _| {
+                    n.connect_with_password(&ssid, &pw);
+                });
+            }
+            self.wifi_pw.update(cx, |b, _| b.clear());
+            self.wifi_pw_for = None;
+            cx.notify();
+        }
+    }
+
+    fn wifi_cancel_pw(&mut self, cx: &mut Context<Self>) {
+        self.wifi_pw.update(cx, |b, _| b.clear());
+        self.wifi_pw_for = None;
+        cx.notify();
+    }
+
+    fn wifi_card(&self, cx: &mut Context<Self>) -> Option<Div> {
+        let (enabled, networks) = {
+            let net = self.network.read(cx);
+            (net.wifi_enabled(), net.networks().to_vec())
+        };
+        // Comme le Bluetooth : éteint = pas de carte du tout. L'interrupteur
+        // est la tuile, pas un bouton dans la carte.
+        if !enabled {
+            return None;
+        }
+
+        let scan = btn("cc-wifi-scan")
+            .px_3()
+            .bg(pal::raised())
+            .text_color(pal::text())
+            .text_xs()
+            .hover(|s| s.opacity(0.85))
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                this.network.update(cx, |n, _| n.request_scan());
+            }))
+            .child("Analyser");
+
+        let mut list = div().flex().flex_col().gap_1();
+        if networks.is_empty() {
+            list = list.child(
+                div()
+                    .text_sm()
+                    .text_color(pal::muted())
+                    .child("Aucun réseau — lance une analyse."),
+            );
+        }
+        for (i, n) in networks.iter().enumerate() {
+            let (ssid, strength, secured, active) =
+                (n.ssid.clone(), n.strength, n.secured, n.active);
+            let pw_open = self.wifi_pw_for.as_deref() == Some(ssid.as_str());
+            let click_ssid = ssid.clone();
+            let mut row = div()
+                .id(("cc-wifinet", i))
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_2()
+                .px_2()
+                .h(px(34.))
+                .rounded_lg()
+                .cursor_pointer()
+                .hover(|s| s.bg(pal::raised()))
+                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    if active {
+                        this.network.update(cx, |n, _| {
+                            n.disconnect();
+                        });
+                    } else if secured {
+                        this.wifi_pw.update(cx, |b, _| b.clear());
+                        this.wifi_pw_for = Some(click_ssid.clone());
+                        cx.notify();
+                    } else {
+                        this.network.update(cx, |n, _| {
+                            n.connect(&click_ssid);
+                        });
+                    }
+                }))
+                .child(ui::glyph(
+                    icons::WIFI,
+                    12.,
+                    if active { pal::accent() } else { pal::muted() },
+                ))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_sm()
+                        .text_color(pal::text())
+                        .child(ssid.clone()),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(pal::muted())
+                        .child(format!("{strength}%")),
+                );
+            if secured {
+                row = row.child(ui::glyph(icons::LOCK, 10., pal::muted()));
+            }
+            if active {
+                row = row.child(
+                    div()
+                        .text_xs()
+                        .text_color(pal::accent())
+                        .child("Connecté"),
+                );
+            }
+            list = list.child(row);
+
+            if pw_open {
+                let style = TextStyle {
+                    text: pal::text(),
+                    placeholder: pal::muted(),
+                    caret: pal::accent(),
+                    size_px: 14.,
+                };
+                let pw_row = div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_2()
+                    .px_2()
+                    .h(px(36.))
+                    .rounded_lg()
+                    .bg(pal::raised())
+                    .child(div().flex_1().min_w_0().child(text_input(
+                        "cc-wifi-pw",
+                        &self.wifi_pw,
+                        style,
+                        "Mot de passe…",
+                        cx,
+                    )))
+                    .child(
+                        btn("cc-wifi-ok")
+                            .px_3()
+                            .h(px(28.))
+                            .bg(pal::accent())
+                            .text_color(pal::on_accent())
+                            .text_xs()
+                            .hover(|s| s.opacity(0.85))
+                            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                                this.wifi_submit_pw(cx);
+                            }))
+                            .child("OK"),
+                    );
+                list = list.child(pw_row);
+            }
+        }
+
+        Some(
+            card()
+                .child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap_2()
+                        .child(div().flex_1().child(section_title("Réseaux Wi-Fi")))
                         .child(scan),
                 )
                 .child(list),
@@ -644,6 +836,7 @@ impl Render for ControlCenter {
             .child(self.header(cx))
             .child(self.toggles(cx))
             .child(self.sliders(cx))
+            .children(self.wifi_card(cx))
             .children(self.bluetooth_card(cx))
             .child(self.pomodoro_card(cx))
             .children(self.media_card(cx))
@@ -651,7 +844,18 @@ impl Render for ControlCenter {
 
         ui::backdrop("cc-bg", ids::CONTROL, 0.0)
             .track_focus(&self.focus)
-            .on_key_down(cx.listener(|_, ev: &KeyDownEvent, _, cx| {
+            .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
+                // Saisie mot de passe Wi-Fi : le champ capte tout, Entrée
+                // valide, Échap annule la saisie (pas la fenêtre).
+                if this.wifi_pw_for.is_some() {
+                    match this.wifi_pw.update(cx, |b, _| b.handle_key(ev)) {
+                        TextAction::Submit => this.wifi_submit_pw(cx),
+                        TextAction::Cancel => this.wifi_cancel_pw(cx),
+                        TextAction::Changed => cx.notify(),
+                        TextAction::Ignored => {}
+                    }
+                    return;
+                }
                 if ui::key(ev) == "escape" {
                     cx.hide_window(ids::CONTROL);
                 }

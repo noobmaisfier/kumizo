@@ -12,7 +12,11 @@ pub use wk_services::{
     ClipboardItem, Clock, ClockResolution, Emitter, FileSource, Mpris, Network, Notification,
     NotificationAction, Notifications, OpenMenu, PlaybackStatus, ProcessSource, Service, Source,
     SourceState, StopToken, TrackExt, Tray, TrayItem, TrayMenuItem, TrayStatus, Urgency, WifiBackend,
+    WifiNetwork,
 };
+
+// Shared headless UI primitives (text inputs, ...)
+pub use wk_ui::{TextAction, TextBuffer, TextStyle, text_area, text_input};
 
 // Compositor Integration
 pub use wk_compositor::{ActiveWindow, Compositor, CompositorKind, Workspace};

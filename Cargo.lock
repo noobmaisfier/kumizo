@@ -6389,6 +6389,7 @@ dependencies = [
  "wk-gpui-ext",
  "wk-ipc",
  "wk-services",
+ "wk-ui",
 ]
 
 [[package]]
@@ -6983,6 +6984,13 @@ dependencies = [
  "tracing",
  "wk-ipc",
  "zbus 4.4.0",
+]
+
+[[package]]
+name = "wk-ui"
+version = "0.1.0"
+dependencies = [
+ "gpui-pre",
 ]
 
 [[package]]

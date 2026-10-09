@@ -35,7 +35,7 @@ pub use brightness::Brightness;
 pub use clipboard::{Clipboard, ClipboardItem};
 pub use clock::{Clock, ClockResolution};
 pub use mpris::{Mpris, PlaybackStatus};
-pub use network::{Network, WifiBackend};
+pub use network::{Network, WifiBackend, WifiNetwork};
 pub use notifications::{Notification, NotificationAction, Notifications, Urgency};
 pub use service::Service;
 pub use source::{Emitter, FileSource, ProcessSource, Source, SourceState, StopToken, TrackExt};

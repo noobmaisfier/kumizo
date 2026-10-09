@@ -237,7 +237,7 @@ let comp = self.compositor.read(cx);
 | **`Audio`** | `volume(&self) -> u8`, `is_muted(&self) -> bool`, `sink_name(&self) -> &str`, `icon(&self)`, `set_volume(&mut self, pct: u8)`, `increase_volume(&mut self, step: u8)`, `decrease_volume(&mut self, step: u8)`, `toggle_mute(&mut self)` | Volume sliders, mute indicators, OSD overlay. |
 | **`Bluetooth`** | `is_available(&self)`, `is_powered(&self)`, `is_discovering(&self)`, `devices(&self) -> &[BluetoothDevice]`, `connected_devices(&self)`, `paired_devices(&self)`, `connected_count(&self)`, `toggle_power(&self)`, `toggle_scan(&self)`, `toggle_device_connection(&self, path: String, connected: bool)` | Bluetooth toggles, device lists, per-device connect. All `&self`: callable on a `read()` guard. |
 | **`Brightness`** | `percent() -> u8`, `device()`, `set_percent(pct)`, `increase()`, `decrease()` (±5) | Backlight brightness bar/OSD. Event-driven kernel uevents (`sysfs_notify` + netlink), poll only as fallback. |
-| **`Network`** | `is_connected(&self) -> bool`, `ssid(&self) -> Option<&str>`, `signal_percent(&self) -> Option<u8>`, `backend(&self)` | Wi-Fi status, network indicators. `signal_percent` is `Option`: no signal = `None`, never unwrap blindly. |
+| **`Network`** | `is_connected(&self) -> bool`, `ssid(&self) -> Option<&str>`, `signal_percent(&self) -> Option<u8>`, `backend(&self)`, `has_radio(&self) -> bool`, `device(&self) -> Option<&str>`, `networks(&self) -> &[WifiNetwork]`, `wifi_enabled(&self) -> bool`, `request_scan(&self)`, `set_enabled(&self, on: bool) -> Option<bool>`, `connect(&self, ssid: &str) -> bool`, `connect_with_password(&self, ssid: &str, password: &str) -> bool`, `disconnect(&self) -> bool` | Wi-Fi status, network indicators. `signal_percent` is `Option`: no signal = `None`, never unwrap blindly. `has_radio` is false only on NM-without-device (iwd/procfs report `true`). Scan/connect/disconnect are NetworkManager-only (warn + `false` elsewhere); `connect` covers stored profiles and open networks, new secured networks need `connect_with_password`. IPC: `scan`, `on`, `off`, `toggle`, `connect <ssid>`, `disconnect` (no password over CLI). |
 | **`Compositor`** | `workspaces(&self) -> &[Workspace]`, `switch_workspace(id: i32) [&mut]`, `windows(&self) -> &[AppWindow]`, `focus_window(&self, con_id: i64)`, `active_window(&self) -> Option<&ActiveWindow>` | Workspace switcher buttons, active window title, task switcher list with Sway/Hyprland IPC. |
 | **`Apps`** | `apps() -> &[AppInfo]`, `search(query) -> Vec<AppInfo>`, `launch(&app)`, `find_icon(app_id_or_class) -> Option<Arc<RenderImage>>` | Application launcher, task switcher icons with fuzzy matching and GPU textures. |
 | **`Mpris`** | `title() -> Option<&str>`, `artist() -> Option<&str>`, `status() -> PlaybackStatus`, `play_pause()`, `next()`, `previous()` | Media player widget, music equalizer, dynamic topbar label. |
@@ -373,6 +373,13 @@ pub enum BatteryState {
 pub enum WifiBackend { NetworkManager, Iwd, Fallback }
 // ssid() -> Option<&str>, signal_percent() -> Option<u8> (both borrowed/optional!)
 // display_label() -> String, icon() -> glyph
+pub struct WifiNetwork {
+    pub ssid: String,  // merged by SSID (strongest BSSID wins)
+    pub strength: u8,  // 0-100
+    pub secured: bool, // privacy bit or WPA/RSN flags
+    pub active: bool,  // current connection
+}
+// networks() is NM-only (empty on iwd/fallback); sorted active-first
 
 // Clock (clock.rs)
 pub enum ClockResolution { Seconds, Minutes } // set_resolution() lowers wakeups to 1/min
@@ -510,6 +517,30 @@ div()
 ```
 > [!CAUTION]
 > **Never slice strings with byte indexes (`&s[..20]`)**: UTF-8 multi-byte characters or emoji will cause a panic. Always use `.truncate()` in layout or iterate over `.chars()`.
+
+### Text Fields (`wk-ui`, Headless)
+GPUI ships no text field, and `gpui-component`'s `Input`/`Textarea` impose
+a full theme. `crates/wk-ui` provides the headless pair (same `gpui-pre`
+snapshot, no second GPUI copy — design studied from `gpui-component`'s
+`InputState`/`TextareaState`, styling stripped out):
+```rust
+// State owned by your view (Entity: cheap to clone into listeners):
+let pw = cx.new(|_| { let mut b = TextBuffer::masked(); b.set_max_chars(63); b });
+// Dispatch window-level keys to it (Exclusive/OnDemand focused window):
+match pw.update(cx, |b, _| b.handle_key(ev)) {
+    TextAction::Submit => { /* use pw.read(cx).value() */ }
+    TextAction::Cancel => { /* clear + close */ }
+    TextAction::Changed => cx.notify(), // update() never notifies alone
+    TextAction::Ignored => {}           // let window handlers (Esc…) run
+}
+// Draw with YOUR colours (single-line; text_area() stacks lines and adds
+// mouse caret positioning — the parent must cx.observe(&buf) itself, as
+// update() alone never re-renders the parent):
+text_input("my-field", &buf, TextStyle { text, placeholder, caret, size_px: 14. }, "hint…", cx)
+```
+Rules: caret is a **char** index (byte slicing panics on UTF-8);
+single-line Enter = `Submit`, multi-line Enter inserts `\n`; Tab/Escape are
+never consumed (`Ignored`/`Cancel`) so parent shortcuts keep working.
 
 ### Image Textures (App & Tray Icons)
 ```rust

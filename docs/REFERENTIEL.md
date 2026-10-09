@@ -562,8 +562,19 @@ vérifiés en deux temps — rendu réel avec `pango-view` dans
 (`U+Fxxxx`) pour écarter toute substitution de caractère.
 `display_label()` retourne un `String` car un `&str` emprunté au guard de
 `read(cx)` ne peut pas s'échapper de `render` (E0521).
-Backend NM compilé mais **non testé live** (pas de NM sur cette machine),
-donc en polling défensif assumé, pas en événements.
+Backend NM désormais **testé live** (machine passée sous NetworkManager) :
+la boucle NM est événementielle comme iwd (`MessageStream` sur
+`org.freedesktop.NetworkManager`, même pattern que le Bluetooth), avec un
+debounce de 750 ms pour coalescer les rafales de scan — pas de polling.
+Nuance iwd : les signaux `State` disent connecté/déconnecté mais le RSSI
+ne bouge pas tout seul — la boucle iwd relit donc le diagnostic toutes
+les 15 s (sans ça, l'icône de signal reste figée quand on se déplace
+avec le portable). Ce refresh est assumé et documenté dans le code
+(`iwd_loop`), pas un oubli.
+Pilotage UI + IPC : `networks()` (liste triée, actif d'abord),
+`request_scan()`, `set_enabled()`, `connect()` (profils + réseaux ouverts),
+`connect_with_password()` (PSK jamais stocké), `disconnect()` ;
+IPC `scan`, `on`, `off`, `toggle`, `connect <ssid>`, `disconnect`.
 
 ### Tray SNI : watcher, pixmaps, dbusmenu — et le double déballage
 
