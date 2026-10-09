@@ -4,10 +4,7 @@ use gpui::prelude::*;
 use gpui::{div, Context, Entity, Window};
 use widgetkit::prelude::*;
 
-use crate::{
-    adapt::{self, NotifData},
-    notifs,
-};
+use crate::notifs;
 
 pub struct NotificationToasts {
     notifs: Entity<Notifications>,
@@ -23,17 +20,10 @@ impl NotificationToasts {
 
 impl Render for NotificationToasts {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let list: Vec<NotifData> = self
-            .notifs
-            .read(cx)
-            .toasts()
-            .iter()
-            .map(adapt::notif_data)
-            .collect();
-
+        let toasts = self.notifs.read(cx);
         let mut col = div().size_full().flex().flex_col().gap_2();
-        for d in list {
-            col = col.child(notifs::card("toast", d, self.notifs.clone(), false));
+        for n in toasts.toasts().iter() {
+            col = col.child(notifs::card("toast", n, self.notifs.clone(), false));
         }
         col
     }

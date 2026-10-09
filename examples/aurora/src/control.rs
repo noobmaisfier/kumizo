@@ -9,7 +9,7 @@ use gpui::{
 use widgetkit::prelude::*;
 
 use crate::{
-    adapt, icons,
+    icons,
     pomodoro::{self, Pomodoro},
     theme::{self, pal},
     ui::{self, btn, card, ids},
@@ -272,7 +272,7 @@ impl ControlCenter {
             return None;
         }
         let scanning = bt.is_discovering();
-        let devices = adapt::bt_devices(bt);
+        let devices = bt.devices();
 
         let scan = btn("cc-bt-scan")
             .px_3()
@@ -294,9 +294,12 @@ impl ControlCenter {
                     .child("Aucun appareil — lance une recherche."),
             );
         }
-        for (i, d) in devices.into_iter().enumerate() {
+        for (i, d) in devices.iter().enumerate() {
             let connected = d.connected;
             let name = d.name.clone();
+            // `path` possédé : le closure `on_click` est `'static`, il ne
+            // peut pas emprunter le garde `bt`.
+            let path = d.path.clone();
             list = list.child(
                 div()
                     .id(("cc-btdev", i))
@@ -310,7 +313,12 @@ impl ControlCenter {
                     .cursor_pointer()
                     .hover(|s| s.bg(pal::raised()))
                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        this.bluetooth.update(cx, |b, _| adapt::bt_toggle(b, &d));
+                        // Clone par clic : le listener est `Fn`, `path`
+                        // ne peut pas être déplacé hors du closure.
+                        let p = path.clone();
+                        this.bluetooth.update(cx, |b, _| {
+                            b.toggle_device_connection(p, connected)
+                        });
                     }))
                     .child(ui::glyph(
                         icons::BLUETOOTH,
@@ -662,7 +670,7 @@ impl ControlCenter {
         let m = self.mpris.read(cx);
         let title = m.title().map(str::to_string)?;
         let artist = m.artist().map(str::to_string).unwrap_or_default();
-        let playing = adapt::is_playing(m);
+        let playing = matches!(m.status(), PlaybackStatus::Playing);
 
         let (p, pp, n) = (self.mpris.clone(), self.mpris.clone(), self.mpris.clone());
         Some(

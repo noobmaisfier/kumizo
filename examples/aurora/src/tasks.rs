@@ -8,7 +8,7 @@ use gpui::{
 use widgetkit::prelude::*;
 
 use crate::{
-    adapt, icons,
+    icons,
     theme::pal,
     ui::{self, ids},
 };
@@ -124,7 +124,7 @@ impl Render for TaskSwitcher {
 
         for (i, r) in rows.into_iter().enumerate() {
             let selected = i == self.selected;
-            let icon = match adapt::window_icon(self.apps.read(cx), &r.class) {
+            let icon = match self.apps.read(cx).find_icon(&r.class) {
                 Some(img) => gpui::img(img).w(px(36.)).h(px(36.)).into_any_element(),
                 None => ui::glyph(icons::WINDOWS, 26., pal::muted()).into_any_element(),
             };

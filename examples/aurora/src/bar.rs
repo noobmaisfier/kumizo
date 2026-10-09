@@ -8,7 +8,7 @@ use gpui::{div, px, App, Context, Div, Entity, FontWeight, Window};
 use widgetkit::prelude::*;
 
 use crate::{
-    adapt, icons,
+    icons,
     osd::{self, OsdKind, OsdState},
     pomodoro::{self, Pomodoro},
     theme::pal,
@@ -205,7 +205,7 @@ impl TopBar {
         let m = self.mpris.read(cx);
         let title = m.title().map(str::to_string);
         let artist = m.artist().map(str::to_string);
-        let playing = adapt::is_playing(m);
+        let playing = matches!(m.status(), PlaybackStatus::Playing);
 
         let clock_pill = pill()
             .id("bar-clock")
@@ -303,13 +303,14 @@ impl TopBar {
         }
 
         // Tray
-        let entries = adapt::tray_entries(self.tray.read(cx));
+        let tray_svc = self.tray.read(cx);
+        let entries = tray_svc.items();
         if !entries.is_empty() {
             let mut tray_row = pill().gap_1();
-            for (i, e) in entries.into_iter().enumerate() {
+            for (i, e) in entries.iter().enumerate() {
                 let tray = self.tray.clone();
                 let id = e.id.clone();
-                let icon = match e.icon {
+                let icon = match e.icon.clone() {
                     Some(img) => gpui::img(img).w(px(16.)).h(px(16.)).into_any_element(),
                     None => ui::glyph(icons::WINDOWS, 13., pal::muted()).into_any_element(),
                 };
@@ -317,7 +318,7 @@ impl TopBar {
                     btn(("tray", i))
                         .hover(|s| s.bg(pal::raised()))
                         .on_click(move |_, _, cx| {
-                            tray.update(cx, |t, _| adapt::tray_activate(t, &id));
+                            tray.update(cx, |t, _| t.activate(&id));
                         })
                         .child(icon),
                 );

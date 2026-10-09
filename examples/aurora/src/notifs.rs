@@ -8,7 +8,6 @@ use gpui::{
 use widgetkit::prelude::*;
 
 use crate::{
-    adapt::{self, NotifData},
     icons,
     theme::pal,
     ui::{self, btn, ids},
@@ -18,17 +17,18 @@ use crate::{
 /// sinon elle ferme seulement le toast (l'historique est conservé).
 pub fn card(
     prefix: &'static str,
-    d: NotifData,
+    n: &Notification,
     notifs: Entity<Notifications>,
     history: bool,
 ) -> Stateful<Div> {
-    let id = d.id;
-    let border = if d.critical { pal::danger() } else { pal::border() };
+    let id = n.id;
+    let critical = matches!(n.urgency, Urgency::Critical);
+    let border = if critical { pal::danger() } else { pal::border() };
 
     let n_card = notifs.clone();
     let n_close = notifs.clone();
 
-    let icon = match d.icon {
+    let icon = match n.app_icon.clone() {
         Some(img) => gpui::img(img).w(px(20.)).h(px(20.)).into_any_element(),
         None => ui::glyph(icons::BELL, 14., pal::accent()).into_any_element(),
     };
@@ -46,10 +46,15 @@ pub fn card(
                 .truncate()
                 .text_xs()
                 .text_color(pal::muted())
-                .child(d.app),
+                .child(n.app_name.clone()),
         );
     if history {
-        header = header.child(div().text_xs().text_color(pal::muted()).child(d.time));
+        let time = format!(
+            "{:02}:{:02}",
+            n.created_at.hour(),
+            n.created_at.minute()
+        );
+        header = header.child(div().text_xs().text_color(pal::muted()).child(time));
     }
     header = header.child(
         btn(("notif-x", id as usize))
@@ -95,22 +100,29 @@ pub fn card(
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(pal::text())
                 .line_clamp(2)
-                .child(d.summary),
+                .child(n.summary.clone()),
         );
 
-    if !d.body.is_empty() {
+    if !n.body.is_empty() {
         col = col.child(
             div()
                 .text_sm()
                 .text_color(pal::muted())
                 .line_clamp(3)
-                .child(d.body),
+                .child(n.body.clone()),
         );
     }
 
-    if !d.actions.is_empty() {
+    // L'action "default" est exclue : c'est le clic sur la carte.
+    let actions: Vec<(String, String)> = n
+        .actions
+        .iter()
+        .filter(|a| a.key != "default")
+        .map(|a| (a.key.clone(), a.label.clone()))
+        .collect();
+    if !actions.is_empty() {
         let mut row = div().flex().flex_row().gap_2().pt_1();
-        for (i, (key, label)) in d.actions.into_iter().enumerate() {
+        for (i, (key, label)) in actions.into_iter().enumerate() {
             let n = notifs.clone();
             row = row.child(
                 btn(("notif-act", (id as usize) * 16 + i))
@@ -153,7 +165,7 @@ impl Render for NotificationCenter {
 
         let n = self.notifs.read(cx);
         let dnd = n.is_dnd();
-        let items: Vec<NotifData> = n.history().iter().map(adapt::notif_data).collect();
+        let items: Vec<&Notification> = n.history().iter().collect();
         let count = items.len();
 
         let dnd_btn = btn("nc-dnd")
@@ -199,8 +211,8 @@ impl Render for NotificationCenter {
                     .child(div().text_color(pal::muted()).child("Rien à signaler")),
             );
         } else {
-            for d in items {
-                list = list.child(card("hist", d, self.notifs.clone(), true));
+            for item in items {
+                list = list.child(card("hist", item, self.notifs.clone(), true));
             }
         }
 

@@ -10,7 +10,6 @@
 //!   aurora-toasts    popups de notification    (coin haut-droit, ouvert par la barre)
 //!   aurora-osd       volume / luminosité       (bas-centre, ouvert par la barre)
 
-mod adapt;
 mod bar;
 mod clipboard;
 mod control;

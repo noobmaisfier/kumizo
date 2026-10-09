@@ -11,7 +11,7 @@ use gpui::{
 use widgetkit::prelude::*;
 
 use crate::{
-    adapt, icons,
+    icons,
     theme::pal,
     ui::{self, ids},
 };
@@ -47,7 +47,7 @@ impl AppLauncher {
     }
 
     fn activate(&mut self, i: usize, cx: &mut Context<Self>) {
-        let results = adapt::app_results(self.apps.read(cx), &self.query);
+        let results = self.apps.read(cx).search(&self.query);
         if let Some(app) = results.get(i) {
             self.apps.update(cx, |a, _| a.launch(app));
         }
@@ -55,7 +55,7 @@ impl AppLauncher {
     }
 
     fn on_key(&mut self, ev: &KeyDownEvent, cx: &mut Context<Self>) {
-        let count = adapt::app_results(self.apps.read(cx), &self.query).len();
+        let count = self.apps.read(cx).search(&self.query).len();
         match ui::key(ev) {
             "escape" => self.close(cx),
             "enter" => self.activate(self.selected, cx),
@@ -102,7 +102,7 @@ impl Render for AppLauncher {
             window.focus(&self.focus, cx);
         }
 
-        let results = adapt::app_results(self.apps.read(cx), &self.query);
+        let results = self.apps.read(cx).search(&self.query);
         if self.selected >= results.len() {
             self.selected = 0;
         }
@@ -153,7 +153,7 @@ impl Render for AppLauncher {
         }
         for (i, app) in results.iter().enumerate() {
             let selected = i == self.selected;
-            let icon = match adapt::app_icon(app) {
+            let icon = match app.icon.clone() {
                 Some(img) => gpui::img(img).w(px(28.)).h(px(28.)).into_any_element(),
                 None => ui::glyph(icons::WINDOWS, 18., pal::muted()).into_any_element(),
             };
@@ -203,7 +203,7 @@ impl Render for AppLauncher {
                                 FontWeight::NORMAL
                             })
                             .text_color(pal::text())
-                            .child(adapt::app_name(app)),
+                            .child(app.name.clone()),
                     ),
             );
         }
