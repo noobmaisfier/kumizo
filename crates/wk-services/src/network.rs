@@ -220,8 +220,10 @@ impl Network {
 
     /// Toggle the radio (`WirelessEnabled` on NM, `Adapter.Powered` on
     /// iwd). Returns the requested state on success, `None` on the
-    /// fallback or on D-Bus failure.
-    pub fn set_enabled(&self, enabled: bool) -> Option<bool> {
+    /// fallback or on D-Bus failure. On success the cached flag flips
+    /// immediately so the tile re-renders without waiting for the loop
+    /// (the loop reconfirms from the daemon right after).
+    pub fn set_enabled(&mut self, enabled: bool) -> Option<bool> {
         match self.backend {
             WifiBackend::NetworkManager => Self::nm_set_enabled(enabled),
             WifiBackend::Iwd => iwd_set_enabled(enabled),
@@ -229,7 +231,9 @@ impl Network {
                 warn!("Network::set_enabled: no backend");
                 None
             }
-        }
+        }?;
+        self.wifi_enabled = enabled;
+        Some(enabled)
     }
 
     fn nm_set_enabled(enabled: bool) -> Option<bool> {
@@ -523,11 +527,18 @@ fn iwd_request_scan() {
 }
 
 fn iwd_set_enabled(enabled: bool) -> Option<bool> {
-    let Some((conn, _, adapter)) = iwd_station_paths() else {
-        warn!("Network::set_enabled: no iwd station");
-        return None;
-    };
     async_io::block_on(async {
+        let Ok(conn) = Connection::system().await else {
+            warn!("Network::set_enabled: no system bus");
+            return None;
+        };
+        // Resolved directly: the station object is gone while the radio
+        // is off, so deriving the adapter from it makes enabling
+        // impossible (every attempt failed live with `no iwd station`).
+        let Some(adapter) = find_iwd_adapter(&conn).await else {
+            warn!("Network::set_enabled: no iwd adapter");
+            return None;
+        };
         let Ok(ad) = zbus::Proxy::new(&conn, IWD_BUS, adapter.as_str(), IWD_ADAPTER_IFACE).await
         else {
             warn!("Network::set_enabled: no Adapter interface");
@@ -619,10 +630,14 @@ fn iwd_disconnect() -> bool {
 /// `(powered, station_path, networks)`. Signal arrives in 1/100 dBm
 /// (`-3600` = −36.00 dBm) and goes through the same `rssi_to_percent`
 /// as the status read, so tile and list agree.
+///
+/// The list is `None` when `GetOrderedNetworks` fails (radio off: iwd
+/// refuses the call) — the radio flag is still reported so the tile
+/// flips instead of sticking on a stale snapshot.
 async fn read_iwd_networks(
     conn: &Connection,
     station: &str,
-) -> Option<(bool, String, Vec<WifiNetwork>)> {
+) -> Option<(bool, String, Option<Vec<WifiNetwork>>)> {
     let adapter = station.rsplit_once('/').map(|(p, _)| p.to_string())?;
     let ad = zbus::Proxy::new(conn, IWD_BUS, adapter.as_str(), IWD_ADAPTER_IFACE)
         .await
@@ -635,34 +650,42 @@ async fn read_iwd_networks(
         .get_property("ConnectedNetwork")
         .await
         .unwrap_or_else(|_| OwnedObjectPath::try_from("/").expect("root path is valid"));
-    let reply = st.call_method("GetOrderedNetworks", &()).await.ok()?;
-    let nets: Vec<(OwnedObjectPath, i16)> = reply.body().deserialize().ok()?;
-    // iwd orders strongest-first; re-sort active-first for panel parity.
-    let mut out = Vec::with_capacity(nets.len());
-    for (path, sig100) in nets {
-        let net = zbus::Proxy::new(conn, IWD_BUS, path.as_str(), IWD_NETWORK_IFACE)
-            .await
-            .ok()?;
-        // `Name` carries padding on the bus (verified live: trailing space).
-        let name: String = net
-            .get_property::<String>("Name")
-            .await
-            .unwrap_or_default()
-            .trim()
-            .to_string();
-        if name.is_empty() {
-            continue;
+    let mut networks: Option<Vec<WifiNetwork>> = None;
+    if let Ok(nets) = st
+        .call_method("GetOrderedNetworks", &())
+        .await
+        .map(|reply| reply.body().deserialize::<Vec<(OwnedObjectPath, i16)>>())
+    {
+        if let Ok(nets) = nets {
+            // iwd orders strongest-first; re-sort active-first for panel parity.
+            let mut out = Vec::with_capacity(nets.len());
+            for (path, sig100) in nets {
+                let net = zbus::Proxy::new(conn, IWD_BUS, path.as_str(), IWD_NETWORK_IFACE)
+                    .await
+                    .ok()?;
+                // `Name` carries padding on the bus (verified live: trailing space).
+                let name: String = net
+                    .get_property::<String>("Name")
+                    .await
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                if name.is_empty() {
+                    continue;
+                }
+                let ty: String = net.get_property("Type").await.unwrap_or_default();
+                out.push(WifiNetwork {
+                    ssid: name,
+                    strength: Network::rssi_to_percent((sig100 / 100) as i16),
+                    secured: ty != "open",
+                    active: path.as_str() == active.as_str(),
+                });
+            }
+            out.sort_by(|a, b| b.active.cmp(&a.active).then(b.strength.cmp(&a.strength)));
+            networks = Some(out);
         }
-        let ty: String = net.get_property("Type").await.unwrap_or_default();
-        out.push(WifiNetwork {
-            ssid: name,
-            strength: Network::rssi_to_percent((sig100 / 100) as i16),
-            secured: ty != "open",
-            active: path.as_str() == active.as_str(),
-        });
     }
-    out.sort_by(|a, b| b.active.cmp(&a.active).then(b.strength.cmp(&a.strength)));
-    Some((enabled, station.to_string(), out))
+    Some((enabled, station.to_string(), networks))
 }
 
 fn str_value(s: &str) -> OwnedValue {
@@ -866,13 +889,13 @@ async fn read_nm_networks(conn: &Connection) -> Option<(bool, String, Vec<WifiNe
     Some((enabled, wifi_dev, out))
 }
 
-/// Find the iwd Station object by walking the `Introspect` tree.
+/// Find the iwd object exposing `iface` by walking the `Introspect` tree.
 ///
 /// iwd exposes no `ObjectManager`, and device paths embed small integer ids
 /// (`/net/connman/iwd/0/4`) that cannot be guessed, so the tree is walked
-/// from the root (depth-limited) looking for the `net.connman.iwd.Station`
-/// interface. Done once at startup and retried on failure.
-async fn find_iwd_station(conn: &Connection) -> Option<String> {
+/// from the root (depth-limited). Done once per loop generation and retried
+/// on failure.
+async fn find_iwd_iface(conn: &Connection, iface: &str) -> Option<String> {
     /// Bare `<node name="..."/>` children of one Introspect document.
     fn child_nodes(xml: &str) -> Vec<String> {
         let mut out = Vec::new();
@@ -914,7 +937,8 @@ async fn find_iwd_station(conn: &Connection) -> Option<String> {
         let Some(xml) = introspect(conn, &path).await else {
             continue;
         };
-        if xml.contains("net.connman.iwd.Station") {
+        // `">` so `Station` never matches `StationDiagnostic`.
+        if xml.contains(&format!("{iface}\">")) {
             return Some(path);
         }
         if depth < 4 {
@@ -924,6 +948,18 @@ async fn find_iwd_station(conn: &Connection) -> Option<String> {
         }
     }
     None
+}
+
+/// The station object vanishes when the radio is off (iwd removes it —
+/// verified live: `iwctl` says `No station`, the tile's enable clicks all
+/// logged `no iwd station`). Anything that must work while off resolves
+/// the adapter instead; station users treat `None` as radio-off.
+async fn find_iwd_station(conn: &Connection) -> Option<String> {
+    find_iwd_iface(conn, "net.connman.iwd.Station").await
+}
+
+async fn find_iwd_adapter(conn: &Connection) -> Option<String> {
+    find_iwd_iface(conn, "net.connman.iwd.Adapter").await
 }
 
 /// One synchronous snapshot from iwd: `(connected, ssid, signal_percent)`.
@@ -1156,20 +1192,35 @@ fn set_backend(this: &gpui::WeakEntity<Network>, cx: &mut gpui::AsyncApp, backen
     });
 }
 
-/// Push one network list snapshot, notifying only on change.
+/// Push one network list snapshot, notifying only on change. `networks`
+/// is `None` when the list read failed (iwd radio off): the radio flag
+/// and device still apply, the stale list is kept instead of sticking
+/// the whole snapshot.
 fn apply_networks(
     this: &gpui::WeakEntity<Network>,
     cx: &mut gpui::AsyncApp,
     enabled: bool,
     device: String,
-    networks: Vec<WifiNetwork>,
+    networks: Option<Vec<WifiNetwork>>,
 ) {
     let _ = this.update(cx, |net, cx| {
         let device = if device.is_empty() { None } else { Some(device) };
-        if net.wifi_enabled != enabled || net.device != device || net.networks != networks {
+        let mut changed = false;
+        if net.wifi_enabled != enabled {
             net.wifi_enabled = enabled;
+            changed = true;
+        }
+        if net.device != device {
             net.device = device;
-            net.networks = networks;
+            changed = true;
+        }
+        if let Some(networks) = networks {
+            if net.networks != networks {
+                net.networks = networks;
+                changed = true;
+            }
+        }
+        if changed {
             cx.notify();
         }
     });
@@ -1185,7 +1236,7 @@ async fn nm_loop(conn: &Connection, this: &gpui::WeakEntity<Network>, cx: &mut g
         apply(this, cx, connected, ssid, signal);
     }
     if let Some((enabled, device, networks)) = read_nm_networks(conn).await {
-        apply_networks(this, cx, enabled, device, networks);
+        apply_networks(this, cx, enabled, device, Some(networks));
     }
 
     let rule = match zbus::MatchRule::builder()
@@ -1232,16 +1283,18 @@ async fn nm_loop(conn: &Connection, this: &gpui::WeakEntity<Network>, cx: &mut g
             apply(this, cx, connected, ssid, signal);
         }
         if let Some((enabled, device, networks)) = read_nm_networks(conn).await {
-            apply_networks(this, cx, enabled, device, networks);
+            apply_networks(this, cx, enabled, device, Some(networks));
         }
     }
 }
 
-/// Event-driven iwd loop: `State` and `Scanning` changes wake us, a 15 s
-/// refresh keeps the RSSI honest while roaming. Every wake re-reads status
-/// AND the network list (one `GetOrderedNetworks` round-trip set — cheap
-/// enough to keep the panel fresh on iwd's own background scans).
-/// Same shape as the battery's UPower stream.
+/// Event-driven iwd loop, anchored on the adapter: the station object
+/// vanishes when the radio is off, but the adapter (and its `Powered`
+/// watch) survives. `State`/`Scanning` arm only while a station exists;
+/// without one the loop reports the radio flag + dropped link and waits
+/// for `Powered` (or the 15 s tick) to re-resolve. A 15 s refresh keeps
+/// the RSSI honest while roaming. Same shape as the battery's UPower
+/// stream.
 async fn iwd_loop(conn: &Connection, this: &gpui::WeakEntity<Network>, cx: &mut gpui::AsyncApp) {
     /// One full refresh: status snapshot + radio/networks snapshot.
     async fn refresh(conn: &Connection, station: &str, this: &gpui::WeakEntity<Network>, cx: &mut gpui::AsyncApp) {
@@ -1253,55 +1306,120 @@ async fn iwd_loop(conn: &Connection, this: &gpui::WeakEntity<Network>, cx: &mut 
         }
     }
 
-    loop {
-        let Some(station) = find_iwd_station(conn).await else {
-            warn!("iwd station not found, retrying");
+    /// `Adapter.Powered`, read directly — the one fact available with no
+    /// station (radio off).
+    async fn read_powered(conn: &Connection, adapter: &str) -> bool {
+        let Ok(ad) = zbus::Proxy::new(conn, IWD_BUS, adapter, IWD_ADAPTER_IFACE).await else {
+            return false;
+        };
+        ad.get_property::<bool>("Powered").await.unwrap_or(false)
+    }
+
+    'adapter: loop {
+        let Some(adapter) = find_iwd_adapter(conn).await else {
+            warn!("iwd adapter not found, retrying");
             async_io::Timer::after(Duration::from_secs(10)).await;
             continue;
         };
-
-        refresh(conn, &station, this, cx).await;
-
-        let Ok(state_proxy) = zbus::Proxy::new(
+        let Ok(power_proxy) = zbus::Proxy::new(
             conn,
             "net.connman.iwd",
-            station.as_str(),
-            "net.connman.iwd.Station",
+            adapter.as_str(),
+            "net.connman.iwd.Adapter",
         )
         .await
         else {
             continue;
         };
-        let Ok(scan_proxy) = zbus::Proxy::new(
-            conn,
-            "net.connman.iwd",
-            station.as_str(),
-            "net.connman.iwd.Station",
-        )
-        .await
-        else {
-            continue;
-        };
-        let mut state_changes = state_proxy.receive_property_changed::<String>("State").await;
-        let mut scan_changes = scan_proxy.receive_property_changed::<bool>("Scanning").await;
+        let mut power_changes = power_proxy.receive_property_changed::<bool>("Powered").await;
+
         loop {
-            futures_util::select! {
-                ev = state_changes.next().fuse() => {
-                    // Stream ended: re-resolve from the top.
-                    if ev.is_none() {
-                        break;
+            match find_iwd_station(conn).await {
+                Some(station) => {
+                    refresh(conn, &station, this, cx).await;
+
+                    let Ok(state_proxy) = zbus::Proxy::new(
+                        conn,
+                        "net.connman.iwd",
+                        station.as_str(),
+                        "net.connman.iwd.Station",
+                    )
+                    .await
+                    else {
+                        continue;
+                    };
+                    let Ok(scan_proxy) = zbus::Proxy::new(
+                        conn,
+                        "net.connman.iwd",
+                        station.as_str(),
+                        "net.connman.iwd.Station",
+                    )
+                    .await
+                    else {
+                        continue;
+                    };
+                    let mut state_changes =
+                        state_proxy.receive_property_changed::<String>("State").await;
+                    let mut scan_changes =
+                        scan_proxy.receive_property_changed::<bool>("Scanning").await;
+                    // Full watch while the station lives. A dead adapter
+                    // watch re-resolves everything; a changed station set
+                    // (off→gone, on→back) just re-arms below.
+                    let mut adapter_dead = false;
+                    loop {
+                        futures_util::select! {
+                            ev = state_changes.next().fuse() => {
+                                if ev.is_none() {
+                                    break;
+                                }
+                                refresh(conn, &station, this, cx).await;
+                            }
+                            ev = scan_changes.next().fuse() => {
+                                if ev.is_none() {
+                                    break;
+                                }
+                                // Scan finished (or started): the visible set moved.
+                                refresh(conn, &station, this, cx).await;
+                            }
+                            ev = power_changes.next().fuse() => {
+                                if ev.is_none() {
+                                    adapter_dead = true;
+                                    break;
+                                }
+                                // Radio toggled (tile, `iwctl`, rfkill): the
+                                // station set may have changed — re-resolve
+                                // instead of refreshing a dead object.
+                                break;
+                            }
+                            _ = FutureExt::fuse(async_io::Timer::after(Duration::from_secs(15))) => {
+                                refresh(conn, &station, this, cx).await;
+                            }
+                        }
+                        if this.upgrade().is_none() {
+                            return;
+                        }
                     }
-                    refresh(conn, &station, this, cx).await;
-                }
-                ev = scan_changes.next().fuse() => {
-                    if ev.is_none() {
-                        break;
+                    if adapter_dead {
+                        continue 'adapter;
                     }
-                    // Scan finished (or started): the visible set moved.
-                    refresh(conn, &station, this, cx).await;
                 }
-                _ = FutureExt::fuse(async_io::Timer::after(Duration::from_secs(15))) => {
-                    refresh(conn, &station, this, cx).await;
+                None => {
+                    // No station: radio off (or device gone). The flag and
+                    // the dropped link still follow `Powered`; the last
+                    // list is kept until the station returns.
+                    let powered = read_powered(conn, &adapter).await;
+                    apply(this, cx, false, None, None);
+                    apply_networks(this, cx, powered, adapter.clone(), None);
+                    futures_util::select! {
+                        ev = power_changes.next().fuse() => {
+                            if ev.is_none() {
+                                continue 'adapter;
+                            }
+                            // `Powered` flipped, most likely back on:
+                            // loop around and re-resolve the station.
+                        }
+                        _ = FutureExt::fuse(async_io::Timer::after(Duration::from_secs(15))) => {}
+                    }
                 }
             }
             if this.upgrade().is_none() {

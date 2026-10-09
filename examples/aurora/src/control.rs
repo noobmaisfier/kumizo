@@ -139,8 +139,12 @@ impl ControlCenter {
             radio,
         )
         .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-            this.network.update(cx, |n, _| {
-                let _ = n.set_enabled(!n.wifi_enabled());
+            this.network.update(cx, |n, cx| {
+                // `set_enabled` flips the cached flag itself on success;
+                // notify so the tile re-renders before the loop reconfirms.
+                if n.set_enabled(!n.wifi_enabled()).is_some() {
+                    cx.notify();
+                }
             });
         }));
 

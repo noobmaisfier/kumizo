@@ -580,8 +580,14 @@ Pilotage iwd (testé live, machine passée sous iwd + NM inactif) :
 `rssi_to_percent`, la tuile et la liste concordent), `Station.Scan()`
 (résultats via le watch `Scanning` de la boucle),
 `Network.Connect()` (connus + ouverts sans secret), `Station.Disconnect()`,
-radio via `Adapter.Powered` (lecture + écriture, adaptateur = parent de
-la station). Mot de passe : agent `net.connman.iwd.Agent` servi par le
+radio via `Adapter.Powered` (lecture + écriture, adaptateur résolu
+directement dans l'arbre `Introspect` — jamais dérivé de la station :
+iwd **supprime l'objet Station** quand la radio est coupée, vérifier live,
+donc tout passage par la station rend le rallumage impossible). La boucle
+est ancrée sur l'adaptateur : sans station elle reporte quand même le flag
+`Powered` + la perte de lien (la liste gardée telle quelle) et attend
+`Powered`/15 s pour re-résoudre ; `set_enabled` est `&mut` et bascule le
+flag en cache sur succès (tuile instantanée, la boucle reconfirme). Mot de passe : agent `net.connman.iwd.Agent` servi par le
 shell (`IwdAgent`, `RegisterAgent` à l'init) — `connect_with_password`
 dépose le PSK dans un slot one-shot, `RequestPassphrase` le consomme
 après avoir vérifié le `Name` du réseau (pas de fuite vers un autre
