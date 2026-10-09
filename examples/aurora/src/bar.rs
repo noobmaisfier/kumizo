@@ -15,6 +15,57 @@ use crate::{
     ui::{self, btn, ids, pill},
 };
 
+/// Icônes Nerd Font des workspaces 1-10 (reprises du waybar de
+/// l'utilisateur) : la barre montre des glyphes, pas des chiffres.
+/// Hors 1-10, le nom du workspace s'affiche en texte (repli).
+const WS_ICONS: [&str; 10] = [
+    "\u{f018d}", // 1
+    "\u{f0239}", // 2
+    "\u{f024b}", // 3
+    "\u{f0a1e}", // 4
+    "\u{f0219}", // 5
+    "\u{f066f}", // 6
+    "\u{f0386}", // 7
+    "\u{f048b}", // 8
+    "\u{f059f}", // 9
+    "\u{f075a}", // 10
+];
+
+/// Exécute un script au hasard de `~/.local/bin/change-theme/` (bascule
+/// de thème sway/foot/yazi/nvim/tmux + fond d'écran). Sans script
+/// exécutable, ne fait rien (pas d'erreur, pas de bruit).
+fn shuffle_theme() {
+    let Some(home) = std::env::var_os("HOME") else {
+        return;
+    };
+    let Ok(entries) = std::fs::read_dir(std::path::PathBuf::from(home).join(".local/bin/change-theme")) else {
+        return;
+    };
+    let mut scripts: Vec<std::path::PathBuf> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.is_file()
+                && p.metadata()
+                    .map(|m| std::os::unix::fs::PermissionsExt::mode(&m.permissions()) & 0o111 != 0)
+                    .unwrap_or(false)
+        })
+        .collect();
+    scripts.sort();
+    if scripts.is_empty() {
+        return;
+    }
+    // Pas de dépendance de tirage : nanos xor pid, biais négligeable ici.
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos() as u64)
+        .unwrap_or(0);
+    let pick = &scripts[((nanos ^ std::process::id() as u64 * 0x9e3779b1) % scripts.len() as u64) as usize];
+    if let Some(s) = pick.to_str() {
+        ui::run(s, &[]);
+    }
+}
+
 pub struct TopBar {
     clock: Entity<Clock>,
     battery: Entity<Battery>,
@@ -154,7 +205,11 @@ impl TopBar {
                     .on_click(move |_, _, cx| {
                         compositor.update(cx, |c, _| c.switch_workspace(id));
                     })
-                    .child(name),
+                    .child(if (1..=10).contains(&id) {
+                        ui::glyph(WS_ICONS[(id - 1) as usize], 13., fg)
+                    } else {
+                        div().text_color(fg).child(name)
+                    }),
             );
         }
 
@@ -181,7 +236,20 @@ impl TopBar {
             .on_click(|_, _, cx| ui::toggle_exclusive(ids::CLIPBOARD, cx))
             .child(ui::glyph(icons::CLIPBOARD, 14., pal::text()));
 
-        let mut row = pill().child(launcher).child(ws_row).child(tasks).child(clipboard);
+        // Pinceau : bascule de thème (un script au hasard de
+        // `~/.local/bin/change-theme/`).
+        let theme = btn("bar-theme")
+            .w(px(28.))
+            .hover(|s| s.bg(pal::raised()))
+            .on_click(|_, _, _| shuffle_theme())
+            .child(ui::glyph(icons::BRUSH, 14., pal::text()));
+
+        let mut row = pill()
+            .child(launcher)
+            .child(ws_row)
+            .child(tasks)
+            .child(clipboard)
+            .child(theme);
         if let Some(t) = title {
             row = row.child(
                 div()
