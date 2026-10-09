@@ -59,9 +59,12 @@
 //! }
 //! ```
 
+pub mod anim;
 pub mod app;
 pub mod prelude;
 pub mod registry;
+
+pub use anim::{AnimatedRoot, CLOSE_MS, OPEN_MS};
 
 pub use app::{WidgetKit, WindowControlExt, WindowControlGlobal};
 pub use registry::{AppContextServiceExt, ServiceContextExt, ServiceRegistry};

@@ -563,6 +563,12 @@ div().with_animation(
     },
 )
 ```
+Every window root is wrapped in a `WindowShell` (`widgetkit::anim`):
+open mounts a fresh surface so a 150 ms fade-in replays each time;
+hide flips the shell to a 130 ms fade-out branch before destroying the
+surface. Fade-only (no slide: direction would be wrong for bottom-anchored
+windows), `reduce_motion` honoured by GPUI itself. `OPEN_MS` / `CLOSE_MS`
+tune the durations.
 
 ### GPUI Signatures & API Specifics
 

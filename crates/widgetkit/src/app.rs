@@ -8,6 +8,7 @@ use wk_gpui_ext::LayerWindow;
 use wk_ipc::{IpcServer, Request, Response, WindowCmd, WindowControl, WindowSender};
 use wk_services::Service;
 
+use crate::anim::{AnimatedRoot, CLOSE_MS, WindowShell};
 use crate::registry::ServiceRegistry;
 
 /// How long the IPC thread waits for the GPUI main thread to answer.
@@ -106,7 +107,10 @@ impl WidgetKit {
                 .map(|display| display.bounds());
             let options = cfg.to_gpui_options_with_display(display_bounds);
             let entity = builder.build(cx);
-            let root = entity.clone();
+            // Every window root is wrapped in a WindowShell so open/close
+            // fades apply uniformly; the inner view never knows.
+            let shell = cx.new(|_| WindowShell::new(entity));
+            let root = shell.clone();
 
             match cx.open_window(options, move |_window, _cx| root) {
                 Ok(handle) => {
@@ -121,11 +125,11 @@ impl WidgetKit {
                     } else {
                         Some(handle.into())
                     };
-                    spawn_window_control::<V>(
+                    spawn_window_control(
                         cx,
                         id.clone(),
                         cfg.clone(),
-                        entity,
+                        shell,
                         initial,
                         display_bounds,
                         rx,
@@ -300,7 +304,7 @@ async fn service_loop(cx: &mut gpui::AsyncApp, rx: Receiver<WindowCmd>) {
 
 /// Main-thread task owning one window's lifecycle so `show`/`hide`/`toggle`
 /// actually do something.
-fn spawn_window_control<V: 'static + Render>(
+fn spawn_window_control<V: 'static + AnimatedRoot>(
     cx: &mut App,
     window_name: String,
     config: LayerWindow,
@@ -319,11 +323,11 @@ fn spawn_window_control<V: 'static + Render>(
                     show_window(cx, &config, &entity, &mut current, display_bounds).await
                 }
                 Request::HideWindow { name: requested } if requested == window_name => {
-                    hide_window(cx, &mut current).await
+                    hide_window(cx, &entity, &mut current).await
                 }
                 Request::ToggleWindow { name: requested } if requested == window_name => {
                     if current.is_some() {
-                        hide_window(cx, &mut current).await
+                        hide_window(cx, &entity, &mut current).await
                     } else {
                         show_window(cx, &config, &entity, &mut current, display_bounds).await
                     }
@@ -341,13 +345,21 @@ fn spawn_window_control<V: 'static + Render>(
     .detach();
 }
 
-async fn show_window<V: Render + 'static>(
+async fn show_window<V: AnimatedRoot + 'static>(
     cx: &mut gpui::AsyncApp,
     config: &LayerWindow,
     entity: &Entity<V>,
     current: &mut Option<AnyWindowHandle>,
     display_bounds: Option<Bounds<Pixels>>,
 ) -> Response {
+    // A hide interrupted by a quick re-show leaves `closing` set: reset it
+    // so the fresh surface plays the open fade, not the close one.
+    cx.update(|cx| {
+        let _ = entity.update(cx, |view, cx| {
+            view.set_closing(false);
+            cx.notify();
+        });
+    });
     // A handle can outlive its window: GPUI drops the window once
     // `remove_window` has been processed, but our `AnyWindowHandle` is just an
     // id. So verify against the live window list before trusting it, otherwise
@@ -379,12 +391,30 @@ async fn show_window<V: Render + 'static>(
     }
 }
 
-async fn hide_window(cx: &mut gpui::AsyncApp, current: &mut Option<AnyWindowHandle>) -> Response {
+async fn hide_window<V: AnimatedRoot + 'static>(
+    cx: &mut gpui::AsyncApp,
+    entity: &Entity<V>,
+    current: &mut Option<AnyWindowHandle>,
+) -> Response {
     let Some(handle) = current.take() else {
         return Response::Ok {
             message: "Window is already hidden".into(),
         };
     };
+
+    // Play the close fade first: flip the shell to its `wk-close` branch,
+    // wait out the animation, then destroy the surface. The control loop
+    // awaits this, so a `show` arriving mid-fade is processed after the
+    // removal and simply re-creates the surface (with `closing` reset).
+    cx.update(|cx| {
+        let _ = entity.update(cx, |view, cx| {
+            view.set_closing(true);
+            cx.notify();
+        });
+    });
+    cx.background_executor()
+        .timer(Duration::from_millis(CLOSE_MS))
+        .await;
 
     match cx.update_window(handle, |_view, window, _cx| window.remove_window()) {
         Ok(()) => Response::Ok {
