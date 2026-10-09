@@ -5,7 +5,8 @@
 
 use gpui::prelude::*;
 use gpui::{
-    div, px, ClickEvent, Context, Entity, FocusHandle, FontWeight, KeyDownEvent, Window,
+    div, px, ClickEvent, Context, Entity, FocusHandle, FontWeight, KeyDownEvent, ScrollHandle,
+    Window,
 };
 use widgetkit::prelude::*;
 
@@ -20,6 +21,9 @@ pub struct AppLauncher {
     query: String,
     selected: usize,
     focus: FocusHandle,
+    /// Persists the list scroll offset across renders; `scroll_to_item`
+    /// follows keyboard selection (one-shot, never fights the wheel).
+    scroll: ScrollHandle,
 }
 
 impl AppLauncher {
@@ -29,12 +33,15 @@ impl AppLauncher {
             query: String::new(),
             selected: 0,
             focus: cx.focus_handle(),
+            scroll: ScrollHandle::new(),
         }
     }
 
     fn close(&mut self, cx: &mut Context<Self>) {
         self.query.clear();
         self.selected = 0;
+        // Back to top for the next open (applied on next prepaint).
+        self.scroll.scroll_to_item(0);
         cx.hide_window(ids::LAUNCHER);
         cx.notify();
     }
@@ -55,17 +62,20 @@ impl AppLauncher {
             "backspace" => {
                 self.query.pop();
                 self.selected = 0;
+                self.scroll.scroll_to_item(0);
                 cx.notify();
             }
             "down" | "tab" => {
                 if count > 0 {
                     self.selected = (self.selected + 1) % count;
+                    self.scroll.scroll_to_item(self.selected);
                     cx.notify();
                 }
             }
             "up" => {
                 if count > 0 {
                     self.selected = (self.selected + count - 1) % count;
+                    self.scroll.scroll_to_item(self.selected);
                     cx.notify();
                 }
             }
@@ -76,6 +86,7 @@ impl AppLauncher {
                         if self.query.chars().count() < 64 {
                             self.query.push_str(ch);
                             self.selected = 0;
+                            self.scroll.scroll_to_item(0);
                             cx.notify();
                         }
                     }
@@ -95,6 +106,7 @@ impl Render for AppLauncher {
         if self.selected >= results.len() {
             self.selected = 0;
         }
+        let scroll = self.scroll.clone();
 
         // Champ de saisie : texte + faux curseur (▏)
         let input = div()
@@ -119,7 +131,17 @@ impl Render for AppLauncher {
                     .child(format!("{}▏", self.query))
             });
 
-        let mut list = div().flex().flex_col().p_2().gap_1();
+        // La liste EST le conteneur scrollé : les lignes sont ses enfants
+        // directs pour que `scroll_to_item(i)` tombe sur la bonne.
+        let mut list = div()
+            .id("lc-scroll")
+            .flex()
+            .flex_col()
+            .p_2()
+            .gap_2()
+            .overflow_y_scroll()
+            .track_scroll(&scroll)
+            .max_h(px(400.));
         if results.is_empty() {
             list = list.child(
                 div()

@@ -55,12 +55,14 @@ pub fn app_icon(a: &AppInfo) -> Option<Arc<RenderImage>> {
     a.icon.clone()
 }
 
-/// Résultats du lanceur : 8 premières apps (requête vide) ou recherche floue.
+/// Résultats du lanceur : toutes les apps (requête vide, ordre alpha) ou
+/// recherche floue complète — la liste est scrollée + bornée (`lc-scroll`),
+/// aucun plafonnement `take()` côté UI.
 pub fn app_results(apps: &Apps, query: &str) -> Vec<AppInfo> {
     if query.is_empty() {
-        apps.apps().iter().take(8).cloned().collect()
+        apps.apps().to_vec()
     } else {
-        apps.search(query).into_iter().take(8).collect()
+        apps.search(query)
     }
 }
 

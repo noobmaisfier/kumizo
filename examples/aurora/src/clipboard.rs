@@ -5,7 +5,8 @@
 
 use gpui::prelude::*;
 use gpui::{
-    div, px, ClickEvent, Context, Entity, FocusHandle, FontWeight, KeyDownEvent, Window,
+    div, px, ClickEvent, Context, Entity, FocusHandle, FontWeight, KeyDownEvent, ScrollHandle,
+    Window,
 };
 use widgetkit::prelude::*;
 
@@ -20,6 +21,8 @@ pub struct ClipboardPanel {
     query: String,
     selected: usize,
     focus: FocusHandle,
+    /// Idem launcher : offset persistant + suivi clavier one-shot.
+    scroll: ScrollHandle,
 }
 
 impl ClipboardPanel {
@@ -29,6 +32,7 @@ impl ClipboardPanel {
             query: String::new(),
             selected: 0,
             focus: cx.focus_handle(),
+            scroll: ScrollHandle::new(),
         }
     }
 
@@ -39,6 +43,7 @@ impl ClipboardPanel {
     fn close(&mut self, cx: &mut Context<Self>) {
         self.query.clear();
         self.selected = 0;
+        self.scroll.scroll_to_item(0);
         cx.hide_window(ids::CLIPBOARD);
         cx.notify();
     }
@@ -57,6 +62,7 @@ impl ClipboardPanel {
             self.clipboard.update(cx, |c, _| c.remove_item(id));
             let n = self.results(cx).len();
             self.selected = if n == 0 { 0 } else { self.selected.min(n - 1) };
+            self.scroll.scroll_to_item(self.selected);
             cx.notify();
         }
     }
@@ -65,6 +71,7 @@ impl ClipboardPanel {
         let n = self.results(cx).len();
         if n > 0 {
             self.selected = (self.selected as isize + delta).rem_euclid(n as isize) as usize;
+            self.scroll.scroll_to_item(self.selected);
             cx.notify();
         }
     }
@@ -79,11 +86,13 @@ impl ClipboardPanel {
             "backspace" => {
                 self.query.pop();
                 self.selected = 0;
+                self.scroll.scroll_to_item(0);
                 cx.notify();
             }
             "space" => {
                 self.query.push(' ');
                 self.selected = 0;
+                self.scroll.scroll_to_item(0);
                 cx.notify();
             }
             _ => {
@@ -93,6 +102,7 @@ impl ClipboardPanel {
                         if self.query.chars().count() < 64 {
                             self.query.push_str(ch);
                             self.selected = 0;
+                            self.scroll.scroll_to_item(0);
                             cx.notify();
                         }
                     }
@@ -113,6 +123,7 @@ impl Render for ClipboardPanel {
         if self.selected >= total {
             self.selected = 0;
         }
+        let scroll = self.scroll.clone();
 
         // Champ de saisie : texte + faux curseur (▏)
         let clear = self.clipboard.clone();
@@ -159,7 +170,16 @@ impl Render for ClipboardPanel {
                 )
             });
 
-        let mut list = div().flex().flex_col().p_2().gap_1();
+        // Lignes en enfants directs : `scroll_to_item(i)` tombe juste.
+        let mut list = div()
+            .id("clip-scroll")
+            .flex()
+            .flex_col()
+            .p_2()
+            .gap_1()
+            .overflow_y_scroll()
+            .track_scroll(&scroll)
+            .max_h(px(400.));
         if results.is_empty() {
             list = list.child(
                 div()
