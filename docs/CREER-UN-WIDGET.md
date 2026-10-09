@@ -316,17 +316,20 @@ auto-détection). Méthodes : `backend() -> WifiBackend`,
 `ssid() -> Option<&str>`, `is_connected()`, `signal_percent()`,
 `display_label() -> String` (SSID ou `"Disconnected"`), `icon()` (arcs
 vérifiés). `WifiBackend` : `NetworkManager | Iwd | Fallback`.
-Pilotage (NetworkManager uniquement, `false` + `warn!` ailleurs) :
+Pilotage (NetworkManager + iwd, `false` + `warn!` sur le repli) :
 `has_radio()` (faux seulement si NM sans périphérique wifi),
-`device()`, `networks() -> &[WifiNetwork]` (`ssid`, `strength`, `secured`,
-`active`, triés actif d'abord), `wifi_enabled()`, `request_scan()`,
-`set_enabled(on)`, `connect(ssid)` (profils enregistrés + réseaux ouverts),
-`connect_with_password(ssid, password)` (PSK, jamais stocké par le shell),
+`device()` (périphérique NM, station iwd),
+`networks() -> &[WifiNetwork]` (`ssid`, `strength`, `secured`,
+`active`, triés actif d'abord), `wifi_enabled()` (`WirelessEnabled`
+ou `Adapter.Powered`), `request_scan()`,
+`set_enabled(on)`, `connect(ssid)` (profils/connus + réseaux ouverts),
+`connect_with_password(ssid, password)` (PSK jamais stocké : profil
+one-shot côté NM, agent passphrase one-shot côté iwd),
 `disconnect()`. Actions IPC : `scan`, `on`, `off`, `toggle`,
 `connect <ssid>`, `disconnect` (pas de mot de passe sur le CLI).
 Boucles : NM 100 % événementielle (signaux + debounce 750 ms) ; iwd sur
-signaux `State` + refresh RSSI 15 s en roaming (le signal seul ne suit pas
-un déplacement, voir `docs/REFERENTIEL.md` §9).
+signaux `State` + `Scanning` + refresh RSSI/liste 15 s en roaming (le
+signal seul ne suit pas un déplacement, voir `docs/REFERENTIEL.md` §9).
 
 **`Tray`** — hôte system tray (StatusNotifierItem + dbusmenu). Méthodes :
 `items() -> Vec<TrayItem>` (icônes visibles, `Passive` exclu),

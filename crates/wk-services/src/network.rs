@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use futures_util::{FutureExt, StreamExt};
 use gpui::Context;
@@ -38,11 +39,10 @@ pub struct WifiNetwork {
 /// Unified Wi-Fi status shown in the topbar.
 ///
 /// The widget only sees this: SSID, link state and a 0-100 signal level,
-/// whatever the backend. On NetworkManager the service additionally tracks
-/// the visible network list (`networks()`), the radio state
-/// (`wifi_enabled()`) and the managing device, so a control panel can offer
-/// scan / connect / disconnect. iwd and the procfs fallback stay
-/// status-only: the mutating methods warn and return `false` there.
+/// whatever the backend. Both NetworkManager and iwd track the visible
+/// network list (`networks()`), the radio state (`wifi_enabled()`) and the
+/// managing device, so a control panel can offer scan / connect /
+/// disconnect on either. Only the procfs fallback stays status-only.
 #[derive(Debug, Clone, Default)]
 pub struct Network {
     backend: WifiBackend,
@@ -52,7 +52,14 @@ pub struct Network {
     networks: Vec<WifiNetwork>,
     wifi_enabled: bool,
     device: Option<String>,
+    /// One-shot PSK handoff for the iwd secret agent: `connect_with_password`
+    /// fills it just before `Network.Connect()`, the agent callback consumes
+    /// it. Never stored beyond one attempt; the NM backend never touches it.
+    pending_psk: PendingSecret,
 }
+
+/// `(ssid, psk)` waiting for at most one iwd `RequestPassphrase` round-trip.
+type PendingSecret = Arc<Mutex<Option<(String, String)>>>;
 
 impl Network {
     /// Backend that provided the current data (useful for debugging).
@@ -75,14 +82,15 @@ impl Network {
         self.signal_percent
     }
 
-    /// Visible access points (NetworkManager only, newest scan first by
-    /// strength; empty on iwd / fallback).
+    /// Visible access points, active first then by strength.
+    /// Populated on both NetworkManager and iwd; empty on the fallback.
     pub fn networks(&self) -> &[WifiNetwork] {
         &self.networks
     }
 
-    /// Radio state (`WirelessEnabled`). Defaults to `true` until the first
-    /// NM poll says otherwise; iwd / fallback never change it.
+    /// Radio state (`WirelessEnabled` on NM, `Adapter.Powered` on iwd).
+    /// Defaults to `true` until the first backend read says otherwise;
+    /// the fallback never changes it.
     pub fn wifi_enabled(&self) -> bool {
         self.wifi_enabled
     }
@@ -97,7 +105,8 @@ impl Network {
         }
     }
 
-    /// Managing device object path (NetworkManager only).
+    /// Managing device object path (NM device on NetworkManager, Station
+    /// path on iwd).
     pub fn device(&self) -> Option<&str> {
         self.device.as_deref()
     }
@@ -180,13 +189,18 @@ impl Network {
         })
     }
 
-    /// Ask NetworkManager to (re)scan. Fire-and-forget: results arrive
-    /// through the regular poll. Warns and no-ops off the NM backend.
+    /// Ask the backend to (re)scan. Fire-and-forget: results arrive
+    /// through the regular loop (NM signals, iwd `Scanning` watch).
+    /// Warns and no-ops on the fallback.
     pub fn request_scan(&self) {
-        if self.backend != WifiBackend::NetworkManager {
-            warn!("Network::request_scan needs the NetworkManager backend");
-            return;
+        match self.backend {
+            WifiBackend::NetworkManager => self.nm_request_scan(),
+            WifiBackend::Iwd => iwd_request_scan(),
+            WifiBackend::Fallback => warn!("Network::request_scan: no backend"),
         }
+    }
+
+    fn nm_request_scan(&self) {
         let Some((conn, device)) = Self::nm_conn() else {
             warn!("Network::request_scan: no wifi device");
             return;
@@ -204,13 +218,21 @@ impl Network {
         });
     }
 
-    /// Toggle the radio (`WirelessEnabled`). Returns the requested state on
-    /// success, `None` off the NM backend or on D-Bus failure.
+    /// Toggle the radio (`WirelessEnabled` on NM, `Adapter.Powered` on
+    /// iwd). Returns the requested state on success, `None` on the
+    /// fallback or on D-Bus failure.
     pub fn set_enabled(&self, enabled: bool) -> Option<bool> {
-        if self.backend != WifiBackend::NetworkManager {
-            warn!("Network::set_enabled needs the NetworkManager backend");
-            return None;
+        match self.backend {
+            WifiBackend::NetworkManager => Self::nm_set_enabled(enabled),
+            WifiBackend::Iwd => iwd_set_enabled(enabled),
+            WifiBackend::Fallback => {
+                warn!("Network::set_enabled: no backend");
+                None
+            }
         }
+    }
+
+    fn nm_set_enabled(enabled: bool) -> Option<bool> {
         async_io::block_on(async {
             let Ok(conn) = Connection::system().await else {
                 warn!("Network::set_enabled: no system bus");
@@ -230,15 +252,22 @@ impl Network {
         })
     }
 
-    /// Connect to a stored profile or an open network. Secured networks
-    /// without a stored profile need [`Network::connect_with_password`]:
-    /// this returns `false` for them (and warns) rather than failing
-    /// silently inside NM.
+    /// Connect to a stored profile, a known iwd network, or an open
+    /// network. Secured networks without a stored secret need
+    /// [`Network::connect_with_password`]: this returns `false` for them
+    /// (and warns) rather than failing silently inside the backend.
     pub fn connect(&self, ssid: &str) -> bool {
-        if self.backend != WifiBackend::NetworkManager {
-            warn!("Network::connect needs the NetworkManager backend");
-            return false;
+        match self.backend {
+            WifiBackend::NetworkManager => Self::nm_connect(ssid),
+            WifiBackend::Iwd => iwd_connect(ssid, None, &self.pending_psk),
+            WifiBackend::Fallback => {
+                warn!("Network::connect: no backend");
+                false
+            }
         }
+    }
+
+    fn nm_connect(ssid: &str) -> bool {
         async_io::block_on(async {
             let Ok(conn) = Connection::system().await else {
                 return false;
@@ -273,18 +302,29 @@ impl Network {
         })
     }
 
-    /// Connect to a secured network with an explicit password
-    /// (`wpa-psk`; NM upgrades to SAE for WPA3 transition networks).
+    /// Connect to a secured network with an explicit password. On NM the
+    /// secret goes into a one-shot settings profile (`wpa-psk`; NM upgrades
+    /// to SAE for WPA3 transition networks). On iwd it is handed to iwd's
+    /// `RequestPassphrase` agent call for this attempt only.
     /// The secret lives only in this call — never stored by the shell.
     pub fn connect_with_password(&self, ssid: &str, password: &str) -> bool {
-        if self.backend != WifiBackend::NetworkManager {
-            warn!("Network::connect_with_password needs the NetworkManager backend");
-            return false;
-        }
         if password.is_empty() {
             warn!("Network::connect_with_password: empty password");
             return false;
         }
+        match self.backend {
+            WifiBackend::NetworkManager => Self::nm_connect_with_password(ssid, password),
+            WifiBackend::Iwd => {
+                iwd_connect(ssid, Some(password), &self.pending_psk)
+            }
+            WifiBackend::Fallback => {
+                warn!("Network::connect_with_password: no backend");
+                false
+            }
+        }
+    }
+
+    fn nm_connect_with_password(ssid: &str, password: &str) -> bool {
         async_io::block_on(async {
             let Ok(conn) = Connection::system().await else {
                 return false;
@@ -316,10 +356,17 @@ impl Network {
 
     /// Drop the current Wi-Fi connection (keeps the radio on).
     pub fn disconnect(&self) -> bool {
-        if self.backend != WifiBackend::NetworkManager {
-            warn!("Network::disconnect needs the NetworkManager backend");
-            return false;
+        match self.backend {
+            WifiBackend::NetworkManager => Self::nm_disconnect(),
+            WifiBackend::Iwd => iwd_disconnect(),
+            WifiBackend::Fallback => {
+                warn!("Network::disconnect: no backend");
+                false
+            }
         }
+    }
+
+    fn nm_disconnect() -> bool {
         async_io::block_on(async {
             let Ok(conn) = Connection::system().await else {
                 return false;
@@ -356,6 +403,267 @@ const NM_WIRELESS_IFACE: &str = "org.freedesktop.NetworkManager.Device.Wireless"
 const NM_AP_IFACE: &str = "org.freedesktop.NetworkManager.AccessPoint";
 const NM_SETTINGS_IFACE: &str = "org.freedesktop.NetworkManager.Settings";
 const NM_SETTINGS_CONN_IFACE: &str = "org.freedesktop.NetworkManager.Settings.Connection";
+
+const IWD_BUS: &str = "net.connman.iwd";
+const IWD_STATION_IFACE: &str = "net.connman.iwd.Station";
+const IWD_NETWORK_IFACE: &str = "net.connman.iwd.Network";
+const IWD_ADAPTER_IFACE: &str = "net.connman.iwd.Adapter";
+const IWD_AGENT_MGR_PATH: &str = "/net/connman/iwd";
+const IWD_AGENT_MGR_IFACE: &str = "net.connman.iwd.AgentManager";
+/// Object path where this process serves the iwd passphrase agent.
+/// iwd addresses agents by (sender unique name, path), so a restart
+/// re-registers cleanly: the old name dies with the old connection.
+const IWD_AGENT_PATH: &str = "/net/connman/aurora/agent";
+
+/// iwd secret agent: answers `RequestPassphrase` with the one-shot secret
+/// staged by [`Network::connect_with_password`].
+///
+/// Only `RequestPassphrase` (PSK) is implemented. Enterprise (8021x)
+/// methods are deliberately absent — iwd gets `UnknownMethod` and fails
+/// fast with a clear error instead of hanging on an auth flow the shell
+/// cannot complete. Documented, not an oversight.
+struct IwdAgent {
+    conn: Connection,
+    pending: PendingSecret,
+}
+
+#[zbus::interface(name = "net.connman.iwd.Agent")]
+impl IwdAgent {
+    fn release(&self) {}
+
+    fn cancel(&self, _reason: String) {
+        *self.pending.lock().unwrap() = None;
+    }
+
+    async fn request_passphrase(
+        &self,
+        _device: OwnedObjectPath,
+        network: OwnedObjectPath,
+    ) -> Result<String, zbus::fdo::Error> {
+        let wanted = self.pending.lock().unwrap().clone();
+        let Some((ssid, psk)) = wanted else {
+            return Err(zbus::fdo::Error::Failed("no password provided".into()));
+        };
+        // Hygiene: only hand the secret to the network it was entered for.
+        // A mismatch fails the attempt instead of leaking the PSK.
+        let name = zbus::Proxy::new(&self.conn, IWD_BUS, network.as_str(), IWD_NETWORK_IFACE)
+            .await
+            .ok()
+            .and_then(|net| async_io::block_on(net.get_property::<String>("Name")).ok())
+            .unwrap_or_default();
+        if name.trim() != ssid {
+            return Err(zbus::fdo::Error::Failed("password is for another network".into()));
+        }
+        // One-shot: whatever happens next, the secret is gone.
+        *self.pending.lock().unwrap() = None;
+        Ok(psk)
+    }
+}
+
+/// Serve the agent object and register it with iwd. Called once when the
+/// iwd backend wins detection; the `conn` outlives the process so the agent
+/// stays reachable.
+async fn register_iwd_agent(conn: &Connection, pending: PendingSecret) {
+    let agent = IwdAgent {
+        conn: conn.clone(),
+        pending,
+    };
+    match conn.object_server().at(IWD_AGENT_PATH, agent).await {
+        Ok(true) => {}
+        Ok(false) => {
+            warn!("iwd agent path already served, skipping registration");
+            return;
+        }
+        Err(err) => {
+            warn!("Could not serve iwd agent: {err:?}");
+            return;
+        }
+    }
+    let Ok(mgr) = zbus::Proxy::new(conn, IWD_BUS, IWD_AGENT_MGR_PATH, IWD_AGENT_MGR_IFACE).await
+    else {
+        warn!("iwd AgentManager unreachable");
+        return;
+    };
+    let path = OwnedObjectPath::try_from(IWD_AGENT_PATH).expect("agent path is valid");
+    if let Err(err) = mgr.call_method("RegisterAgent", &path).await {
+        warn!("iwd RegisterAgent failed: {err:?}");
+    }
+}
+
+/// Live `(connection, station path, adapter path)` for the sync iwd calls.
+/// The adapter is the station's parent (`.../0/4` → `.../0`): iwd lays the
+/// tree out as phy/device two levels, verified live. A wrong guess degrades
+/// to a warned failure, never a panic.
+fn iwd_station_paths() -> Option<(Connection, String, String)> {
+    async_io::block_on(async {
+        let conn = Connection::system().await.ok()?;
+        let station = find_iwd_station(&conn).await?;
+        let adapter = station.rsplit_once('/').map(|(p, _)| p.to_string())?;
+        Some((conn, station, adapter))
+    })
+}
+
+fn iwd_request_scan() {
+    let Some((conn, station, _)) = iwd_station_paths() else {
+        warn!("Network::request_scan: no iwd station");
+        return;
+    };
+    async_io::block_on(async {
+        let Ok(st) = zbus::Proxy::new(&conn, IWD_BUS, station.as_str(), IWD_STATION_IFACE).await
+        else {
+            warn!("Network::request_scan: no Station interface");
+            return;
+        };
+        // Fire-and-forget: results flow through the loop's `Scanning` watch.
+        // `Scan` errors while a scan is already running — harmless.
+        if let Err(err) = st.call_method("Scan", &()).await {
+            warn!("iwd Scan failed: {err:?}");
+        }
+    });
+}
+
+fn iwd_set_enabled(enabled: bool) -> Option<bool> {
+    let Some((conn, _, adapter)) = iwd_station_paths() else {
+        warn!("Network::set_enabled: no iwd station");
+        return None;
+    };
+    async_io::block_on(async {
+        let Ok(ad) = zbus::Proxy::new(&conn, IWD_BUS, adapter.as_str(), IWD_ADAPTER_IFACE).await
+        else {
+            warn!("Network::set_enabled: no Adapter interface");
+            return None;
+        };
+        match ad.set_property("Powered", enabled).await {
+            Ok(()) => Some(enabled),
+            Err(err) => {
+                warn!("iwd SetPowered failed: {err:?}");
+                None
+            }
+        }
+    })
+}
+
+/// Object path of the visible network called `ssid`, if any. iwd already
+/// merges BSSs per `(SSID, type)`, so one path per network.
+async fn iwd_find_network(conn: &Connection, station: &str, ssid: &str) -> Option<OwnedObjectPath> {
+    let st = zbus::Proxy::new(conn, IWD_BUS, station, IWD_STATION_IFACE)
+        .await
+        .ok()?;
+    let reply = st.call_method("GetOrderedNetworks", &()).await.ok()?;
+    let nets: Vec<(OwnedObjectPath, i16)> = reply.body().deserialize().ok()?;
+    for (path, _) in nets {
+        let net = zbus::Proxy::new(conn, IWD_BUS, path.as_str(), IWD_NETWORK_IFACE)
+            .await
+            .ok()?;
+        let name: String = net.get_property("Name").await.unwrap_or_default();
+        if name.trim() == ssid {
+            return Some(path);
+        }
+    }
+    None
+}
+
+/// Connect on iwd. Known and open networks need no secret; a new secured
+/// network needs `password`, staged for the agent for this attempt only.
+/// The slot is always cleared afterwards — success, failure, or unknown
+/// network — so a secret never lingers for a later attempt.
+fn iwd_connect(ssid: &str, password: Option<&str>, pending: &PendingSecret) -> bool {
+    let Some((conn, station, _)) = iwd_station_paths() else {
+        warn!("Network::connect: no iwd station");
+        return false;
+    };
+    async_io::block_on(async {
+        let Some(path) = iwd_find_network(&conn, &station, ssid).await else {
+            warn!("Network::connect: '{ssid}' not found");
+            return false;
+        };
+        if let Some(psk) = password {
+            *pending.lock().unwrap() = Some((ssid.to_string(), psk.to_string()));
+        }
+        let Ok(net) = zbus::Proxy::new(&conn, IWD_BUS, path.as_str(), IWD_NETWORK_IFACE).await
+        else {
+            *pending.lock().unwrap() = None;
+            return false;
+        };
+        let ok = net.call_method("Connect", &()).await.is_ok();
+        // Always clear: a stale secret must never serve a later attempt.
+        *pending.lock().unwrap() = None;
+        if !ok {
+            warn!("iwd Connect failed for '{ssid}' (wrong password or unsupported auth?)");
+        }
+        ok
+    })
+}
+
+fn iwd_disconnect() -> bool {
+    let Some((conn, station, _)) = iwd_station_paths() else {
+        warn!("Network::disconnect: no iwd station");
+        return false;
+    };
+    async_io::block_on(async {
+        let Ok(st) = zbus::Proxy::new(&conn, IWD_BUS, station.as_str(), IWD_STATION_IFACE).await
+        else {
+            return false;
+        };
+        match st.call_method("Disconnect", &()).await {
+            Ok(_) => true,
+            Err(err) => {
+                warn!("iwd Disconnect failed: {err:?}");
+                false
+            }
+        }
+    })
+}
+
+/// One synchronous iwd snapshot of radio + visible networks:
+/// `(powered, station_path, networks)`. Signal arrives in 1/100 dBm
+/// (`-3600` = −36.00 dBm) and goes through the same `rssi_to_percent`
+/// as the status read, so tile and list agree.
+async fn read_iwd_networks(
+    conn: &Connection,
+    station: &str,
+) -> Option<(bool, String, Vec<WifiNetwork>)> {
+    let adapter = station.rsplit_once('/').map(|(p, _)| p.to_string())?;
+    let ad = zbus::Proxy::new(conn, IWD_BUS, adapter.as_str(), IWD_ADAPTER_IFACE)
+        .await
+        .ok()?;
+    let enabled: bool = ad.get_property("Powered").await.unwrap_or(true);
+    let st = zbus::Proxy::new(conn, IWD_BUS, station, IWD_STATION_IFACE)
+        .await
+        .ok()?;
+    let active: OwnedObjectPath = st
+        .get_property("ConnectedNetwork")
+        .await
+        .unwrap_or_else(|_| OwnedObjectPath::try_from("/").expect("root path is valid"));
+    let reply = st.call_method("GetOrderedNetworks", &()).await.ok()?;
+    let nets: Vec<(OwnedObjectPath, i16)> = reply.body().deserialize().ok()?;
+    // iwd orders strongest-first; re-sort active-first for panel parity.
+    let mut out = Vec::with_capacity(nets.len());
+    for (path, sig100) in nets {
+        let net = zbus::Proxy::new(conn, IWD_BUS, path.as_str(), IWD_NETWORK_IFACE)
+            .await
+            .ok()?;
+        // `Name` carries padding on the bus (verified live: trailing space).
+        let name: String = net
+            .get_property::<String>("Name")
+            .await
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        if name.is_empty() {
+            continue;
+        }
+        let ty: String = net.get_property("Type").await.unwrap_or_default();
+        out.push(WifiNetwork {
+            ssid: name,
+            strength: Network::rssi_to_percent((sig100 / 100) as i16),
+            secured: ty != "open",
+            active: path.as_str() == active.as_str(),
+        });
+    }
+    out.sort_by(|a, b| b.active.cmp(&a.active).then(b.strength.cmp(&a.strength)));
+    Some((enabled, station.to_string(), out))
+}
 
 fn str_value(s: &str) -> OwnedValue {
     OwnedValue::try_from(Value::from(s)).expect("str converts to a D-Bus value")
@@ -642,7 +950,12 @@ async fn read_iwd(conn: &Connection, station: &str) -> Option<(bool, Option<Stri
             )
             .await
             .ok()?;
-            net.get_property::<String>("Name").await.ok()
+            // Same padding as the list read: trim so tile and panel agree.
+            net.get_property::<String>("Name")
+                .await
+                .ok()
+                .map(|n| n.trim().to_string())
+                .filter(|n| !n.is_empty())
         }
     } else {
         None
@@ -771,6 +1084,11 @@ impl Service for Network {
             if has_iwd {
                 tracing::info!("Network backend: iwd");
                 set_backend(&this, cx, WifiBackend::Iwd);
+                // Secret agent for secured networks (PSK only). Best-effort:
+                // a failed registration only disables password connects.
+                if let Ok(slot) = this.update(cx, |net, _| net.pending_psk.clone()) {
+                    register_iwd_agent(&conn, slot).await;
+                }
                 iwd_loop(&conn, &this, cx).await;
                 return;
             }
@@ -919,9 +1237,22 @@ async fn nm_loop(conn: &Connection, this: &gpui::WeakEntity<Network>, cx: &mut g
     }
 }
 
-/// Event-driven iwd loop: `State` changes wake us, a 15 s refresh keeps the
-/// RSSI honest while roaming. Same shape as the battery's UPower stream.
+/// Event-driven iwd loop: `State` and `Scanning` changes wake us, a 15 s
+/// refresh keeps the RSSI honest while roaming. Every wake re-reads status
+/// AND the network list (one `GetOrderedNetworks` round-trip set — cheap
+/// enough to keep the panel fresh on iwd's own background scans).
+/// Same shape as the battery's UPower stream.
 async fn iwd_loop(conn: &Connection, this: &gpui::WeakEntity<Network>, cx: &mut gpui::AsyncApp) {
+    /// One full refresh: status snapshot + radio/networks snapshot.
+    async fn refresh(conn: &Connection, station: &str, this: &gpui::WeakEntity<Network>, cx: &mut gpui::AsyncApp) {
+        if let Some((connected, ssid, signal)) = read_iwd(conn, station).await {
+            apply(this, cx, connected, ssid, signal);
+        }
+        if let Some((enabled, device, networks)) = read_iwd_networks(conn, station).await {
+            apply_networks(this, cx, enabled, device, networks);
+        }
+    }
+
     loop {
         let Some(station) = find_iwd_station(conn).await else {
             warn!("iwd station not found, retrying");
@@ -929,11 +1260,9 @@ async fn iwd_loop(conn: &Connection, this: &gpui::WeakEntity<Network>, cx: &mut 
             continue;
         };
 
-        if let Some((connected, ssid, signal)) = read_iwd(conn, &station).await {
-            apply(this, cx, connected, ssid, signal);
-        }
+        refresh(conn, &station, this, cx).await;
 
-        let Ok(proxy) = zbus::Proxy::new(
+        let Ok(state_proxy) = zbus::Proxy::new(
             conn,
             "net.connman.iwd",
             station.as_str(),
@@ -943,22 +1272,36 @@ async fn iwd_loop(conn: &Connection, this: &gpui::WeakEntity<Network>, cx: &mut 
         else {
             continue;
         };
-        let mut changes = proxy.receive_property_changed::<String>("State").await;
+        let Ok(scan_proxy) = zbus::Proxy::new(
+            conn,
+            "net.connman.iwd",
+            station.as_str(),
+            "net.connman.iwd.Station",
+        )
+        .await
+        else {
+            continue;
+        };
+        let mut state_changes = state_proxy.receive_property_changed::<String>("State").await;
+        let mut scan_changes = scan_proxy.receive_property_changed::<bool>("Scanning").await;
         loop {
             futures_util::select! {
-                ev = changes.next().fuse() => {
+                ev = state_changes.next().fuse() => {
                     // Stream ended: re-resolve from the top.
                     if ev.is_none() {
                         break;
                     }
-                    if let Some((connected, ssid, signal)) = read_iwd(conn, &station).await {
-                        apply(this, cx, connected, ssid, signal);
+                    refresh(conn, &station, this, cx).await;
+                }
+                ev = scan_changes.next().fuse() => {
+                    if ev.is_none() {
+                        break;
                     }
+                    // Scan finished (or started): the visible set moved.
+                    refresh(conn, &station, this, cx).await;
                 }
                 _ = FutureExt::fuse(async_io::Timer::after(Duration::from_secs(15))) => {
-                    if let Some((connected, ssid, signal)) = read_iwd(conn, &station).await {
-                        apply(this, cx, connected, ssid, signal);
-                    }
+                    refresh(conn, &station, this, cx).await;
                 }
             }
             if this.upgrade().is_none() {

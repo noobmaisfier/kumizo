@@ -575,6 +575,24 @@ Pilotage UI + IPC : `networks()` (liste triée, actif d'abord),
 `request_scan()`, `set_enabled()`, `connect()` (profils + réseaux ouverts),
 `connect_with_password()` (PSK jamais stocké), `disconnect()` ;
 IPC `scan`, `on`, `off`, `toggle`, `connect <ssid>`, `disconnect`.
+Pilotage iwd (testé live, machine passée sous iwd + NM inactif) :
+`Station.GetOrderedNetworks()` (signal en 1/100 dBm → même
+`rssi_to_percent`, la tuile et la liste concordent), `Station.Scan()`
+(résultats via le watch `Scanning` de la boucle),
+`Network.Connect()` (connus + ouverts sans secret), `Station.Disconnect()`,
+radio via `Adapter.Powered` (lecture + écriture, adaptateur = parent de
+la station). Mot de passe : agent `net.connman.iwd.Agent` servi par le
+shell (`IwdAgent`, `RegisterAgent` à l'init) — `connect_with_password`
+dépose le PSK dans un slot one-shot, `RequestPassphrase` le consomme
+après avoir vérifié le `Name` du réseau (pas de fuite vers un autre
+SSID), le slot est vidé dans tous les cas. Sans secret déposé, l'agent
+échoue proprement et `connect()` retourne `false` (la carte ouvre alors
+la ligne mot de passe). 8021x/entreprise non implémenté volontairement :
+méthodes absentes → `UnknownMethod` + échec net, documenté dans le code.
+Détail vérifié live : `Network.Name` arrive avec un espace de bourrage
+(`"DIONE FAMILY "`) — trimmé côté lecture comme côté liste, sinon la
+tuile et le panneau divergent. Connect/disconnect iwd non testés par
+l'auteur (couperait sa propre connexion) : à valider côté utilisateur.
 
 ### Tray SNI : watcher, pixmaps, dbusmenu — et le double déballage
 

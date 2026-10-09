@@ -423,9 +423,17 @@ impl ControlCenter {
                             n.disconnect();
                         });
                     } else if secured {
-                        this.wifi_pw.update(cx, |b, _| b.clear());
-                        this.wifi_pw_for = Some(click_ssid.clone());
-                        cx.notify();
+                        // Réseau connu (secret déjà chez iwd/NM) ? `connect`
+                        // réussit sans mot de passe ; sinon on ouvre la ligne
+                        // de saisie. Marche sur les deux backends.
+                        let ok = this
+                            .network
+                            .update(cx, |n, _| n.connect(&click_ssid));
+                        if !ok {
+                            this.wifi_pw.update(cx, |b, _| b.clear());
+                            this.wifi_pw_for = Some(click_ssid.clone());
+                            cx.notify();
+                        }
                     } else {
                         this.network.update(cx, |n, _| {
                             n.connect(&click_ssid);
