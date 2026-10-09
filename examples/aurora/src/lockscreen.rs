@@ -21,7 +21,7 @@ use widgetkit::prelude::*;
 
 // ── Mini-palette (dupliquée, lit le thème choisi dans le shell) ─────────────
 //                 nom                bg        text      muted     accent    danger
-const PALETTES: [(&str, u32, u32, u32, u32, u32); 10] = [
+const PALETTES: [(&str, u32, u32, u32, u32, u32); 11] = [
     ("Aurora",           0x0b0e14, 0xe6edf7, 0x6b7794, 0x00e8c6, 0xff5c7a),
     ("Flexoki Light",    0xfffcf0, 0x100f0f, 0x6f6e69, 0x205ea6, 0xaf3029),
     ("Catppuccin Mocha", 0x1e1e2e, 0xcdd6f4, 0x7f849c, 0xcba6f7, 0xf38ba8),
@@ -32,6 +32,7 @@ const PALETTES: [(&str, u32, u32, u32, u32, u32); 10] = [
     ("Rose Pine",        0x191724, 0xe0def4, 0x908caa, 0xc4a7e7, 0xeb6f92),
     ("Dracula",          0x282a36, 0xf8f8f2, 0x8a93bd, 0xbd93f9, 0xff5555),
     ("Everforest",       0x2d353b, 0xd3c6aa, 0x9da9a0, 0xa7c080, 0xe67e80),
+    ("GitHub Light",     0xffffff, 0x1f2328, 0x59636e, 0x0969da, 0xd1242c),
 ];
 
 struct Colors {
