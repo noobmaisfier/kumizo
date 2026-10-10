@@ -124,11 +124,29 @@ pub fn toggle_exclusive(target: &'static str, cx: &mut App) {
 }
 
 /// Lance une commande sans bloquer l'UI (thread dédié → pas de zombie).
+///
+/// Ajoute `~/.local/bin` au `PATH` du fils : aurora est lancé avec un `PATH`
+/// système qui ne le contient pas, et les scripts `change-theme/` appellent
+/// `widgetctl` (installé dans `~/.local/bin`) pour re-thèmer le shell.
 pub fn run(cmd: &str, args: &[&str]) {
     let cmd = cmd.to_string();
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     std::thread::spawn(move || {
-        let _ = std::process::Command::new(cmd).args(args).status();
+        let mut c = std::process::Command::new(&cmd);
+        c.args(&args);
+        if let Some(home) = std::env::var_os("HOME") {
+            let local_bin = std::path::PathBuf::from(&home).join(".local/bin");
+            let path = std::env::var_os("PATH").unwrap_or_default();
+            let mut paths: Vec<std::path::PathBuf> =
+                std::env::split_paths(&path).collect();
+            if !paths.iter().any(|p| p == &local_bin) {
+                paths.insert(0, local_bin);
+            }
+            if let Ok(joined) = std::env::join_paths(paths) {
+                c.env("PATH", joined);
+            }
+        }
+        let _ = c.status();
     });
 }
 
