@@ -21,7 +21,12 @@ pub mod ids {
     pub const OSD: &str = "aurora-osd";
 }
 
-pub const ICON_FONT: &str = "Symbols Nerd Font Mono";
+/// Famille Nerd Font réellement installée (même que waybar) : demander une
+/// famille absente (`Symbols Nerd Font Mono` n'existe pas ici, seule la
+/// variante proportionnelle `Symbols Nerd Font` est installée) fait tomber
+/// chaque glyphe dans une loterie de fallback (ex. `f002` rendu par DejaVu
+/// Sans au lieu de la loupe).
+pub const ICON_FONT: &str = "JetBrainsMono Nerd Font";
 
 // ── Glyphes ─────────────────────────────────────────────────────────────────
 pub fn glyph(g: &'static str, size: f32, color: Rgba) -> Div {
