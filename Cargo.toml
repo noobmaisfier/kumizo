@@ -58,6 +58,9 @@ futures-util = { version = "0.3", default-features = false, features = ["std"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
+# Audio tags (aurora music player)
+lofty = "0.25"
+
 # Error handling and utilities
 thiserror = "1.0"
 anyhow = "1.0"
@@ -73,9 +76,6 @@ libc = "0.2"
 # native dependencies are pulled in.
 image = { version = "0.25", default-features = false, features = ["png"] }
 smallvec = "1"
-
-# Internal workspace crates
-widgetkit = { path = "crates/widgetkit" }
 wk-ui = { path = "crates/wk-ui" }
 wk-gpui-ext = { path = "crates/wk-gpui-ext" }
 wk-services = { path = "crates/wk-services" }

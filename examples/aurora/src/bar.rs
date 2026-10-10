@@ -80,6 +80,7 @@ pub struct TopBar {
     tray: Entity<Tray>,
     notifs: Entity<Notifications>,
     pomodoro: Entity<Pomodoro>,
+    player: Entity<crate::music::Player>,
     osd: Entity<OsdState>,
     last_vol: (u8, bool),
     last_bri: u8,
@@ -93,8 +94,10 @@ impl TopBar {
         let notifs = cx.service::<Notifications>();
         let pomodoro = pomodoro::handle(cx);
         let osd = osd::handle(cx);
+        let player = crate::music::handle(cx);
 
         cx.observe(&pomodoro, |_, _, cx| cx.notify()).detach();
+        cx.observe(&player, |_, _, cx| cx.notify()).detach();
 
         let last_vol = {
             let a = audio.read(cx);
@@ -153,6 +156,7 @@ impl TopBar {
             tray: cx.service::<Tray>(),
             notifs,
             pomodoro,
+            player,
             osd,
             last_vol,
             last_bri,
@@ -265,6 +269,71 @@ impl TopBar {
     }
 
     // ── Centre : horloge · média ───────────────────────────────────────────
+    /// Mini-lecteur local : toujours un point d'entrée vers le panneau
+    /// musique ; titre et commandes dès qu'un morceau est chargé.
+    fn music_pill(&self, cx: &App) -> Div {
+        let p = self.player.read(cx);
+        let now = p.now().map(|t| format!("{} — {}", t.artist, t.title));
+        let playing = p.playing;
+
+        let open = btn("bar-music")
+            .hover(|s| s.bg(pal::raised()))
+            .on_click(|_, _, cx| ui::toggle_exclusive(ids::MUSIC, cx))
+            .child(ui::glyph(
+                icons::MUSIC,
+                13.,
+                if playing { pal::accent() } else { pal::muted() },
+            ));
+        let mut row = pill().child(open);
+
+        if let Some(label) = now {
+            let (prev, toggle, next) = (
+                self.player.clone(),
+                self.player.clone(),
+                self.player.clone(),
+            );
+            row = row
+                .child(
+                    div()
+                        .min_w_0()
+                        .max_w(px(200.))
+                        .truncate()
+                        .text_sm()
+                        .text_color(pal::text())
+                        .child(label),
+                )
+                .child(
+                    btn("bar-mu-prev")
+                        .hover(|s| s.bg(pal::raised()))
+                        .on_click(move |_, _, cx| {
+                            prev.update(cx, |p, cx| p.prev(cx));
+                        })
+                        .child(ui::glyph(icons::PREV, 11., pal::muted())),
+                )
+                .child(
+                    btn("bar-mu-play")
+                        .hover(|s| s.bg(pal::raised()))
+                        .on_click(move |_, _, cx| {
+                            toggle.update(cx, |p, cx| p.toggle(cx));
+                        })
+                        .child(ui::glyph(
+                            if playing { icons::PAUSE } else { icons::PLAY },
+                            11.,
+                            pal::accent(),
+                        )),
+                )
+                .child(
+                    btn("bar-mu-next")
+                        .hover(|s| s.bg(pal::raised()))
+                        .on_click(move |_, _, cx| {
+                            next.update(cx, |p, cx| p.next(cx));
+                        })
+                        .child(ui::glyph(icons::NEXT, 11., pal::muted())),
+                );
+        }
+        div().flex().items_center().child(row)
+    }
+
     fn center(&self, cx: &App) -> Div {
         let clock = self.clock.read(cx);
         let time = clock.time_hm().to_string();
@@ -289,6 +358,9 @@ impl TopBar {
             .child(div().text_xs().text_color(pal::muted()).child(date));
 
         let mut row = div().flex().flex_row().items_center().gap_2().child(clock_pill);
+        if crate::MUSIC_ENABLED {
+            row = row.child(self.music_pill(cx));
+        }
 
         if let Some(t) = title {
             let label = match artist {

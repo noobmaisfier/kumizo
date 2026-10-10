@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 400" width="100%" height="100%">
+  <!-- Bras de lecture seul (fond transparent) : se superpose au socle.
+       {ACCENT} injecté depuis le thème, {DEG} = angle autour du pivot
+       (400, 110) : 0 = posé sur le disque, -38 = relevé au repos. -->
+  <defs>
+    <filter id="arm-shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="-2" dy="5" stdDeviation="4" flood-color="#000000" flood-opacity="0.5" />
+    </filter>
+
+    <linearGradient id="metallic" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="30%" stop-color="#cccccc" />
+      <stop offset="50%" stop-color="#888888" />
+      <stop offset="70%" stop-color="#aaaaaa" />
+      <stop offset="100%" stop-color="#555555" />
+    </linearGradient>
+
+    <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffe259" />
+      <stop offset="100%" stop-color="#ffa751" />
+    </linearGradient>
+  </defs>
+
+  <g filter="url(#arm-shadow)">
+    <g transform="rotate({DEG} 400 110)">
+      <path d="M 400 110
+               Q 375 140, 360 190
+               T 258 244"
+            fill="none" stroke="#1a1a1a" stroke-width="7" stroke-linecap="round" />
+
+      <path d="M 400 110
+               Q 375 140, 360 190
+               T 258 244"
+            fill="none" stroke="url(#metallic)" stroke-width="4.5" stroke-linecap="round" />
+
+      <path d="M 400 110
+               Q 375 140, 360 190
+               T 258 244"
+            fill="none" stroke="#ffffff" stroke-width="1" stroke-linecap="round" opacity="0.6" />
+
+      <circle cx="258" cy="244" r="4.5" fill="#1a1a1a" />
+      <circle cx="258" cy="244" r="3" fill="url(#metallic)" />
+
+      <g transform="translate(258, 244) rotate(42)">
+
+        <rect x="-2" y="0" width="4" height="6" fill="url(#metallic)" />
+
+        <path d="M -6 5
+                 L 6 5
+                 L 5 24
+                 L -5 24 Z" fill="#151515" stroke="#2c2c2c" stroke-width="0.5" />
+
+        <path d="M -4.5 19
+                 L 4.5 19
+                 L 3 24
+                 L -3 24 Z" fill="{ACCENT}" />
+
+        <path d="M 5 10 Q 14 11 12 5" fill="none" stroke="url(#metallic)" stroke-width="1.2" />
+
+        <rect x="-3" y="6" width="6" height="2" fill="url(#gold)" />
+        <rect x="-4.5" y="10" width="9" height="2" fill="#2d2d2d" />
+
+        <path d="M 0 24 L -1 27 L 0 28 L 1 27 Z" fill="#aaaaaa" />
+
+      </g>
+    </g>
+  </g>
+
+</svg>

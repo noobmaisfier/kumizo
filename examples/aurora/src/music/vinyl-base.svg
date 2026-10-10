@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 400" width="100%" height="100%">
+  <!-- Socle fixe : plateau + base du bras. Tout le reste (disque, sillons,
+       reflets, label : voir vinyl-record.svg) tourne en lecture, comme le
+       groupe #vinyl-disc de la démo d'origine.
+       {SURFACE} {BORDER} injectés depuis le thème (music/disc.rs). -->
+  <defs>
+    <filter id="soft-shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="5" stdDeviation="6" flood-color="#000000" flood-opacity="0.3" />
+    </filter>
+
+    <linearGradient id="metallic" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="30%" stop-color="#cccccc" />
+      <stop offset="50%" stop-color="#888888" />
+      <stop offset="70%" stop-color="#aaaaaa" />
+      <stop offset="100%" stop-color="#555555" />
+    </linearGradient>
+
+    <radialGradient id="pivot-grad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#4a4a4a" />
+      <stop offset="60%" stop-color="#2b2b2b" />
+      <stop offset="100%" stop-color="#0a0a0a" />
+    </radialGradient>
+  </defs>
+
+  <!-- Plateau (uniforme : invariant en rotation, donc fixe) -->
+  <circle cx="180" cy="200" r="172" fill="{SURFACE}" filter="url(#soft-shadow)" />
+  <circle cx="180" cy="200" r="172" fill="none" stroke="{BORDER}" stroke-width="3" />
+
+  <!-- Socle du bras (fixe : le bras pivote dedans) -->
+  <g transform="translate(400, 110)">
+    <circle cx="0" cy="0" r="42" fill="#1e1e1e" stroke="#0a0a0a" stroke-width="3" />
+    <circle cx="0" cy="0" r="34" fill="url(#pivot-grad)" />
+
+    <circle cx="0" cy="0" r="24" fill="none" stroke="#111111" stroke-width="1" />
+    <circle cx="0" cy="0" r="24" fill="none" stroke="url(#metallic)" stroke-dasharray="8, 4" stroke-width="1.5" opacity="0.4" />
+
+    <circle cx="-16" cy="-16" r="4.5" fill="url(#metallic)" />
+    <circle cx="-16" cy="-16" r="2" fill="#111" />
+    <rect x="8" y="-18" width="10" height="4" rx="1" fill="#111" transform="rotate(30)" />
+
+    <rect x="-14" y="-14" width="28" height="28" rx="3" fill="#2b2b2b" stroke="#111" stroke-width="1.5" />
+    <rect x="-10" y="-10" width="20" height="20" rx="1" fill="url(#metallic)" />
+
+    <g transform="rotate(-35)">
+      <rect x="-7" y="-45" width="14" height="20" rx="2" fill="#1a1a1a" stroke="#000" stroke-width="1" />
+      <rect x="-10" y="-40" width="20" height="11" rx="1" fill="url(#metallic)" />
+      <line x1="-10" y1="-34" x2="10" y2="-34" stroke="#000" stroke-width="1" />
+
+      <rect x="-3" y="-25" width="6" height="15" fill="url(#metallic)" />
+    </g>
+  </g>
+
+</svg>

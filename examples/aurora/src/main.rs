@@ -3,6 +3,7 @@
 //! Fenêtres (ids préfixés `aurora-`, pilotables via `widgetctl toggle <id>`) :
 //!   aurora-bar       barre flottante (toujours visible)
 //!   aurora-launcher  lanceur d'apps            (plein écran, clavier exclusif)
+//!   aurora-music     lecteur de musique locale (plein écran, clavier exclusif)
 //!   aurora-tasks     fenêtres ouvertes         (plein écran, clavier exclusif)
 //!   aurora-power     menu d'alimentation       (plein écran, clavier exclusif)
 //!   aurora-control   centre de contrôle        (plein écran transparent, panneau à droite)
@@ -15,6 +16,9 @@ mod clipboard;
 mod control;
 mod icons;
 mod launcher;
+/// Widget musique : code conservé et compilé, mais débranché du shell.
+/// Réactiver = passer `MUSIC_ENABLED` à `true` (fenêtre + pastille barre).
+mod music;
 mod notifs;
 mod osd;
 mod pomodoro;
@@ -24,6 +28,11 @@ mod theme;
 mod theme_ctl;
 mod toasts;
 mod ui;
+
+/// Interrupteur du widget musique. À `false` : ni fenêtre `aurora-music`,
+/// ni pastille ♪, ni processus mpv — le code reste compilé pour une
+/// réactivation en un basculement.
+pub const MUSIC_ENABLED: bool = false;
 
 use gpui::prelude::*;
 use widgetkit::prelude::*;
@@ -45,7 +54,7 @@ fn fullscreen(id: &'static str, namespace: &'static str, keyboard: KeyboardInter
 fn main() {
     theme::init();
 
-    WidgetKit::new()
+    let app = WidgetKit::new()
         // ── Services (uniquement ceux que les vues consomment) ──────────────
         .service::<Clock>()
         .service::<Battery>()
@@ -97,7 +106,17 @@ fn main() {
         .window(
             fullscreen(ids::CLIPBOARD, "aurora-clipboard", KeyboardInteractivity::Exclusive),
             |cx: &mut gpui::App| cx.new(clipboard::ClipboardPanel::new),
+        );
+    // ── Musique : débranchée (`MUSIC_ENABLED = false`), code conservé ──────
+    let app = if MUSIC_ENABLED {
+        app.window(
+            fullscreen(ids::MUSIC, "aurora-music", KeyboardInteractivity::Exclusive),
+            |cx: &mut gpui::App| cx.new(music::MusicPanel::new),
         )
+    } else {
+        app
+    };
+    app
         // ── Toasts (ouverts/fermés par la barre selon `toasts()`) ───────────
         .window(
             LayerWindow::new(ids::TOASTS)
