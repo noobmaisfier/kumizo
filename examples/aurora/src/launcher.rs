@@ -129,7 +129,21 @@ impl Render for AppLauncher {
                     .flex_1()
                     .text_color(pal::text())
                     .child(format!("{}▏", self.query))
-            });
+            })
+            // Rescan .desktop : les applis installées après le boot
+            // apparaissent sans redémarrer le shell (cf. mu-rescan).
+            .child(
+                ui::btn("lc-reload")
+                    .w(px(30.))
+                    .hover(|s| s.bg(pal::raised()))
+                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                        this.apps.update(cx, |a, _| a.reload());
+                        this.selected = 0;
+                        this.scroll.scroll_to_item(0);
+                        cx.notify();
+                    }))
+                    .child(ui::glyph(icons::REBOOT, 12., pal::muted())),
+            );
 
         // La liste EST le conteneur scrollé : les lignes sont ses enfants
         // directs pour que `scroll_to_item(i)` tombe sur la bonne.
