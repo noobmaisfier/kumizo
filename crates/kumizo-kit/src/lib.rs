@@ -1,9 +1,9 @@
-//! # WidgetKit (V1)
+//! # Kumizo (V1)
 //!
-//! **WidgetKit** is a high-performance, pure-Rust SDK dedicated to crafting modern
+//! **Kumizo** is a high-performance, pure-Rust SDK dedicated to crafting modern
 //! Wayland desktop environments (status bars, docks, on-screen displays, notifications).
 //!
-//! Unlike existing web- or interpreted-based solutions (AGS, Eww, Waybar), WidgetKit is powered
+//! Unlike existing web- or interpreted-based solutions (AGS, Eww, Waybar), Kumizo is powered
 //! by the **GPUI** rendering engine (Vulkan/wgpu GPU acceleration) and embraces a pure **"Headless"**
 //! philosophy:
 //! - **Zero Idle CPU**: Interfaces never redraw unless explicitly requested via `cx.notify()`.
@@ -19,7 +19,7 @@
 //! use gpui::prelude::*;
 //!
 //! fn main() {
-//!     WidgetKit::new()
+//!     Kumizo::new()
 //!         .service::<Clock>()
 //!         .service::<Battery>()
 //!         .window(
@@ -66,7 +66,7 @@ pub mod registry;
 
 pub use anim::{AnimatedRoot, CLOSE_MS, OPEN_MS};
 
-pub use app::{WidgetKit, WindowControlExt, WindowControlGlobal};
+pub use app::{Kumizo, WindowControlExt, WindowControlGlobal};
 pub use registry::{AppContextServiceExt, ServiceContextExt, ServiceRegistry};
 pub use wk_compositor as compositor;
 pub use wk_gpui_ext as ext;

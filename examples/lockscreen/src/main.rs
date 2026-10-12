@@ -1,5 +1,5 @@
 //! Fullscreen PAM lockscreen, running as a **separate locker process**
-//! (same role as `swaylock`, but rendered with WidgetKit/GPUI).
+//! (same role as `swaylock`, but rendered with Kumizo/GPUI).
 //!
 //! Trigger it, don't host it:
 //!
@@ -11,7 +11,7 @@
 //!
 //! The password is really verified through PAM (`login` service). There is
 //! deliberately **no IPC server** on this process: nothing may query or
-//! unlock it remotely — `widgetctl` cannot reach it.
+//! unlock it remotely — `kumizo` cannot reach it.
 //!
 //! Honest limitation (GPUI exposes no `ext-session-lock-v1`): Sway's own
 //! keybindings stay live underneath, so this is a password gate, not an
@@ -35,7 +35,7 @@ fn pam_service() -> &'static str {
     }
 }
 
-/// Default backdrop. Overridable with `WIDGETKIT_LOCK_WALLPAPER`.
+/// Default backdrop. Overridable with `KUMIZO_LOCK_WALLPAPER`.
 const DEFAULT_WALLPAPER: &str = ".wallpaper/spark.jpg";
 /// Max password length accepted into the buffer.
 const MAX_PASSWORD_LEN: usize = 256;
@@ -43,7 +43,7 @@ const MAX_PASSWORD_LEN: usize = 256;
 const LOCK_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#89b4fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>"##;
 
 fn main() {
-    WidgetKit::new()
+    Kumizo::new()
         .ipc(false)
         .service::<Clock>()
         .service::<Battery>()
@@ -69,9 +69,9 @@ fn username() -> String {
         .unwrap_or_else(|_| "user".to_string())
 }
 
-/// Backdrop path: `$WIDGETKIT_LOCK_WALLPAPER`, else `~/.wallpaper/wall-08.webp`.
+/// Backdrop path: `$KUMIZO_LOCK_WALLPAPER`, else `~/.wallpaper/wall-08.webp`.
 fn wallpaper_path() -> PathBuf {
-    if let Ok(custom) = std::env::var("WIDGETKIT_LOCK_WALLPAPER") {
+    if let Ok(custom) = std::env::var("KUMIZO_LOCK_WALLPAPER") {
         return PathBuf::from(custom);
     }
     let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());

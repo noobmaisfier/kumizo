@@ -9,7 +9,7 @@ use tracing::{info, warn};
 /// Callback handler type for processing incoming IPC requests.
 pub type RequestHandler = Arc<dyn Fn(Request) -> Response + Send + Sync + 'static>;
 
-/// WidgetKit IPC server managing the UNIX domain socket.
+/// Kumizo IPC server managing the UNIX domain socket.
 ///
 /// The listener is held here rather than only inside the accept thread: dropping
 /// it closes the socket, so the owning thread cannot be the only owner.
@@ -35,7 +35,7 @@ impl IpcServer {
             // steal its socket.
             if crate::client::IpcClient::new(&socket_path).is_alive() {
                 anyhow::bail!(
-                    "another WidgetKit instance is already running on {}",
+                    "another Kumizo instance is already running on {}",
                     socket_path.display()
                 );
             }
@@ -48,7 +48,7 @@ impl IpcServer {
 
         let listener = UnixListener::bind(&socket_path)?;
         info!(
-            "WidgetKit IPC server listening on {}",
+            "Kumizo IPC server listening on {}",
             socket_path.display()
         );
 

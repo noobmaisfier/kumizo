@@ -4,10 +4,10 @@ use wk_ipc::{IpcClient, Request, Response};
 
 fn print_help() {
     println!(
-        r#"widgetctl - Command-line control of the running WidgetKit shell
+        r#"kumizo - Command-line control of the running Kumizo shell
 
 USAGE:
-    widgetctl <COMMAND> [OPTIONS]
+    kumizo <COMMAND> [OPTIONS]
 
 COMMANDS:
     ping                        Check if the shell is responding
@@ -17,18 +17,18 @@ COMMANDS:
     hide <WINDOW_NAME>          Hide/destroy the specified window
     reload                      Re-render every registered window
     service <NAME> <ACTION>     Send a command to a registered service
-                                Example: widgetctl service audio toggle_mute
-                                Example: widgetctl service mpris next
+                                Example: kumizo service audio toggle_mute
+                                Example: kumizo service mpris next
 
 OPTIONS:
     -h, --help                  Print this help information
 
-WidgetKit is single-instance: there is exactly one socket,
-$XDG_RUNTIME_DIR/widgetkit.sock (override with $WIDGETKIT_SOCKET).
+Kumizo is single-instance: there is exactly one socket,
+$XDG_RUNTIME_DIR/kumizo.sock (override with $KUMIZO_SOCKET).
 
 EXAMPLES:
-    widgetctl status
-    widgetctl toggle dock
+    kumizo status
+    kumizo toggle dock
 "#
     );
 }
@@ -38,7 +38,7 @@ fn required(args: &[String], index: usize, usage: &str) -> String {
     match args.get(index) {
         Some(value) => value.clone(),
         None => {
-            eprintln!("Error: missing argument. Usage: widgetctl {usage}");
+            eprintln!("Error: missing argument. Usage: kumizo {usage}");
             exit(1);
         }
     }
@@ -75,7 +75,7 @@ fn main() -> anyhow::Result<()> {
             return Ok(());
         }
         unknown => {
-            eprintln!("Unknown command: '{unknown}'. Run 'widgetctl --help' for usage.");
+            eprintln!("Unknown command: '{unknown}'. Run 'kumizo --help' for usage.");
             exit(1);
         }
     };
@@ -84,14 +84,14 @@ fn main() -> anyhow::Result<()> {
 
     match client.send(req) {
         Ok(Response::Pong) => {
-            println!("PONG: WidgetKit is active and responding.");
+            println!("PONG: Kumizo is active and responding.");
         }
         Ok(Response::Status {
             uptime_secs,
             windows,
             services,
         }) => {
-            println!("WidgetKit Status:");
+            println!("Kumizo Status:");
             println!("  Socket:   {}", client.socket_path().display());
             println!("  Uptime:   {}s", uptime_secs);
             println!("  Windows:  {}", if windows.is_empty() { "none".into() } else { windows.join(", ") });
@@ -106,7 +106,7 @@ fn main() -> anyhow::Result<()> {
         }
         Err(err) => {
             eprintln!(
-                "Failed to reach WidgetKit at {}: {}",
+                "Failed to reach Kumizo at {}: {}",
                 client.socket_path().display(),
                 err
             );

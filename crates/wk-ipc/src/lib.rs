@@ -1,8 +1,8 @@
 //! # wk-ipc
 //!
-//! UNIX domain socket IPC protocol, server, and client for WidgetKit.
+//! UNIX domain socket IPC protocol, server, and client for Kumizo.
 //!
-//! WidgetKit is single-instance: one process, one socket ([`socket_path`]).
+//! Kumizo is single-instance: one process, one socket ([`socket_path`]).
 
 pub mod client;
 pub mod control;

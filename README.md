@@ -40,7 +40,7 @@ use gpui::prelude::*;
 use kumizo_kit::prelude::*;
 
 fn main() {
-    WidgetKit::new()
+    Kumizo::new()
         .service::<Clock>()     // one call per service, BEFORE the windows
         .window(
             LayerWindow::new("<id>")...,
@@ -80,10 +80,10 @@ Add to your Sway config (the installer proposes it, with a backup):
 
 ```
 exec ~/.local/bin/aurora
-bindsym $mod+m exec ~/.local/bin/widgetctl toggle aurora-music
+bindsym $mod+m exec ~/.local/bin/kumizo toggle aurora-music
 ```
 
-Then `widgetctl ping` should answer `PONG`. The music player reads `~/Music`
+Then `kumizo ping` should answer `PONG`. The music player reads `~/Music`
 (or `$AURORA_MUSIC_DIR`).
 
 > **License note**: the prebuilt `aurora` binary links
@@ -95,22 +95,22 @@ Then `widgetctl ping` should answer `PONG`. The music player reads `~/Music`
 
 | Crate | Role |
 |---|---|
-| `kumizo-kit` | SDK facade: `WidgetKit` builder, prelude, app wiring |
+| `kumizo-kit` | SDK facade: `Kumizo` builder, prelude, app wiring |
 | `wk-gpui-ext` | GPUI Wayland layer-shell extension traits and wrappers |
 | `wk-services` | Async system services (Clock, Battery, Audio, MPRIS…) |
 | `wk-compositor` | Compositor IPC (Hyprland, Sway, Niri) |
 | `wk-ipc` | UNIX-socket daemon protocol + server |
 | `wk-ui` | Shared headless UI primitives |
 | `wk-pam` | Minimal Linux-PAM check, no bindgen/libclang |
-| `wk-ctl` | `widgetctl` CLI to drive a running shell |
+| `wk-ctl` | `kumizo` CLI to drive a running shell |
 
-`widgetctl` talks to the running shell over its socket, no synthetic input
+`kumizo` talks to the running shell over its socket, no synthetic input
 involved:
 
 ```bash
-widgetctl ping                            # PONG
-widgetctl toggle aurora-music             # show/hide the music panel
-widgetctl service music toggle|next|prev  # key-free control, scriptable
+kumizo ping                            # PONG
+kumizo toggle aurora-music             # show/hide the music panel
+kumizo service music toggle|next|prev  # key-free control, scriptable
 ```
 
 ## Repository layout

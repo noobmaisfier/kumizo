@@ -434,8 +434,8 @@ impl Server {
 
     async fn get_server_information(&self) -> (String, String, String, String) {
         (
-            "WidgetKit Notifications".into(),
-            "WidgetKit Contributors".into(),
+            "Kumizo Notifications".into(),
+            "Kumizo Contributors".into(),
             "0.1.0".into(),
             "1.2".into(),
         )

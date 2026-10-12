@@ -1,4 +1,4 @@
-//! Headless UI primitives shared by all WidgetKit shells.
+//! Headless UI primitives shared by all Kumizo shells.
 //!
 //! "Headless" means: behaviour and state live here, looks do not. Every
 //! render helper takes its colours/sizes from the caller, so each shell

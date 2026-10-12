@@ -45,7 +45,7 @@ impl ClipboardItem {
     }
 }
 
-/// Clipboard management service for WidgetKit.
+/// Clipboard management service for Kumizo.
 pub struct Clipboard {
     items: Vec<ClipboardItem>,
     next_id: u64,

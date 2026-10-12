@@ -1,6 +1,6 @@
 //! Presse-papier : historique, recherche et recopie via le service `Clipboard`.
 //!
-//! WidgetKit n'a pas de champ texte natif : la saisie est gérée à la main
+//! Kumizo n'a pas de champ texte natif : la saisie est gérée à la main
 //! depuis `KeyDownEvent` (touche + `key_char`), comme le launcher.
 
 use gpui::prelude::*;

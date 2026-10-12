@@ -21,7 +21,7 @@ fn username() -> String {
 }
 
 fn wallpaper_path() -> PathBuf {
-    if let Ok(custom) = std::env::var("WIDGETKIT_LOCK_WALLPAPER") {
+    if let Ok(custom) = std::env::var("KUMIZO_LOCK_WALLPAPER") {
         return PathBuf::from(custom);
     }
     let home = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());

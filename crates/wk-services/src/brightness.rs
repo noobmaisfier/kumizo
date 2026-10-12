@@ -10,7 +10,7 @@ const STEP: u8 = 5;
 ///
 /// Reads `/sys/class/backlight`, writes via `brightnessctl` (handles the
 /// sysfs permission dance through udev). Mirrors the `Audio` service shape
-/// so the OSD and `widgetctl` treat both the same way.
+/// so the OSD and `kumizo` treat both the same way.
 #[derive(Debug, Clone)]
 pub struct Brightness {
     percent: u8,
@@ -98,7 +98,7 @@ impl Brightness {
 }
 
 impl Service for Brightness {
-    /// Actions for `widgetctl service brightness …`:
+    /// Actions for `kumizo service brightness …`:
     /// `up` / `down` (±5) and `set <0-100>`.
     fn ipc_action(&mut self, _cx: &mut Context<Self>, action: &str, payload: Option<&str>) -> bool {
         match action {
@@ -178,7 +178,7 @@ impl Service for Brightness {
 ///
 /// Honest limit: a driver that changes the level in hardware (hotkey) without
 /// calling `backlight_force_update()` signals nothing, and no userspace trick
-/// can detect that. For such a machine set `WIDGETKIT_BRIGHTNESS_POLL_MS`
+/// can detect that. For such a machine set `KUMIZO_BRIGHTNESS_POLL_MS`
 /// (e.g. `2000`) to add a safety re-read on top of the events; it is off by
 /// default. Without any event source (no backlight device, no netlink) the
 /// watcher falls back to `FALLBACK_POLL_MS`.
@@ -208,7 +208,7 @@ mod watch {
 
     /// Optional safety poll for drivers that never notify.
     fn safety_poll_ms() -> Option<libc::c_int> {
-        std::env::var("WIDGETKIT_BRIGHTNESS_POLL_MS")
+        std::env::var("KUMIZO_BRIGHTNESS_POLL_MS")
             .ok()?
             .parse::<libc::c_int>()
             .ok()

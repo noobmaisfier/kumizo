@@ -1,6 +1,6 @@
 //! # wk-services
 //!
-//! Asynchronous background system services for WidgetKit.
+//! Asynchronous background system services for Kumizo.
 //!
 //! Provides reactive, zero-idle-CPU implementations for:
 //! - [`Clock`]: Nanosecond-precise, zero-drift system clock

@@ -15,7 +15,7 @@ use widgets::{
 };
 
 fn main() {
-    WidgetKit::new()
+    Kumizo::new()
         .service::<Clock>()
         .service::<Battery>()
         .service::<Network>()

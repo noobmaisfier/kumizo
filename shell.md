@@ -1,6 +1,6 @@
-# WidgetKit Shell Creation Guide (AI Agents & Developers Reference)
+# Kumizo Shell Creation Guide (AI Agents & Developers Reference)
 
-> **Role of this document**: This document is a complete, self-sufficient developer and AI prompt specification for building custom Wayland desktop shells using **WidgetKit**. Any AI agent or developer provided with this guide has full technical and design freedom to propose, architect, and implement complete desktop environments (bars, docks, launchers, notifications, panels, OSDs, control centers).
+> **Role of this document**: This document is a complete, self-sufficient developer and AI prompt specification for building custom Wayland desktop shells using **Kumizo**. Any AI agent or developer provided with this guide has full technical and design freedom to propose, architect, and implement complete desktop environments (bars, docks, launchers, notifications, panels, OSDs, control centers).
 >
 > **How to read this doc — MUST vs SHOULD:**
 > - **MUST** = hard constraint. Violating it fails to compile, panics, or silently shows nothing. Marked with [!CAUTION] / [!WARNING] or the word MUST.
@@ -10,11 +10,11 @@
 
 ## 1. Core Architecture & Philosophy
 
-WidgetKit is a high-performance Wayland desktop shell SDK written in pure Rust, powered by **GPUI** (the GPU-accelerated engine behind Zed) and the Wayland `wlr-layer-shell` protocol.
+Kumizo is a high-performance Wayland desktop shell SDK written in pure Rust, powered by **GPUI** (the GPU-accelerated engine behind Zed) and the Wayland `wlr-layer-shell` protocol.
 
 ### Key Tenets
 1. **Single Process Architecture**:
-   Unlike legacy shells (Waybar, Eww, AGS) that spawn multiple daemons, WidgetKit runs the **entire shell** (bars, docks, popups, launchers, notifications, OSD) in **one single process**.
+   Unlike legacy shells (Waybar, Eww, AGS) that spawn multiple daemons, Kumizo runs the **entire shell** (bars, docks, popups, launchers, notifications, OSD) in **one single process**.
    - One GPU / Vulkan context initialized.
    - One font cache and layout pipeline.
    - One system connection per service (D-Bus, Sway/Hyprland IPC).
@@ -23,7 +23,7 @@ WidgetKit is a high-performance Wayland desktop shell SDK written in pure Rust, 
    *(Exception: Lockscreen runs as an isolated binary for PAM security reasons).*
 
 2. **Bring Your Own UI ("Headless SDK")**:
-   WidgetKit imposes **no styling framework, no CSS stylesheets, no fixed layouts, and no default themes**.
+   Kumizo imposes **no styling framework, no CSS stylesheets, no fixed layouts, and no default themes**.
    You build the UI using GPUI's declarative, Tailwind-like layout engine directly in Rust.
    **you have 100% aesthetic and layout freedom.**
 
@@ -34,14 +34,14 @@ WidgetKit is a high-performance Wayland desktop shell SDK written in pure Rust, 
 
 ## 2. Shell Structure Anatomy
 
-A shell application is defined in a `main()` function using `WidgetKit::new()`:
+A shell application is defined in a `main()` function using `Kumizo::new()`:
 
 ```rust
 use gpui::prelude::*;
 use kumizo_kit::prelude::*;
 
 fn main() {
-    WidgetKit::new()
+    Kumizo::new()
         // 1. Register shared background services
         .service::<Clock>()
         .service::<Battery>()
@@ -159,27 +159,27 @@ cx.hide_window("my_toasts");
 > Window ids are global on the single socket. Two shells (or stale bindings from
 > a previous shell) address the same namespace: `toggle launcher` fires whichever
 > shell owns a window called `launcher` today. MUST: prefix ids per shell
-> (`kiln-launcher`, `wk-calendar`) or verify with `widgetctl status` which shell
+> (`kiln-launcher`, `wk-calendar`) or verify with `kumizo status` which shell
 > answers before binding hotkeys.
 
-### External CLI / Hotkey Control (`widgetctl`)
-The shell automatically exposes a single UNIX socket at `$XDG_RUNTIME_DIR/widgetkit.sock`
-(override with `$WIDGETKIT_SOCKET` for tests/nested sessions).
+### External CLI / Hotkey Control (`kumizo`)
+The shell automatically exposes a single UNIX socket at `$XDG_RUNTIME_DIR/kumizo.sock`
+(override with `$KUMIZO_SOCKET` for tests/nested sessions).
 Single instance is enforced by `Ping`-before-bind (`docs/REFERENTIEL.md:323-341`):
 an existing socket that answers keeps its owner and the second launch exits
 with "already running"; a silent socket is stale (crash) and gets replaced.
-Never `rm widgetkit.sock` of a live shell — it keeps running unreachable.
+Never `rm kumizo.sock` of a live shell — it keeps running unreachable.
 The lockscreen opts out (`.ipc(false)`): no socket, no remote control, by design.
 ```bash
-widgetctl ping                        # Health check
-widgetctl status                      # WHO answers? check window list first
-widgetctl toggle my_launcher          # Bind to a free key in sway/hyprland
-widgetctl service audio toggle_mute
-widgetctl service theme next          # service défini par le shell (ex. examples/aurora)
-widgetctl service theme set "Flexoki Light"
+kumizo ping                        # Health check
+kumizo status                      # WHO answers? check window list first
+kumizo toggle my_launcher          # Bind to a free key in sway/hyprland
+kumizo service audio toggle_mute
+kumizo service theme next          # service défini par le shell (ex. examples/aurora)
+kumizo service theme set "Flexoki Light"
 ```
 Custom actions are added by registering a shell-owned `Service`; its CLI name is
-the last path segment of the type, lowercased (`Theme` → `widgetctl service theme`).
+the last path segment of the type, lowercased (`Theme` → `kumizo service theme`).
 
 ---
 
@@ -461,7 +461,7 @@ let temp = self.cpu_temp.read(cx).value(); // Option<&i32>
 
 ## 7. GPUI UI Building & Styling Primitives
 
-WidgetKit views implement `gpui::Render`. GPUI uses a fluent Tailwind-like layout builder.
+Kumizo views implement `gpui::Render`. GPUI uses a fluent Tailwind-like layout builder.
 
 ### Layout & Sizing
 ```rust
@@ -563,7 +563,7 @@ div().with_animation(
     },
 )
 ```
-Every window root is wrapped in a `WindowShell` (`widgetkit::anim`):
+Every window root is wrapped in a `WindowShell` (`kumizo::anim`):
 open mounts a fresh surface so a 150 ms fade-in replays each time;
 hide flips the shell to a 130 ms fade-out branch before destroying the
 surface. Fade-only (no slide: direction would be wrong for bottom-anchored
@@ -640,7 +640,7 @@ tune the durations.
       }
   }
   ```
-  `LayerWindow` already handles this in `WidgetKit::run`; only raw
+  `LayerWindow` already handles this in `Kumizo::run`; only raw
   `WindowOptions` builders need it.
 
 ---
@@ -697,7 +697,7 @@ use gpui::prelude::*;
 use kumizo_kit::prelude::*;
 
 fn main() {
-    WidgetKit::new()
+    Kumizo::new()
         .service::<Clock>()
         .service::<Battery>()
         .window(
@@ -769,7 +769,7 @@ impl Render for MyPopup {
 - **HiDPI**: sizes are logical pixels; verify on scale 1 AND scale 2. Borders,
   gaps and font sizes that look right at 96 DPI look toy-like at 192 DPI —
   derive them from one scale factor, don't hardcode twice.
-- **Keyboard / a11y**: every pointer action needs a key path (`widgetctl`
+- **Keyboard / a11y**: every pointer action needs a key path (`kumizo`
   command + compositor binding). Focus order must be reachable by keyboard
   alone; never encode state by color only (pair with text/icon).
 
@@ -820,18 +820,18 @@ registry with widgets. Wiring, from `examples/lockscreen/src/main.rs`:
   lines (clock display) instead of sharing code that widens the attack surface.
 - Honest limit: this is a layer-shell surface, NOT `ext-session-lock`. A
   compositor still honors system shortcuts (TTY switch, etc.) over it. For a
-  strict-security locker, WidgetKit would need an `ext-session-lock` backend —
+  strict-security locker, Kumizo would need an `ext-session-lock` backend —
   it does not have one today.
 
 ## 12. Verification & Quality Checklist (`docs/REFERENTIEL.md:697-705`)
 
 Before considering your shell complete:
 - [ ] **Build Check**: `cargo check --workspace --all-targets` compiles with 0 errors and **0 warnings**.
-- [ ] **Run & Socket Test**: `widgetctl ping` returns `PONG`.
+- [ ] **Run & Socket Test**: `kumizo ping` returns `PONG`.
 - [ ] **Idle CPU**: undisturbed process stays near idle — note a clock bar wakes at
   1 Hz (`~0.4%`, `docs/REFERENTIEL.md:442-444`), not strict `0.0%`. Measure via
   `/proc` ticks over 15 s, compare PSS not RSS (shared libs triple-count RSS).
-- [ ] **Hotkeys**: Sway/Hyprland hotkeys can toggle your windows (`widgetctl toggle <id>`).
+- [ ] **Hotkeys**: Sway/Hyprland hotkeys can toggle your windows (`kumizo toggle <id>`).
 - [ ] **Proof, not claims**: a screenshot proves only what is visibly identifiable
   in it; hide/show is proven by **pixel difference** between the two states;
   compile + `Success` reply proves nothing without visible effect; fullscreen or

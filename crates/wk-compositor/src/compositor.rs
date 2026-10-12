@@ -120,7 +120,7 @@ impl Service for Compositor {
 
         // Detect backend
         if let Some(hypr) = HyprlandIpc::try_new() {
-            info!("WidgetKit: Connected to Hyprland IPC");
+            info!("Kumizo: Connected to Hyprland IPC");
             comp.kind = CompositorKind::Hyprland;
             if let Ok(ws) = hypr.fetch_workspaces() {
                 if !ws.is_empty() {
@@ -135,7 +135,7 @@ impl Service for Compositor {
             }
             let _ = hypr.start_event_loop(tx);
         } else if let Some(sway) = SwayIpc::try_new() {
-            info!("WidgetKit: Connected to Sway IPC");
+            info!("Kumizo: Connected to Sway IPC");
             comp.kind = CompositorKind::Sway;
             if let Ok(ws) = sway.fetch_workspaces() {
                 if !ws.is_empty() {
@@ -147,7 +147,7 @@ impl Service for Compositor {
             }
             let _ = sway.start_event_loop(tx);
         } else if let Some(niri) = NiriIpc::try_new() {
-            info!("WidgetKit: Connected to Niri IPC");
+            info!("Kumizo: Connected to Niri IPC");
             comp.kind = CompositorKind::Niri;
             if let Ok(ws) = niri.fetch_workspaces() {
                 if !ws.is_empty() {
@@ -156,7 +156,7 @@ impl Service for Compositor {
             }
             let _ = niri.start_event_loop(tx);
         } else {
-            warn!("WidgetKit: No supported Wayland compositor IPC socket found. Using fallback mock workspaces.");
+            warn!("Kumizo: No supported Wayland compositor IPC socket found. Using fallback mock workspaces.");
         }
 
         cx.spawn(async move |this, cx| {

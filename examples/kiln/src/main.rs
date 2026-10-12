@@ -1,4 +1,4 @@
-//! KILN : un shell WidgetKit complet.
+//! KILN : un shell Kumizo complet.
 //!
 //! Topologie :
 //!   - Rail vertical flottant a gauche (workspaces, volume, batterie, horloge empilee)
@@ -18,7 +18,7 @@ use kumizo_kit::prelude::*;
 fn main() {
     theme::init_wallpaper();
 
-    WidgetKit::new()
+    Kumizo::new()
         .service::<Clock>()
         .service::<Battery>()
         .service::<Audio>()

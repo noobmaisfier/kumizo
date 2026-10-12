@@ -39,7 +39,7 @@ build_release:
     - cargo build --release --package shell-example --package wk-ctl
     - mkdir -p dist/bin
     - cp target/release/shell dist/bin/kumizo
-    - cp target/release/widgetctl dist/bin/kumizo-ctl
+    - cp target/release/kumizo dist/bin/kumizo-ctl
     - cp README.md dist/ || true
     - tar -czf kumizo-linux-x86_64.tar.gz -C dist .
   artifacts:
@@ -66,8 +66,8 @@ build_aurora:
     - apt-get update -qq && apt-get install -y -qq pkg-config libpam0g-dev libwayland-dev libxkbcommon-dev libfontconfig1-dev libasound2-dev curl ca-certificates
   script:
     - cargo build --release --package aurora --package wk-ctl
-    - mkdir -p stage && cp target/release/aurora target/release/aurora-lockscreen target/release/widgetctl stage/
-    - (cd stage && sha256sum aurora aurora-lockscreen widgetctl > SHA256SUMS)
+    - mkdir -p stage && cp target/release/aurora target/release/aurora-lockscreen target/release/kumizo stage/
+    - (cd stage && sha256sum aurora aurora-lockscreen kumizo > SHA256SUMS)
     - tar -czf "aurora-${CI_COMMIT_TAG}-linux-x86_64.tar.gz" -C stage .
     - sha256sum "aurora-${CI_COMMIT_TAG}-linux-x86_64.tar.gz" > "aurora-${CI_COMMIT_TAG}-linux-x86_64.tar.gz.sha256"
     # Paquet générique : URL stable et publique pour l'installeur curl.

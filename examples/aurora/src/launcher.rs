@@ -1,6 +1,6 @@
 //! Lanceur d'applications : saisie au clavier, recherche floue via `Apps::search`.
 //!
-//! WidgetKit n'a pas de champ texte natif : la saisie est gérée à la main
+//! Kumizo n'a pas de champ texte natif : la saisie est gérée à la main
 //! depuis `KeyDownEvent` (touche + `key_char`).
 
 use gpui::prelude::*;

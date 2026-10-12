@@ -11,7 +11,7 @@ trait ErasedService: Any {
     /// Upcast so a concrete `Entity<S>` can be recovered by `TypeId`.
     fn as_any(&self) -> &dyn Any;
 
-    /// Apply an action requested through `widgetctl service <name> <action>`.
+    /// Apply an action requested through `kumizo service <name> <action>`.
     ///
     /// Returns `true` when the action was recognised.
     fn ipc_action(&mut self, cx: &mut App, action: &str, payload: Option<&str>) -> bool;
@@ -135,7 +135,7 @@ impl<V: 'static + gpui::Render> ServiceContextExt<V> for Context<'_, V> {
     fn service<S: Service>(&mut self) -> Entity<S> {
         self.try_service::<S>().unwrap_or_else(|| {
             panic!(
-                "Service '{}' was requested but not registered on WidgetKit builder. Did you call .service::<{}>()?",
+                "Service '{}' was requested but not registered on Kumizo builder. Did you call .service::<{}>()?",
                 std::any::type_name::<S>(),
                 std::any::type_name::<S>()
             )
@@ -166,7 +166,7 @@ impl AppContextServiceExt for App {
     fn service<S: Service>(&self) -> Entity<S> {
         self.try_service::<S>().unwrap_or_else(|| {
             panic!(
-                "Service '{}' was requested but not registered on WidgetKit builder.",
+                "Service '{}' was requested but not registered on Kumizo builder.",
                 std::any::type_name::<S>()
             )
         })
@@ -179,7 +179,7 @@ impl AppContextServiceExt for App {
 
 /// Turn a fully qualified type name into the short form used on the CLI.
 ///
-/// `wk_services::audio::Audio` becomes `audio`, so `widgetctl service audio …`
+/// `wk_services::audio::Audio` becomes `audio`, so `kumizo service audio …`
 /// works without repeating crate paths.
 fn short_service_name(full: &str) -> String {
     full.rsplit("::").next().unwrap_or(full).to_ascii_lowercase()

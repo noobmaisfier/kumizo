@@ -20,7 +20,7 @@ Contents:
 Three things combine in every shell:
 
 1. **Window** — a `LayerWindow` surface (layer-shell), declared once in
-   `main()` via the `WidgetKit` builder: position, size, layer, margins.
+   `main()` via the `Kumizo` builder: position, size, layer, margins.
 2. **View** — a plain Rust struct implementing `gpui::Render`. Its `render`
    method rebuilds the element tree every frame. Treat it as a pure function
    of state: NEVER a syscall, D-Bus call or file read inside `render`. All
@@ -77,7 +77,7 @@ use gpui::prelude::*;
 use kumizo_kit::prelude::*;
 
 fn main() {
-    WidgetKit::new()
+    Kumizo::new()
         .service::<Clock>()     // one call per consumed service, BEFORE the windows
         .window(
             LayerWindow::new("<id>")...,
@@ -91,13 +91,13 @@ fn main() {
 }
 ```
 
-Builder order (`crates/kumizo-kit/src/app.rs`): `WidgetKit::new()` →
+Builder order (`crates/kumizo-kit/src/app.rs`): `Kumizo::new()` →
 `.service::<S>()` per consumed service (`S: Service`, any order, or
 `cx.service::<S>()` panics at startup with an explicit message) →
 `.window(config, builder)` (named `config.id`; builder returns `Entity<V>`,
 `V: Render`) → `.ipc(true/false)` (IPC server on by default; off only for
 the lockscreen) → `.run()` (never returns: inits services, binds the single
-socket `$XDG_RUNTIME_DIR/widgetkit.sock` (`$WIDGETKIT_SOCKET` overrides it,
+socket `$XDG_RUNTIME_DIR/kumizo.sock` (`$KUMIZO_SOCKET` overrides it,
 e.g. for tests), opens windows once the screen is announced; a second launch
 exits if an instance already answers).
 
@@ -139,7 +139,7 @@ Rules:
   popup/OSD
   (`Overlay`, chosen corner, exclusive 0, explicit size, `start_hidden`).
 - Window ids are global on the single socket: prefix per shell
-  (`aurora-launcher`, …). Check `widgetctl status` to see which shell answers
+  (`aurora-launcher`, …). Check `kumizo status` to see which shell answers
   before binding hotkeys.
 
 ### Step 4 — The view: struct + `new` + `Render`
@@ -271,7 +271,7 @@ toggle_mute()
 // Brightness (kernel uevents on actual_brightness + netlink, zero idle poll)
 percent(), icon(), device(),
 [&mut] set_percent(pct), increase(), decrease()   // ±5 steps, no args
-// IPC: up, down, set <pct>; WIDGETKIT_BRIGHTNESS_POLL_MS fallback (2 s poll)
+// IPC: up, down, set <pct>; KUMIZO_BRIGHTNESS_POLL_MS fallback (2 s poll)
 
 // Mpris (Spotify, Firefox, mpv…)
 title(), artist(), album(), player_name() -> Option<&str>,
@@ -328,7 +328,7 @@ Custom service (`crates/wk-services/src/<name>.rs`): simple state struct
 (`Clone + Default` if possible), public immutable getters, `impl Service`
 with `init` (build initial state without blocking, then
 `cx.spawn(...).detach()` a background loop) and `ipc_action` (return `true`
-if recognized → `widgetctl service <name> <action> [payload]`, `false`
+if recognized → `kumizo service <name> <action> [payload]`, `false`
 otherwise — NEVER silent success). Background task updates via
 `entity.update(cx, |s, cx| { ...; cx.notify(); })` ONLY when the value
 changed. Prefer events (D-Bus streams, `pactl subscribe`) over polling; if
@@ -377,9 +377,9 @@ child gets `SIGTERM` and the socket file is removed.
   `WindowControl` handle may be shared with a service for exactly this case,
   but the pattern stays: the view observes the service state and opens/closes
   its own window. The service MUST `cx.notify()` after every state change.
-- From scripts/compositor hotkeys: `widgetctl ping|status|show|hide|toggle
-  <window>|reload`, plus `widgetctl service <name> <action> [payload]`.
-  Single socket (`$WIDGETKIT_SOCKET` overrides, e.g. for tests/nested
+- From scripts/compositor hotkeys: `kumizo ping|status|show|hide|toggle
+  <window>|reload`, plus `kumizo service <name> <action> [payload]`.
+  Single socket (`$KUMIZO_SOCKET` overrides, e.g. for tests/nested
   sessions), no `--socket` option.
 - OSD pattern (ephemeral content in a permanent window): window always open,
   `visible` field, empty `render` when hidden, auto-hide via `Timer` with a
@@ -403,7 +403,7 @@ child gets `SIGTERM` and the socket file is removed.
 4. Restart the shell (single process): kill the old one (`pkill -x <bin>`
    or exact PID — NEVER `pkill -f` with a pattern matching your own command
    line), no need to delete the socket (dead instances are detected and
-   replaced; a live one makes the new launch quit — check `widgetctl ping`
+   replaced; a live one makes the new launch quit — check `kumizo ping`
    first). Relaunch detached (`setsid … &` + `disown`), wait ~12 s
    (GPU + `wl_output`).
 5. Screenshot (`grim out.png`) and LOOK: the widget must be visibly there
@@ -427,7 +427,7 @@ use gpui::prelude::*;
 use kumizo_kit::prelude::*;
 
 fn main() {
-    WidgetKit::new()
+    Kumizo::new()
         .service::<Clock>()
         .service::<Battery>()
         .window(
@@ -535,7 +535,7 @@ see `examples/aurora/src/theme_ctl.rs`, 59 lines).
   plugged AND unplugged — unplugging MUST NOT strand hidden windows.
 - Verify HiDPI logical pixels at scale 1 AND 2; derive borders/gaps/fonts
   from one scale factor.
-- Every pointer action gets a key path (`widgetctl` command + compositor
+- Every pointer action gets a key path (`kumizo` command + compositor
   binding); focus order keyboard-reachable alone; NEVER encode state by color
   only (pair with text/icon).
 

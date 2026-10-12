@@ -1,6 +1,6 @@
 //! # wk-compositor
 //!
-//! Native Wayland compositor IPC integrations (Hyprland, Sway, Niri) for WidgetKit.
+//! Native Wayland compositor IPC integrations (Hyprland, Sway, Niri) for Kumizo.
 //!
 //! Subscribes directly to compositor UNIX domain sockets for:
 //! - Workspace tracking and switching

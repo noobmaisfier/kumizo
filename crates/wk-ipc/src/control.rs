@@ -1,6 +1,6 @@
-//! Programmatic control of WidgetKit windows from inside the daemon.
+//! Programmatic control of Kumizo windows from inside the daemon.
 //!
-//! The same `WindowCmd` channels that serve `widgetctl show/hide` are shared
+//! The same `WindowCmd` channels that serve `kumizo show/hide` are shared
 //! with in-process users (e.g. the tray service opening its context menu):
 //! [`WindowControl`] is cloned wherever needed and its `show`/`hide` methods
 //! never block the caller — a short-lived thread does the send and waits for

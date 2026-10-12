@@ -1,6 +1,6 @@
-//! Aurora — shell Wayland complet sur WidgetKit (un seul process, un seul GPU).
+//! Aurora — shell Wayland complet sur Kumizo (un seul process, un seul GPU).
 //!
-//! Fenêtres (ids préfixés `aurora-`, pilotables via `widgetctl toggle <id>`) :
+//! Fenêtres (ids préfixés `aurora-`, pilotables via `kumizo toggle <id>`) :
 //!   aurora-bar       barre flottante (toujours visible)
 //!   aurora-launcher  lanceur d'apps            (plein écran, clavier exclusif)
 //!   aurora-music     lecteur de musique locale (plein écran, clavier exclusif)
@@ -54,7 +54,7 @@ fn fullscreen(id: &'static str, namespace: &'static str, keyboard: KeyboardInter
 fn main() {
     theme::init();
 
-    let app = WidgetKit::new()
+    let app = Kumizo::new()
         // ── Services (uniquement ceux que les vues consomment) ──────────────
         .service::<Clock>()
         .service::<Battery>()

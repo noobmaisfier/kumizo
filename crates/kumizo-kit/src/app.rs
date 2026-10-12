@@ -38,8 +38,8 @@ where
 type WindowInitFn = Box<dyn FnOnce(&mut App)>;
 type ServiceInitFn = Box<dyn Fn(&mut App)>;
 
-/// The primary builder and runtime runner for a WidgetKit desktop environment.
-pub struct WidgetKit {
+/// The primary builder and runtime runner for a Kumizo desktop environment.
+pub struct Kumizo {
     services: Vec<ServiceInitFn>,
     service_names: Vec<String>,
     windows: Vec<WindowInitFn>,
@@ -49,8 +49,8 @@ pub struct WidgetKit {
     start_time: Instant,
 }
 
-impl WidgetKit {
-    /// Create a new WidgetKit application instance.
+impl Kumizo {
+    /// Create a new Kumizo application instance.
     pub fn new() -> Self {
         Self {
             services: Vec::new(),
@@ -135,7 +135,7 @@ impl WidgetKit {
                         rx,
                     )
                 }
-                Err(err) => warn!("WidgetKit: failed to open window '{}': {:#}", id, err),
+                Err(err) => warn!("Kumizo: failed to open window '{}': {:#}", id, err),
             }
         }));
 
@@ -148,7 +148,7 @@ impl WidgetKit {
         self
     }
 
-    /// Launch the WidgetKit application and enter the GPUI event loop.
+    /// Launch the Kumizo application and enter the GPUI event loop.
     ///
     /// This initializes all background services, binds the IPC server, opens
     /// configured LayerShell windows, and executes with Zero Idle CPU.
@@ -189,10 +189,10 @@ impl WidgetKit {
                     // Single instance: if one is alive, starting a second GPU
                     // stack would only duplicate every surface. Leave quietly.
                     if wk_ipc::IpcClient::new(&socket_path).is_alive() {
-                        eprintln!("WidgetKit is already running ({}).", socket_path.display());
+                        eprintln!("Kumizo is already running ({}).", socket_path.display());
                         std::process::exit(1);
                     }
-                    warn!("WidgetKit: failed to bind IPC server on {}: {:#}", socket_path.display(), err);
+                    warn!("Kumizo: failed to bind IPC server on {}: {:#}", socket_path.display(), err);
                     None
                 }
             }
@@ -201,13 +201,13 @@ impl WidgetKit {
         };
 
         info!(
-            "Starting WidgetKit desktop shell with {} window(s) and {} service(s)",
+            "Starting Kumizo desktop shell with {} window(s) and {} service(s)",
             self.windows.len(),
             self.services.len()
         );
 
         // `QuitMode::Explicit` is essential for a desktop shell: with the default
-        // mode GPUI quits as soon as the last window closes, so `widgetctl hide`
+        // mode GPUI quits as soon as the last window closes, so `kumizo hide`
         // on the only window would kill the daemon.
         gpui_platform::application()
             .with_quit_mode(QuitMode::Explicit)
@@ -259,10 +259,10 @@ async fn wait_for_displays(cx: &mut gpui::AsyncApp) {
             .timer(Duration::from_millis(20))
             .await;
     }
-    warn!("WidgetKit: platform reported no output; windows may be mis-sized");
+    warn!("Kumizo: platform reported no output; windows may be mis-sized");
 }
 
-impl Default for WidgetKit {
+impl Default for Kumizo {
     fn default() -> Self {
         Self::new()
     }

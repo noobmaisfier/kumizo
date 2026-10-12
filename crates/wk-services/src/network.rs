@@ -1137,7 +1137,7 @@ impl Service for Network {
         initial
     }
 
-    /// `widgetctl service network <action> [ssid]`:
+    /// `kumizo service network <action> [ssid]`:
     /// `scan`, `on`, `off`, `toggle`, `connect <ssid>`, `disconnect`.
     /// Passwords never travel over the CLI: secured new networks connect
     /// from the control-panel UI only.

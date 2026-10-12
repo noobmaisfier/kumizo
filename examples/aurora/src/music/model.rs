@@ -463,10 +463,10 @@ pub fn handle(cx: &mut App) -> Entity<Player> {
 /// Pilote le lecteur depuis la ligne de commande (et les scripts) :
 ///
 /// ```text
-/// widgetctl service music toggle
-/// widgetctl service music play | pause | next | prev | stop
-/// widgetctl service music seek 60
-/// widgetctl service music volume 15
+/// kumizo service music toggle
+/// kumizo service music play | pause | next | prev | stop
+/// kumizo service music seek 60
+/// kumizo service music volume 15
 /// ```
 ///
 /// Le nom CLI vient du type (`Music` → `music`). Teste le moteur sans

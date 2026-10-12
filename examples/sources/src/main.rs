@@ -25,7 +25,7 @@ fn main() {
     let dir = std::path::PathBuf::from("/tmp/wk-sources");
     std::fs::create_dir_all(&dir).expect("cannot create /tmp/wk-sources");
 
-    WidgetKit::new()
+    Kumizo::new()
         .ipc(false)
         .window(
             LayerWindow::new("sources")

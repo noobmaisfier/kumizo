@@ -2,7 +2,7 @@
 #
 # - check : vérifie + teste le workspace (push main/develop, tags, PR).
 # - build-kumizo : tarball du shell d'exemple (push main/develop/tags).
-# - build-aurora : binaires aurora + widgetctl, image Debian bookworm
+# - build-aurora : binaires aurora + kumizo, image Debian bookworm
 #   (glibc 2.36 : tourne sur Debian stable et distros récentes).
 # - release : publie la release + assets à chaque tag `v*`
 #   (binaires consommés par install-aurora.sh).
@@ -69,7 +69,7 @@ jobs:
       - run: |
           mkdir -p dist/bin
           cp target/release/shell dist/bin/kumizo
-          cp target/release/widgetctl dist/bin/kumizo-ctl
+          cp target/release/kumizo dist/bin/kumizo-ctl
           cp README.md dist/ || true
           tar -czf kumizo-linux-x86_64.tar.gz -C dist .
       - uses: actions/upload-artifact@v4
@@ -99,8 +99,8 @@ jobs:
           key: cargo-${{ hashFiles('Cargo.lock') }}
       - run: cargo build --release --package aurora --package wk-ctl
       - run: |
-          mkdir -p stage && cp target/release/aurora target/release/aurora-lockscreen target/release/widgetctl stage/
-          (cd stage && sha256sum aurora aurora-lockscreen widgetctl > SHA256SUMS)
+          mkdir -p stage && cp target/release/aurora target/release/aurora-lockscreen target/release/kumizo stage/
+          (cd stage && sha256sum aurora aurora-lockscreen kumizo > SHA256SUMS)
           tar -czf "aurora-${{ github.ref_name }}-linux-x86_64.tar.gz" -C stage .
           sha256sum "aurora-${{ github.ref_name }}-linux-x86_64.tar.gz" > "aurora-${{ github.ref_name }}-linux-x86_64.tar.gz.sha256"
       - uses: actions/upload-artifact@v4

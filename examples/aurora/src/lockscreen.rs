@@ -1,4 +1,4 @@
-//! aurora-lockscreen — binaire SÉPARÉ du shell (cf. §11 du guide WidgetKit).
+//! aurora-lockscreen — binaire SÉPARÉ du shell (cf. §11 du guide Kumizo).
 //!
 //! * `.ipc(false)` : aucun socket, aucun contrôle distant, aucun conflit avec le shell.
 //! * Plein écran `Overlay` + clavier `Exclusive`.
@@ -306,7 +306,7 @@ impl Render for Lock {
 }
 
 fn main() {
-    WidgetKit::new()
+    Kumizo::new()
         .ipc(false)
         .service::<Clock>()
         .window(

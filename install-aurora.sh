@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installe aurora (barre + lockscreen + widgetctl).
+# Installe aurora (barre + lockscreen + kumizo).
 #
 #   curl -fsSL https://raw.githubusercontent.com/noobmaisfier/kumizo/main/install-aurora.sh | sh
 #
@@ -114,9 +114,9 @@ try_bin() {
         || { rm -rf "$tmp"; die "somme de contrôle invalide"; }
     mkdir -p "$DEST"
     tar -xzf "$tmp/$tgz" -C "$DEST"
-    chmod +x "$DEST/aurora" "$DEST/widgetctl" "$DEST/aurora-lockscreen"
+    chmod +x "$DEST/aurora" "$DEST/kumizo" "$DEST/aurora-lockscreen"
     rm -rf "$tmp"
-    say "installé dans $DEST : aurora, aurora-lockscreen, widgetctl (binaire $ver)"
+    say "installé dans $DEST : aurora, aurora-lockscreen, kumizo (binaire $ver)"
     return 0
 }
 
@@ -142,9 +142,9 @@ build_source() {
     say "compilation (long la première fois)…"
     cargo build --release -p aurora -p wk-ctl || die "cargo build a échoué"
     mkdir -p "$DEST"
-    cp target/release/aurora target/release/aurora-lockscreen target/release/widgetctl "$DEST/"
-    chmod +x "$DEST/aurora" "$DEST/aurora-lockscreen" "$DEST/widgetctl"
-    say "installé dans $DEST : aurora, aurora-lockscreen, widgetctl (compilé)"
+    cp target/release/aurora target/release/aurora-lockscreen target/release/kumizo "$DEST/"
+    chmod +x "$DEST/aurora" "$DEST/aurora-lockscreen" "$DEST/kumizo"
+    say "installé dans $DEST : aurora, aurora-lockscreen, kumizo (compilé)"
 }
 
 # -- Installation ---------------------------------------------------------------
@@ -172,14 +172,14 @@ if [ "$NO_SWAY" -eq 0 ]; then
     if [ ! -f "$cfg" ]; then
         say "pas de config sway ($cfg) : ajoute à la main :"
         say '  exec ~/.local/bin/aurora'
-        say '  bindsym $mod+m exec ~/.local/bin/widgetctl toggle aurora-music'
+        say '  bindsym $mod+m exec ~/.local/bin/kumizo toggle aurora-music'
     else
         bak="${cfg}.bak_aurora_$(date +%Y%m%d-%H%M%S)"
         cp "$cfg" "$bak" && say "sauvegarde sway : $bak"
         grep -qF 'exec ~/.local/bin/aurora' "$cfg" \
             || echo 'exec ~/.local/bin/aurora' >> "$cfg"
-        grep -qF 'widgetctl toggle aurora-music' "$cfg" \
-            || echo 'bindsym $mod+m exec ~/.local/bin/widgetctl toggle aurora-music' >> "$cfg"
+        grep -qF 'kumizo toggle aurora-music' "$cfg" \
+            || echo 'bindsym $mod+m exec ~/.local/bin/kumizo toggle aurora-music' >> "$cfg"
         say "sway : lancement + Super+M en place (recharge sway pour appliquer)"
     fi
 fi
@@ -198,4 +198,4 @@ command -v pactl >/dev/null 2>&1 && command -v wpctl >/dev/null 2>&1 \
 [ "${XDG_SESSION_TYPE:-}" = "wayland" ] \
     || say "AVERTISSEMENT : session non-Wayland détectée (le shell exige Wayland+Sway)"
 
-say "OK. Lance (ou recharge) sway, puis : widgetctl ping"
+say "OK. Lance (ou recharge) sway, puis : kumizo ping"

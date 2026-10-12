@@ -116,7 +116,7 @@ impl Tray {
         self.open_menu.clone()
     }
 
-    /// Short human-readable inventory, for `widgetctl service tray list`.
+    /// Short human-readable inventory, for `kumizo service tray list`.
     fn describe(&self) -> String {
         if self.items.is_empty() {
             return String::from("no tray items");
@@ -658,7 +658,7 @@ impl Watcher {
 }
 
 impl Service for Tray {
-    /// Actions for `widgetctl service tray …` (same code paths as clicks):
+    /// Actions for `kumizo service tray …` (same code paths as clicks):
     /// `list`, `activate <id>`, `menu-open <id>`, `menu-click <id>`,
     /// `menu-close`. Item ids come from the topbar tooltips; `list` prints
     /// the inventory to the daemon log.

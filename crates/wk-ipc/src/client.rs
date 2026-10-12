@@ -3,13 +3,13 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 
-/// Client for communicating with the running WidgetKit instance.
+/// Client for communicating with the running Kumizo instance.
 pub struct IpcClient {
     socket_path: PathBuf,
 }
 
 impl IpcClient {
-    /// Client for the session's single WidgetKit socket.
+    /// Client for the session's single Kumizo socket.
     pub fn connect() -> Self {
         Self {
             socket_path: socket_path(),

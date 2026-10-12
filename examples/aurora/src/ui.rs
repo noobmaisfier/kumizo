@@ -138,7 +138,7 @@ pub fn toggle_exclusive(target: &'static str, cx: &mut App) {
 ///
 /// Ajoute `~/.local/bin` au `PATH` du fils : aurora est lancé avec un `PATH`
 /// système qui ne le contient pas, et les scripts `change-theme/` appellent
-/// `widgetctl` (installé dans `~/.local/bin`) pour re-thèmer le shell.
+/// `kumizo` (installé dans `~/.local/bin`) pour re-thèmer le shell.
 pub fn run(cmd: &str, args: &[&str]) {
     let cmd = cmd.to_string();
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();

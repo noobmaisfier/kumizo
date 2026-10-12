@@ -8,7 +8,7 @@ use gpui::{App, Global};
 use tracing::warn;
 use wk_ipc::WindowControl;
 
-/// Shared window control, published as a GPUI global by `WidgetKit::run`.
+/// Shared window control, published as a GPUI global by `Kumizo::run`.
 #[derive(Clone)]
 pub struct WindowControlGlobal(pub WindowControl);
 
@@ -33,21 +33,21 @@ impl WindowControlExt for App {
     fn show_window(&self, name: &str) {
         match self.try_global::<WindowControlGlobal>() {
             Some(g) => g.0.show(name),
-            None => warn!("show_window('{name}'): WidgetKit is not running"),
+            None => warn!("show_window('{name}'): Kumizo is not running"),
         }
     }
 
     fn hide_window(&self, name: &str) {
         match self.try_global::<WindowControlGlobal>() {
             Some(g) => g.0.hide(name),
-            None => warn!("hide_window('{name}'): WidgetKit is not running"),
+            None => warn!("hide_window('{name}'): Kumizo is not running"),
         }
     }
 
     fn toggle_window(&self, name: &str) {
         match self.try_global::<WindowControlGlobal>() {
             Some(g) => g.0.toggle(name),
-            None => warn!("toggle_window('{name}'): WidgetKit is not running"),
+            None => warn!("toggle_window('{name}'): Kumizo is not running"),
         }
     }
 }

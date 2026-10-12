@@ -5,10 +5,10 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Command-line control tool (widgetctl) for Kumizo daemon"
+description = "Command-line control tool (kumizo) for Kumizo daemon"
 
 [[bin]]
-name = "widgetctl"
+name = "kumizo"
 path = "src/main.rs"
 
 [dependencies]
