@@ -55,7 +55,7 @@ build_release:
     - if: $CI_COMMIT_BRANCH == "develop"
 
 # ---------------------------------------------------------------------------
-# Stage: Build aurora release (binaires distribués par install-aurora-bin.sh)
+# Stage: Build aurora release (binaires distribués par install-aurora.sh)
 # Image Debian stable : glibc 2.36, le binaire tourne sur Debian stable
 # et la plupart des distros récentes.
 # ---------------------------------------------------------------------------

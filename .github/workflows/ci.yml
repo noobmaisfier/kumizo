@@ -5,7 +5,7 @@
 # - build-aurora : binaires aurora + widgetctl, image Debian bookworm
 #   (glibc 2.36 : tourne sur Debian stable et distros récentes).
 # - release : publie la release + assets à chaque tag `v*`
-#   (binaires consommés par dist/install-aurora-bin.sh).
+#   (binaires consommés par install-aurora.sh).
 #
 # Les minutes Actions sont gratuites (2000 min/mois sur les dépôts publics).
 
