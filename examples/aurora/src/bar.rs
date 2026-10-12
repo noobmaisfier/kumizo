@@ -95,9 +95,14 @@ impl TopBar {
         let pomodoro = pomodoro::handle(cx);
         let osd = osd::handle(cx);
         let player = crate::music::handle(cx);
+        let mpris = cx.service::<Mpris>();
 
         cx.observe(&pomodoro, |_, _, cx| cx.notify()).detach();
         cx.observe(&player, |_, _, cx| cx.notify()).detach();
+        // Le pill média unifié bascule selon la source active : la barre se
+        // réveille aussi quand le navigateur change de titre/état (événements
+        // seuls via `playerctl --follow`, zéro CPU au repos).
+        cx.observe(&mpris, |_, _, cx| cx.notify()).detach();
 
         let last_vol = {
             let a = audio.read(cx);
@@ -152,7 +157,7 @@ impl TopBar {
             network: cx.service::<Network>(),
             bluetooth: cx.service::<Bluetooth>(),
             compositor: cx.service::<Compositor>(),
-            mpris: cx.service::<Mpris>(),
+            mpris,
             tray: cx.service::<Tray>(),
             notifs,
             pomodoro,
@@ -271,65 +276,132 @@ impl TopBar {
     // ── Centre : horloge · média ───────────────────────────────────────────
     /// Mini-lecteur local : toujours un point d'entrée vers le panneau
     /// musique ; titre et commandes dès qu'un morceau est chargé.
-    fn music_pill(&self, cx: &App) -> Div {
+    /// Indicateur média UNIQUE : le lecteur local et MPRIS (navigateur…)
+    /// ne s'affichent plus côte à côte. Priorité : le local s'il joue,
+    /// sinon MPRIS si elle joue, sinon la dernière source chargée en pause,
+    /// sinon icône seule (accès souris à la fenêtre musique). Les boutons
+    /// pilotent la source affichée.
+    fn media_pill(&self, cx: &App) -> Div {
+        #[derive(Clone, Copy, PartialEq)]
+        enum Src {
+            Local,
+            Mpris,
+        }
+
         let p = self.player.read(cx);
-        let now = p.now().map(|t| format!("{} — {}", t.artist, t.title));
-        let playing = p.playing;
+        let local_label = p.now().map(|t| format!("{} — {}", t.artist, t.title));
+        let local_playing = p.playing;
+        let m = self.mpris.read(cx);
+        let mpris_label = m.title().map(|_| m.display_label());
+        let mpris_playing = matches!(m.status(), PlaybackStatus::Playing);
 
-        let open = btn("bar-music")
-            .hover(|s| s.bg(pal::raised()))
-            .on_click(|_, _, cx| ui::toggle_exclusive(ids::MUSIC, cx))
-            .child(ui::glyph(
-                icons::MUSIC,
-                13.,
-                if playing { pal::accent() } else { pal::muted() },
-            ));
-        let mut row = pill().child(open);
+        let src = if local_playing || (local_label.is_some() && !mpris_playing) {
+            Src::Local
+        } else if mpris_label.is_some() {
+            Src::Mpris
+        } else {
+            Src::Local
+        };
+        let playing = match src {
+            Src::Local => local_playing,
+            Src::Mpris => mpris_playing,
+        };
+        let label = match src {
+            Src::Local => local_label,
+            Src::Mpris => mpris_label,
+        };
 
-        if let Some(label) = now {
-            let (prev, toggle, next) = (
-                self.player.clone(),
-                self.player.clone(),
-                self.player.clone(),
+        let glyph_color = if playing { pal::accent() } else { pal::muted() };
+        let play_glyph = || {
+            ui::glyph(
+                if playing { icons::PAUSE } else { icons::PLAY },
+                11.,
+                pal::accent(),
+            )
+        };
+        let mut row = pill();
+        // Local : l'icône ouvre la fenêtre ; MPRIS : simple voyant (le
+        // navigateur a déjà ses contrôles dans sa fenêtre).
+        if src == Src::Local {
+            row = row.child(
+                btn("bar-music")
+                    .hover(|s| s.bg(pal::raised()))
+                    .on_click(|_, _, cx| ui::toggle_exclusive(ids::MUSIC, cx))
+                    .child(ui::glyph(icons::MUSIC, 13., glyph_color)),
             );
-            row = row
-                .child(
-                    div()
-                        .min_w_0()
-                        .max_w(px(200.))
-                        .truncate()
-                        .text_sm()
-                        .text_color(pal::text())
-                        .child(label),
-                )
-                .child(
-                    btn("bar-mu-prev")
-                        .hover(|s| s.bg(pal::raised()))
-                        .on_click(move |_, _, cx| {
-                            prev.update(cx, |p, cx| p.prev(cx));
-                        })
-                        .child(ui::glyph(icons::PREV, 11., pal::muted())),
-                )
-                .child(
-                    btn("bar-mu-play")
-                        .hover(|s| s.bg(pal::raised()))
-                        .on_click(move |_, _, cx| {
-                            toggle.update(cx, |p, cx| p.toggle(cx));
-                        })
-                        .child(ui::glyph(
-                            if playing { icons::PAUSE } else { icons::PLAY },
-                            11.,
-                            pal::accent(),
-                        )),
-                )
-                .child(
-                    btn("bar-mu-next")
-                        .hover(|s| s.bg(pal::raised()))
-                        .on_click(move |_, _, cx| {
-                            next.update(cx, |p, cx| p.next(cx));
-                        })
-                        .child(ui::glyph(icons::NEXT, 11., pal::muted())),
-                );
+        } else {
+            row = row.child(ui::glyph(icons::MUSIC, 12., glyph_color));
+        }
+
+        if let Some(text) = label {
+            row = row.child(
+                div()
+                    .min_w_0()
+                    .max_w(px(220.))
+                    .truncate()
+                    .text_sm()
+                    .text_color(pal::text())
+                    .child(text),
+            );
+            match src {
+                Src::Local => {
+                    let (prev, toggle, next) =
+                        (self.player.clone(), self.player.clone(), self.player.clone());
+                    row = row
+                        .child(
+                            btn("bar-mu-prev")
+                                .hover(|s| s.bg(pal::raised()))
+                                .on_click(move |_, _, cx| {
+                                    prev.update(cx, |p, cx| p.prev(cx));
+                                })
+                                .child(ui::glyph(icons::PREV, 11., pal::muted())),
+                        )
+                        .child(
+                            btn("bar-mu-play")
+                                .hover(|s| s.bg(pal::raised()))
+                                .on_click(move |_, _, cx| {
+                                    toggle.update(cx, |p, cx| p.toggle(cx));
+                                })
+                                .child(play_glyph()),
+                        )
+                        .child(
+                            btn("bar-mu-next")
+                                .hover(|s| s.bg(pal::raised()))
+                                .on_click(move |_, _, cx| {
+                                    next.update(cx, |p, cx| p.next(cx));
+                                })
+                                .child(ui::glyph(icons::NEXT, 11., pal::muted())),
+                        );
+                }
+                Src::Mpris => {
+                    let (pr, pp, nx) = (self.mpris.clone(), self.mpris.clone(), self.mpris.clone());
+                    row = row
+                        .child(
+                            btn("mp-prev")
+                                .hover(|s| s.bg(pal::raised()))
+                                .on_click(move |_, _, cx| {
+                                    pr.update(cx, |m, _| m.previous());
+                                })
+                                .child(ui::glyph(icons::PREV, 11., pal::muted())),
+                        )
+                        .child(
+                            btn("mp-play")
+                                .hover(|s| s.bg(pal::raised()))
+                                .on_click(move |_, _, cx| {
+                                    pp.update(cx, |m, _| m.play_pause());
+                                })
+                                .child(play_glyph()),
+                        )
+                        .child(
+                            btn("mp-next")
+                                .hover(|s| s.bg(pal::raised()))
+                                .on_click(move |_, _, cx| {
+                                    nx.update(cx, |m, _| m.next());
+                                })
+                                .child(ui::glyph(icons::NEXT, 11., pal::muted())),
+                        );
+                }
+            }
         }
         div().flex().items_center().child(row)
     }
@@ -338,11 +410,6 @@ impl TopBar {
         let clock = self.clock.read(cx);
         let time = clock.time_hm().to_string();
         let date = clock.date_formatted().to_string();
-
-        let m = self.mpris.read(cx);
-        let title = m.title().map(str::to_string);
-        let artist = m.artist().map(str::to_string);
-        let playing = matches!(m.status(), PlaybackStatus::Playing);
 
         let clock_pill = pill()
             .id("bar-clock")
@@ -359,57 +426,9 @@ impl TopBar {
 
         let mut row = div().flex().flex_row().items_center().gap_2().child(clock_pill);
         if crate::MUSIC_ENABLED {
-            row = row.child(self.music_pill(cx));
+            row = row.child(self.media_pill(cx));
         }
 
-        if let Some(t) = title {
-            let label = match artist {
-                Some(a) => format!("{a} — {t}"),
-                None => t,
-            };
-            let (p, pp, n) = (self.mpris.clone(), self.mpris.clone(), self.mpris.clone());
-            row = row.child(
-                pill()
-                    .child(ui::glyph(icons::MUSIC, 12., pal::accent2()))
-                    .child(
-                        div()
-                            .min_w_0()
-                            .max_w(px(220.))
-                            .truncate()
-                            .text_sm()
-                            .text_color(pal::text())
-                            .child(label),
-                    )
-                    .child(
-                        btn("mp-prev")
-                            .hover(|s| s.bg(pal::raised()))
-                            .on_click(move |_, _, cx| {
-                                p.update(cx, |m, _| m.previous());
-                            })
-                            .child(ui::glyph(icons::PREV, 11., pal::muted())),
-                    )
-                    .child(
-                        btn("mp-play")
-                            .hover(|s| s.bg(pal::raised()))
-                            .on_click(move |_, _, cx| {
-                                pp.update(cx, |m, _| m.play_pause());
-                            })
-                            .child(ui::glyph(
-                                if playing { icons::PAUSE } else { icons::PLAY },
-                                11.,
-                                pal::accent(),
-                            )),
-                    )
-                    .child(
-                        btn("mp-next")
-                            .hover(|s| s.bg(pal::raised()))
-                            .on_click(move |_, _, cx| {
-                                n.update(cx, |m, _| m.next());
-                            })
-                            .child(ui::glyph(icons::NEXT, 11., pal::muted())),
-                    ),
-            );
-        }
         row
     }
 
