@@ -53,7 +53,7 @@ The lockscreen is the only intentional second binary: it handles passwords and t
 WidgetKit abstracts all Wayland layer-shell complexity and asynchronous D-Bus services, while leaving complete aesthetic freedom to you:
 
 ```rust
-use widgetkit::prelude::*;
+use kumizo_kit::prelude::*;
 use gpui::prelude::*;
 
 fn main() {
@@ -175,7 +175,7 @@ comp_ref.focus_window(target_con_id);
 Popups, calendars, control centers: declare them once in `main()` (usually with `.start_hidden(true)`), then drive them **in-memory** from any click handler. No IPC, no globals to plumb:
 
 ```rust
-use widgetkit::prelude::*; // brings in WindowControlExt
+use kumizo_kit::prelude::*; // brings in WindowControlExt
 
 div()
     .id("clock")
@@ -227,7 +227,7 @@ bind = $mainMod, B, exec, widgetctl toggle dock
 A [`Service`](crates/wk-services/src/service.rs) is the right tool for shared, type-keyed desktop subsystems (battery, audio, mpris). For ad-hoc data needs (temperature in sysfs, streaming script stdout, or pushing messages over a socket), [`Source<T>`](crates/wk-services/src/source.rs) lets you stream events directly into a plain GPUI entity without writing a full service:
 
 ```rust
-use widgetkit::prelude::*;
+use kumizo_kit::prelude::*;
 
 // 1. Stream stdout lines from a child process (auto-kills child on drop)
 let ticker = ProcessSource::new("sh")

@@ -17,7 +17,7 @@ use gpui::{
     div, px, ClickEvent, Context, Div, Entity, FocusHandle, FontWeight, KeyDownEvent,
     ScrollDelta, ScrollHandle, ScrollWheelEvent, Stateful, Window,
 };
-use widgetkit::prelude::*;
+use kumizo_kit::prelude::*;
 
 use super::{
     disc, fmt_time, library,

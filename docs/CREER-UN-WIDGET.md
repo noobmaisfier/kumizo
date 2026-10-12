@@ -83,7 +83,7 @@ raison) : `gpui`, `gpui_platform`, `zbus` (4.4, `async-io` uniquement),
 
 ```rust
 use gpui::prelude::*;
-use widgetkit::prelude::*;
+use kumizo_kit::prelude::*;
 
 fn main() {
     WidgetKit::new()
@@ -100,7 +100,7 @@ fn main() {
 }
 ```
 
-Méthodes du builder (`crates/widgetkit/src/app.rs`), dans l'ordre d'appel
+Méthodes du builder (`crates/kumizo-kit/src/app.rs`), dans l'ordre d'appel
 recommandé :
 
 - `WidgetKit::new()` — point de départ.
@@ -417,7 +417,7 @@ Contrat (voir `crates/wk-services/src/service.rs`) :
   service <nom> <action> [payload]`), `false` sinon — jamais de succès
   silencieux. Le nom court sur le CLI est le nom du type en minuscules.
 - Enregistrer le module dans `crates/wk-services/src/lib.rs` (`pub mod`
-  + `pub use`) **et** dans `crates/widgetkit/src/prelude.rs`.
+  + `pub use`) **et** dans `crates/kumizo-kit/src/prelude.rs`.
 - Pour appeler du D-Bus depuis une méthode **synchrone** (clic) :
   `async_io::block_on(async { ... })` avec le code async habituel. Local
   et rapide ; ne jamais y mettre d'attente longue.
@@ -435,7 +435,7 @@ poussés sur un socket UNIX). Utilisez [`Source<T>`](file:///home/alamine/.iCode
 du prelude, qui s'encapsule dans une `Entity<Source<T>>` standard GPUI :
 
 ```rust
-use widgetkit::prelude::*;
+use kumizo_kit::prelude::*;
 
 // 1. Processus : chaque ligne de stdout devient un T (auto-kill du processus avec PDEATHSIG)
 let ticker = ProcessSource::new("sh")

@@ -13,7 +13,7 @@ use gpui::prelude::*;
 use gpui::{div, px, KeyDownEvent, FocusHandle, Window, Context, Render, Entity, IntoElement};
 use std::time::Duration;
 use theme::{framed, pal};
-use widgetkit::prelude::*;
+use kumizo_kit::prelude::*;
 
 fn main() {
     theme::init_wallpaper();

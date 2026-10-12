@@ -25,7 +25,7 @@ use gpui::prelude::*;
 use gpui::{
     Animation, AnimationExt, AnyElement, FocusHandle, KeyDownEvent, RenderImage, SharedString,
 };
-use widgetkit::prelude::*;
+use kumizo_kit::prelude::*;
 
 fn pam_service() -> &'static str {
     if std::path::Path::new("/etc/pam.d/swaylock").exists() {

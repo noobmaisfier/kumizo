@@ -15,7 +15,7 @@ name = "aurora-lockscreen"
 path = "src/lockscreen.rs"
 
 [dependencies]
-widgetkit = { path = "../../crates/widgetkit" }
+kumizo-kit = { path = "../../crates/kumizo-kit" }
 gpui = { workspace = true }
 async-io = { workspace = true }
 libc = { workspace = true }

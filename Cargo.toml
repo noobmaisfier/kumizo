@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "crates/widgetkit",
+    "crates/kumizo-kit",
     "crates/wk-gpui-ext",
     "crates/wk-services",
     "crates/wk-compositor",

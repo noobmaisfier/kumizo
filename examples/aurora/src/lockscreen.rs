@@ -17,7 +17,7 @@ use std::time::Duration;
 
 use gpui::prelude::*;
 use gpui::{div, px, Context, Entity, FocusHandle, FontWeight, KeyDownEvent, Rgba, Window};
-use widgetkit::prelude::*;
+use kumizo_kit::prelude::*;
 
 // ── Mini-palette (dupliquée, lit le thème choisi dans le shell) ─────────────
 //                 nom                bg        text      muted     accent    danger

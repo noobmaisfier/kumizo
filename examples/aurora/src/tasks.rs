@@ -5,7 +5,7 @@ use gpui::prelude::*;
 use gpui::{
     div, px, ClickEvent, Context, Entity, FocusHandle, FontWeight, KeyDownEvent, Window,
 };
-use widgetkit::prelude::*;
+use kumizo_kit::prelude::*;
 
 use crate::{
     icons,

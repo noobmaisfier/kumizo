@@ -5,7 +5,7 @@ use gpui::{
     point, pulsating_between, Animation, AnimationExt, BoxShadow, Div, ElementId, IntoElement,
     px, Rgba, Stateful, Styled,
 };
-use widgetkit::prelude::*;
+use kumizo_kit::prelude::*;
 
 // ---------------------------------------------------------------------------
 // Layout Dimensions

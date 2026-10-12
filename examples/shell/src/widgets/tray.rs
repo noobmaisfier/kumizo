@@ -1,6 +1,6 @@
 use gpui::prelude::*;
 use gpui::{Context, Entity, px, Window};
-use widgetkit::prelude::*;
+use kumizo_kit::prelude::*;
 
 use crate::theme::{pal, printed};
 

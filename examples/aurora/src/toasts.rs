@@ -2,7 +2,7 @@
 
 use gpui::prelude::*;
 use gpui::{div, Context, Entity, Window};
-use widgetkit::prelude::*;
+use kumizo_kit::prelude::*;
 
 use crate::notifs;
 

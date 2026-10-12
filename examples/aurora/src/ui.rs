@@ -4,7 +4,7 @@
 
 use gpui::prelude::*;
 use gpui::{div, px, App, DefiniteLength, Div, ElementId, KeyDownEvent, Rgba, Stateful};
-use widgetkit::prelude::*;
+use kumizo_kit::prelude::*;
 
 use crate::{icons, theme::pal};
 

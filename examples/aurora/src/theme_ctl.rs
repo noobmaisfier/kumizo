@@ -14,7 +14,7 @@
 //! `&mut Context<Self>` qui déréférence vers `App`, donc on peut appeler
 //! `theme::set(index, cx)` (qui repaint toutes les fenêtres).
 
-use widgetkit::prelude::*;
+use kumizo_kit::prelude::*;
 
 use crate::theme;
 

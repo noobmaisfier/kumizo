@@ -4,7 +4,7 @@ use gpui::prelude::*;
 use gpui::{
     pulsating_between, Animation, AnimationExt, AnyElement, Context, Div, Entity, px, Window,
 };
-use widgetkit::prelude::*;
+use kumizo_kit::prelude::*;
 
 use crate::theme::{hard, out_back, out_cubic, pal, tile, RAIL_WIDTH};
 

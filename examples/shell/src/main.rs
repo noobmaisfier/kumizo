@@ -8,7 +8,7 @@ pub mod theme;
 pub mod widgets;
 
 use gpui::prelude::*;
-use widgetkit::prelude::*;
+use kumizo_kit::prelude::*;
 use widgets::{
     bluetooth, calendar, clipboard, kanban, launcher, lock, notifications, osd, powermenu, rail,
     stamp, tasks, tray,

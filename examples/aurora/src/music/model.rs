@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use gpui::{App, AppContext, Context, Entity, Global};
-use widgetkit::prelude::*;
+use kumizo_kit::prelude::*;
 
 use super::engine::{Engine, Snapshot};
 use super::library::{self, Track};

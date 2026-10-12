@@ -6,7 +6,7 @@ use gpui::{
     Styled, Window,
 };
 use serde::{Deserialize, Serialize};
-use widgetkit::prelude::*;
+use kumizo_kit::prelude::*;
 
 use crate::theme::{fullscreen, hard, pal};
 

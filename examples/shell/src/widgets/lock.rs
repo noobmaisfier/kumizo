@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use gpui::prelude::*;
 use gpui::{rgba, Animation, AnimationExt, Context, Entity, FocusHandle, KeyDownEvent, px, RenderImage, SharedString, Window};
-use widgetkit::prelude::*;
+use kumizo_kit::prelude::*;
 
 use crate::theme::{fullscreen, hard, key_chip, misprint, pal};
 

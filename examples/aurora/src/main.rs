@@ -35,7 +35,7 @@ mod ui;
 pub const MUSIC_ENABLED: bool = true;
 
 use gpui::prelude::*;
-use widgetkit::prelude::*;
+use kumizo_kit::prelude::*;
 
 use ui::ids;
 

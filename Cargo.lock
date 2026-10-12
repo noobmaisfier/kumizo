@@ -484,13 +484,13 @@ dependencies = [
  "async-io",
  "gpui-pre",
  "image",
+ "kumizo-kit",
  "libc",
  "lofty",
  "resvg",
  "rockbox-playback",
  "serde_json",
  "smallvec",
- "widgetkit",
 ]
 
 [[package]]
@@ -3055,9 +3055,26 @@ name = "kiln"
 version = "0.1.0"
 dependencies = [
  "gpui-pre",
+ "kumizo-kit",
  "serde",
  "toml 0.8.23",
- "widgetkit",
+]
+
+[[package]]
+name = "kumizo-kit"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-channel",
+ "gpui-pre",
+ "gpui-pre-platform",
+ "tracing",
+ "tracing-subscriber",
+ "wk-compositor",
+ "wk-gpui-ext",
+ "wk-ipc",
+ "wk-services",
+ "wk-ui",
 ]
 
 [[package]]
@@ -3198,8 +3215,8 @@ dependencies = [
  "async-io",
  "gpui-pre",
  "image",
+ "kumizo-kit",
  "smallvec",
- "widgetkit",
  "wk-pam",
 ]
 
@@ -5262,11 +5279,11 @@ dependencies = [
  "async-io",
  "gpui-pre",
  "image",
+ "kumizo-kit",
  "serde",
  "serde_json",
  "smallvec",
  "time",
- "widgetkit",
  "wk-pam",
 ]
 
@@ -5400,7 +5417,7 @@ name = "sources-example"
 version = "0.1.0"
 dependencies = [
  "gpui-pre",
- "widgetkit",
+ "kumizo-kit",
 ]
 
 [[package]]
@@ -6646,23 +6663,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bae2f2b2b816647a1cab1acc91f5bd20812d53cb344382635ec2181940c8034f"
 dependencies = [
  "libc",
-]
-
-[[package]]
-name = "widgetkit"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-channel",
- "gpui-pre",
- "gpui-pre-platform",
- "tracing",
- "tracing-subscriber",
- "wk-compositor",
- "wk-gpui-ext",
- "wk-ipc",
- "wk-services",
- "wk-ui",
 ]
 
 [[package]]

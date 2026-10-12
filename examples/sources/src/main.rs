@@ -19,7 +19,7 @@
 use std::time::Duration;
 
 use gpui::prelude::*;
-use widgetkit::prelude::*;
+use kumizo_kit::prelude::*;
 
 fn main() {
     let dir = std::path::PathBuf::from("/tmp/wk-sources");

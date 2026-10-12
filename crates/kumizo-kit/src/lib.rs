@@ -15,7 +15,7 @@
 //! ## Quickstart
 //!
 //! ```no_run
-//! use widgetkit::prelude::*;
+//! use kumizo_kit::prelude::*;
 //! use gpui::prelude::*;
 //!
 //! fn main() {

@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use gpui::prelude::*;
 use gpui::{div, px, App, Context, Entity, Global, Window};
-use widgetkit::prelude::*;
+use kumizo_kit::prelude::*;
 
 use crate::{
     icons,

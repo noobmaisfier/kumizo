@@ -11,7 +11,7 @@ name = "kiln"
 path = "src/main.rs"
 
 [dependencies]
-widgetkit = { path = "../../crates/widgetkit" }
+kumizo-kit = { path = "../../crates/kumizo-kit" }
 gpui = { workspace = true }
 serde = { workspace = true }
 toml = "0.8"

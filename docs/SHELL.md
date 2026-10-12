@@ -38,7 +38,7 @@ A shell application is defined in a `main()` function using `WidgetKit::new()`:
 
 ```rust
 use gpui::prelude::*;
-use widgetkit::prelude::*;
+use kumizo_kit::prelude::*;
 
 fn main() {
     WidgetKit::new()
@@ -139,7 +139,7 @@ cx.spawn(async move |this, cx| {
 Windows declared with `.start_hidden(true)` do not occupy Wayland resources until displayed. You can toggle or show them from any event handler **without IPC**:
 
 > [!IMPORTANT]
-> Entity-vs-surface lifecycle (`crates/widgetkit/src/app.rs:107-132`):
+> Entity-vs-surface lifecycle (`crates/kumizo-kit/src/app.rs:107-132`):
 > the VIEW (`Entity`, your struct) is built at startup for EVERY window,
 > including `start_hidden` ones — `new()` runs and `cx.observe(...)`
 > subscriptions are live immediately. Only the Wayland SURFACE is lazy:
@@ -414,7 +414,7 @@ Methods on `Notifications`:
 Need custom data without writing a full `Service`? Use `Source<T>`:
 
 ```rust
-use widgetkit::prelude::*;
+use kumizo_kit::prelude::*;
 
 struct CustomBar {
     uptime: Entity<Source<String>>,
@@ -694,7 +694,7 @@ Bare wiring — no colors, no layout opinions. For the full recipe see
 
 ```rust
 use gpui::prelude::*;
-use widgetkit::prelude::*;
+use kumizo_kit::prelude::*;
 
 fn main() {
     WidgetKit::new()
