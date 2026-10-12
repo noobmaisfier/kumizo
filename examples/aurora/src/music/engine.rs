@@ -1,19 +1,28 @@
-//! Moteur audio : un processus `mpv` sans fenêtre, piloté par son socket IPC JSON.
+//! Moteur audio : rockbox-playback (codecs Rockbox + DSP, sortie cpal).
 //!
-//! * Tout se passe sur des threads dédiés : l'UI n'attend jamais mpv.
-//! * La vue lit un `Snapshot` (position, durée, pause, compteur de fins de piste).
-//! * Si le shell plante, `PDEATHSIG` tue mpv : pas de processus orphelin.
+//! * Tout se passe sur un thread dédié : l'UI n'attend jamais le décodage.
+//! * La vue lit un `Snapshot` (position, pause, compteur de fins de piste).
+//! * Même interface publique que les anciens moteurs : `model.rs` inchangé.
+//! * Un seul morceau à la fois (`set_queue([path])`) : la file, le mélange
+//!   et la répétition restent dans `model.rs`, qui avance sur `ended`.
+//! * Crossfade / ReplayGain / EQ : réglages d'usine (neutres), non utilisés.
+//!   Nos fichiers n'ont pas de tags ReplayGain : le mode natif serait sans
+//!   effet. Voir le niveau trop chaud de certains cantiques.
+//!
+//! Spécificités rockbox à connaître :
+//! * `set_volume(0.0)` fige l'anneau (position gelée) : le plancher est donc
+//!   0.001, inaudible mais vivant (voir `floor_volume`).
+//! * Fin NATURELLE = transition `Playing → Stopped` ; un `Load`/`Stop`
+//!   manuel l'inhibe (`suppress_end`).
+//! * Un fichier illisible reste `Stopped` sans jamais jouer : erreur affichée
+//!   après un délai de grâce, sans enchaîner (comme avant).
 
-use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
-use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use serde_json::{json, Value};
+use rockbox_playback::{OutputConfig, PlaybackState, PlayerConfig};
 
 #[derive(Clone, Default)]
 pub struct Snapshot {
@@ -22,7 +31,7 @@ pub struct Snapshot {
     pub paused: bool,
     /// Incrémenté à chaque fin NATURELLE de piste (pas lors d'un changement manuel).
     pub ended: u64,
-    /// Message d'erreur affichable (mpv absent, socket introuvable…).
+    /// Message d'erreur affichable (périphérique absent, fichier illisible…).
     pub error: Option<String>,
 }
 
@@ -40,14 +49,21 @@ pub struct Engine {
     shared: Arc<Mutex<Snapshot>>,
 }
 
+/// Volume 0 demandé (muet) : 0.0 exact figerait l'anneau rockbox (position
+/// gelée, `get_pos` immobile). 0.001 est inaudible et garde le flux vivant.
+fn floor_volume(pct: u8) -> f32 {
+    if pct == 0 { 0.001 } else { pct as f32 / 100.0 }
+}
+
 impl Engine {
-    /// Démarre le worker ; retourne immédiatement (mpv se lance en arrière-plan).
+    /// Démarre le worker ; retourne immédiatement (le périphérique audio
+    /// s'ouvre en arrière-plan).
     pub fn new() -> Self {
         let (tx, rx) = mpsc::channel();
         let shared = Arc::new(Mutex::new(Snapshot::default()));
         let worker_shared = shared.clone();
         thread::Builder::new()
-            .name("aurora-mpv".into())
+            .name("aurora-rockbox".into())
             .spawn(move || worker(rx, worker_shared))
             .ok();
         Self { tx, shared }
@@ -58,7 +74,6 @@ impl Engine {
     }
 
     pub fn load(&self, path: &Path) {
-        // La pause est levée par l'évènement `file-loaded`.
         let _ = self.tx.send(Cmd::Load(path.to_path_buf()));
     }
     pub fn set_paused(&self, paused: bool) {
@@ -68,7 +83,7 @@ impl Engine {
         let _ = self.tx.send(Cmd::Seek(secs.max(0.0)));
     }
     pub fn set_volume(&self, pct: u8) {
-        let _ = self.tx.send(Cmd::Volume(pct.min(130)));
+        let _ = self.tx.send(Cmd::Volume(pct.min(100)));
     }
     pub fn stop(&self) {
         let _ = self.tx.send(Cmd::Stop);
@@ -81,146 +96,119 @@ impl Drop for Engine {
     }
 }
 
-fn set_error(shared: &Arc<Mutex<Snapshot>>, msg: &str) {
+fn set_error(shared: &Arc<Mutex<Snapshot>>, msg: String) {
     if let Ok(mut s) = shared.lock() {
-        s.error = Some(msg.to_string());
+        s.error = Some(msg);
     }
 }
 
-fn socket_path() -> PathBuf {
-    let dir = std::env::var_os("XDG_RUNTIME_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir);
-    dir.join(format!("aurora-mpv-{}.sock", std::process::id()))
-}
-
-fn send(stream: &mut UnixStream, command: Value) -> bool {
-    let mut line = json!({ "command": command }).to_string();
-    line.push('\n');
-    stream.write_all(line.as_bytes()).is_ok()
-}
+/// Délai après `Load` sans aucun son avant de déclarer le fichier illisible.
+const LOAD_GRACE: Duration = Duration::from_secs(2);
 
 fn worker(rx: mpsc::Receiver<Cmd>, shared: Arc<Mutex<Snapshot>>) {
-    let sock = socket_path();
-    let _ = std::fs::remove_file(&sock);
-
-    let mut cmd = Command::new("mpv");
-    cmd.args([
-        "--no-video",
-        "--idle=yes",
-        "--no-terminal",
-        "--audio-display=no",
-        "--force-window=no",
-        "--really-quiet",
-        "--load-scripts=no",
-    ])
-    .arg(format!("--input-ipc-server={}", sock.display()))
-    .stdin(Stdio::null())
-    .stdout(Stdio::null())
-    .stderr(Stdio::null());
-    // SAFETY: appel async-signal-safe entre fork et exec.
-    unsafe {
-        cmd.pre_exec(|| {
-            libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
-            Ok(())
-        });
-    }
-
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(_) => {
-            set_error(&shared, "mpv introuvable — installe le paquet « mpv »");
+    let player = match PlayerConfig::builder()
+        .output(OutputConfig::Cpal)
+        .open()
+    {
+        Ok(p) => p,
+        Err(e) => {
+            set_error(&shared, format!("audio indisponible ({e:?})"));
             return;
         }
     };
 
-    // Le socket apparaît quelques dizaines de ms après le lancement.
-    let mut stream = None;
-    for _ in 0..75 {
-        if let Ok(s) = UnixStream::connect(&sock) {
-            stream = Some(s);
-            break;
-        }
-        thread::sleep(Duration::from_millis(40));
-    }
-    let Some(mut stream) = stream else {
-        set_error(&shared, "impossible de joindre mpv (socket IPC)");
-        let _ = child.kill();
-        let _ = child.wait();
-        return;
-    };
+    let mut volume = 0.8f32;
+    player.set_volume(volume);
+    // Détection de fin naturelle : front Playing → Stopped.
+    let mut was_playing = false;
+    let mut suppress_end = false;
+    // Fichier en cours de chargement : jamais entendu depuis `Load`.
+    let mut loading_since: Option<Instant> = None;
+    let mut load_failed = false;
 
-    // Lecteur d'évènements.
-    if let Ok(read_half) = stream.try_clone() {
-        let reader_shared = shared.clone();
-        thread::Builder::new()
-            .name("aurora-mpv-events".into())
-            .spawn(move || {
-                for line in BufReader::new(read_half).lines().map_while(Result::ok) {
-                    if let Ok(v) = serde_json::from_str::<Value>(&line) {
-                        handle_event(&v, &reader_shared);
-                    }
+    // Convenance : `Player` n'est ni `Send` ni `Sync`, il vit et meurt ici.
+    let player = player;
+
+    loop {
+        match rx.recv_timeout(Duration::from_millis(200)) {
+            Ok(Cmd::Load(path)) => {
+                player.set_queue(vec![path]);
+                player.play();
+                was_playing = false;
+                suppress_end = false;
+                loading_since = Some(Instant::now());
+                load_failed = false;
+                if let Ok(mut s) = shared.lock() {
+                    s.position = 0.0;
+                    s.paused = false;
+                    s.error = None;
                 }
-            })
-            .ok();
-    }
-
-    for (id, prop) in [(1, "time-pos"), (2, "duration"), (3, "pause")] {
-        send(&mut stream, json!(["observe_property", id, prop]));
-    }
-    if let Ok(mut s) = shared.lock() {
-        s.paused = true;
-    }
-
-    while let Ok(c) = rx.recv() {
-        let ok = match c {
-            Cmd::Load(p) => send(
-                &mut stream,
-                json!(["loadfile", p.to_string_lossy(), "replace"]),
-            ),
-            Cmd::Pause(b) => send(&mut stream, json!(["set_property", "pause", b])),
-            Cmd::Seek(t) => send(&mut stream, json!(["seek", t, "absolute"])),
-            Cmd::Volume(v) => send(&mut stream, json!(["set_property", "volume", v])),
-            Cmd::Stop => send(&mut stream, json!(["stop"])),
-            Cmd::Quit => break,
-        };
-        if !ok {
-            set_error(&shared, "connexion à mpv perdue");
-            break;
+            }
+            Ok(Cmd::Pause(b)) => {
+                if b {
+                    player.pause();
+                } else {
+                    player.play();
+                }
+            }
+            Ok(Cmd::Seek(t)) => {
+                player.seek(Duration::from_secs_f64(t));
+            }
+            Ok(Cmd::Volume(v)) => {
+                volume = floor_volume(v);
+                player.set_volume(volume);
+            }
+            Ok(Cmd::Stop) => {
+                player.stop();
+                was_playing = false;
+                suppress_end = true;
+                loading_since = None;
+            }
+            Ok(Cmd::Quit) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
         }
-    }
 
-    let _ = child.kill();
-    let _ = child.wait();
-    let _ = std::fs::remove_file(&sock);
-}
+        let st = player.status();
+        let state = st.state;
+        let playing_now = state == PlaybackState::Playing;
+        if playing_now {
+            loading_since = None;
+        }
 
-fn handle_event(v: &Value, shared: &Arc<Mutex<Snapshot>>) {
-    let Some(event) = v.get("event").and_then(Value::as_str) else {
-        return;
-    };
-    let Ok(mut s) = shared.lock() else { return };
-    match event {
-        "property-change" => {
-            let data = v.get("data");
-            match v.get("name").and_then(Value::as_str) {
-                Some("time-pos") => s.position = data.and_then(Value::as_f64).unwrap_or(0.0),
-                Some("duration") => s.duration = data.and_then(Value::as_f64).unwrap_or(0.0),
-                Some("pause") => s.paused = data.and_then(Value::as_bool).unwrap_or(true),
-                _ => {}
+        let mut finished = false;
+        if was_playing && state == PlaybackState::Stopped && !suppress_end {
+            finished = true;
+        }
+        // Un `Load`/`Stop` consomme l'inhibition dès qu'on rejoue.
+        if playing_now {
+            suppress_end = false;
+        }
+        was_playing = playing_now;
+
+        // Fichier illisible : resté `Stopped` sans son après le délai.
+        if !load_failed {
+            if let Some(since) = loading_since {
+                if since.elapsed() > LOAD_GRACE
+                    && state == PlaybackState::Stopped
+                    && st.position.is_zero()
+                {
+                    load_failed = true;
+                    loading_since = None;
+                    set_error(&shared, "fichier illisible".to_string());
+                }
             }
         }
-        "file-loaded" => {
-            s.position = 0.0;
-            s.paused = false;
-        }
-        "end-file" => {
-            // « stop » / « redirect » = changement manuel : ne pas enchaîner.
-            if v.get("reason").and_then(Value::as_str) == Some("eof") {
+
+        if let Ok(mut s) = shared.lock() {
+            s.position = st.position.as_secs_f64();
+            // Durée : le tag fait foi tant que le moteur n'a rien annoncé.
+            if !st.duration.is_zero() {
+                s.duration = st.duration.as_secs_f64();
+            }
+            s.paused = state == PlaybackState::Paused;
+            if finished {
                 s.ended += 1;
-                s.position = 0.0;
             }
         }
-        _ => {}
     }
 }

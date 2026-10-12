@@ -30,9 +30,9 @@ mod toasts;
 mod ui;
 
 /// Interrupteur du widget musique. À `false` : ni fenêtre `aurora-music`,
-/// ni pastille ♪, ni processus mpv — le code reste compilé pour une
+/// ni pastille ♪, ni thread audio — le code reste compilé pour une
 /// réactivation en un basculement.
-pub const MUSIC_ENABLED: bool = false;
+pub const MUSIC_ENABLED: bool = true;
 
 use gpui::prelude::*;
 use widgetkit::prelude::*;
@@ -69,6 +69,7 @@ fn main() {
         .service::<Tray>()
         .service::<Notifications>()
         .service::<theme_ctl::Theme>()
+        .service::<music::Music>()
         // ── Barre ───────────────────────────────────────────────────────────
         .window(
             LayerWindow::new(ids::BAR)
