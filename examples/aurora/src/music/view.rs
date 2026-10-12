@@ -1,8 +1,8 @@
-//! Fenêtre `aurora-music` : pochette + karaoké à gauche, bibliothèque / file à droite.
+//! Fenêtre `aurora-music` : pochette + commandes à gauche, bibliothèque / file à droite.
 //!
-//! Les listes sont PAGINÉES (autant de lignes que la hauteur en permet) au lieu
-//! d'être défilantes : une bibliothèque de 20 000 titres ne coûte que ~12 lignes
-//! par image, et la sélection au clavier tourne les pages toute seule.
+//! Bibliothèque et file GLISSENT en pixels (façon lanceur) : toutes les
+//! lignes sont rendues, la sélection reste, le clavier la fait suivre.
+//! Les paroles gardent leur fenêtre calée sur la lecture.
 //!
 //! Clavier : Espace lecture · ←/→ ±5 s · ↑/↓ choisir · Entrée jouer · / chercher ·
 //! a ajouter · x retirer · Tab bascule bibliothèque/file · n/p suivant/précédent ·
@@ -14,8 +14,8 @@ use std::sync::Arc;
 
 use gpui::prelude::*;
 use gpui::{
-    div, px, ClickEvent, Context, Div, Entity, FocusHandle, FontWeight, KeyDownEvent, Stateful,
-    Window,
+    div, px, ClickEvent, Context, Div, Entity, FocusHandle, FontWeight, KeyDownEvent,
+    ScrollDelta, ScrollHandle, ScrollWheelEvent, Stateful, Window,
 };
 use widgetkit::prelude::*;
 
@@ -51,10 +51,15 @@ pub struct MusicPanel {
     tab: Tab,
     query: String,
     searching: bool,
-    /// Position sélectionnée dans la liste affichée (absolue, pas par page).
+    /// Position sélectionnée dans la liste (absolue, jamais par page).
     sel: usize,
+    /// Offset de défilement en pixels (façon lanceur) : la molette fait
+    /// glisser la vue, la sélection reste ; le clavier la fait suivre.
+    scroll: ScrollHandle,
     /// Lignes par page, recalculées à chaque rendu (pour les touches PgUp/PgDn).
     rows_per_page: usize,
+    /// Reste de molette non consommé (pavés tactiles envoient des petits pas).
+    wheel_debt: f32,
     focus: FocusHandle,
 }
 
@@ -69,6 +74,8 @@ impl MusicPanel {
             searching: false,
             sel: 0,
             rows_per_page: 10,
+            wheel_debt: 0.0,
+            scroll: ScrollHandle::new(),
             focus: cx.focus_handle(),
         }
     }
@@ -107,14 +114,57 @@ impl MusicPanel {
         let len = self.list_len(cx);
         if len > 0 {
             self.sel = (self.sel as isize + delta).clamp(0, len as isize - 1) as usize;
+            // La vue suit la sélection (sauf paroles : fenêtre fixe calée
+            // sur la lecture, pas de conteneur scrollé).
+            if self.tab != Tab::Lyrics {
+                self.scroll.scroll_to_item(self.sel);
+            }
             cx.notify();
+        }
+    }
+
+    /// Molette sur la liste : déplace la sélection (donc tourne les pages,
+    /// le rendu pagine depuis `sel`). Molette bas = vers le bas. Les petits
+    /// pas (pavé tactile) s'accumulent dans `wheel_debt`. Ignoré sur les
+    /// paroles synchronisées : la fenêtre suit la lecture, pas la sélection.
+    fn on_wheel(&mut self, ev: &ScrollWheelEvent, cx: &mut Context<Self>) {
+        let synced = self.tab == Tab::Lyrics
+            && self
+                .player
+                .read(cx)
+                .lyrics
+                .as_ref()
+                .map_or(false, |l| l.synced);
+        if synced {
+            return;
+        }
+        let rows = match ev.delta {
+            ScrollDelta::Pixels(p) => f32::from(p.y) / 44.0,
+            // `Lines` arrive déjà multiplié par 3 (SCROLL_LINES de GPUI) :
+            // un cran = 3 lignes, tel quel, sans re-multiplier.
+            ScrollDelta::Lines(p) => p.y,
+        };
+        self.wheel_debt += rows;
+        let step = self.wheel_debt.trunc() as isize;
+        if step != 0 {
+            self.wheel_debt -= step as f32;
+            self.step(step, cx);
         }
     }
 
     fn switch_tab(&mut self, tab: Tab, cx: &mut Context<Self>) {
         self.tab = tab;
-        self.sel = 0;
+        self.reset_sel();
         cx.notify();
+    }
+
+    /// Sélection à zéro + vue en haut (bibliothèque/file) : à chaque fois
+    /// que la recherche change, les résultats changent aussi.
+    fn reset_sel(&mut self) {
+        self.sel = 0;
+        if self.tab != Tab::Lyrics {
+            self.scroll.scroll_to_item(0);
+        }
     }
 
     fn activate(&mut self, cx: &mut Context<Self>) {
@@ -141,7 +191,7 @@ impl MusicPanel {
                 "escape" => {
                     self.query.clear();
                     self.searching = false;
-                    self.sel = 0;
+                    self.reset_sel();
                 }
                 "enter" => {
                     self.searching = false;
@@ -149,7 +199,7 @@ impl MusicPanel {
                 }
                 "backspace" => {
                     self.query.pop();
-                    self.sel = 0;
+                    self.reset_sel();
                 }
                 "up" => return self.step(-1, cx),
                 "down" => return self.step(1, cx),
@@ -159,7 +209,7 @@ impl MusicPanel {
                         && self.query.chars().count() < 64
                     {
                         self.query.push_str(ch);
-                        self.sel = 0;
+                        self.reset_sel();
                     }
                 }
             }
@@ -174,7 +224,7 @@ impl MusicPanel {
                     cx.hide_window(ids::MUSIC);
                 } else {
                     self.query.clear();
-                    self.sel = 0;
+                    self.reset_sel();
                     cx.notify();
                 }
             }
@@ -228,7 +278,7 @@ impl MusicPanel {
             }
             "c" if self.tab == Tab::Queue => {
                 self.player.update(cx, |p, cx| p.clear_queue(cx));
-                self.sel = 0;
+                self.reset_sel();
                 cx.notify();
             }
             "x" | "delete" if self.tab == Tab::Queue => {
@@ -262,7 +312,7 @@ struct Data {
 }
 
 impl MusicPanel {
-    fn collect(&mut self, rows_per_page: usize, cx: &Context<Self>) -> Data {
+    fn collect(&mut self, cx: &Context<Self>) -> Data {
         let list_all = match self.tab {
             Tab::Library => self.filtered(cx),
             Tab::Queue | Tab::Lyrics => Vec::new(),
@@ -279,31 +329,28 @@ impl MusicPanel {
         };
         self.sel = self.sel.min(list_len.saturating_sub(1));
 
-        let start = (self.sel / rows_per_page) * rows_per_page;
-        // Les paroles ont leur propre rendu : aucune ligne de liste à construire.
-        let end = if self.tab == Tab::Lyrics {
-            start
-        } else {
-            (start + rows_per_page).min(list_len)
-        };
         let cur_idx = p.current.and_then(|c| p.queue.get(c).copied());
 
+        // Liste ENTIÈRE (glissade en pixels façon lanceur, pas de pages) :
+        // les paroles gardent leur propre rendu fenêtré, aucune ligne ici.
         let mut rows = Vec::new();
-        for pos in start..end {
-            let (lib_idx, current) = match self.tab {
-                Tab::Library => (list_all[pos], Some(list_all[pos]) == cur_idx),
-                Tab::Queue => (p.queue[pos], Some(pos) == p.current),
-                Tab::Lyrics => continue,
-            };
-            let Some(t) = p.tracks.get(lib_idx) else { continue };
-            rows.push(Row {
-                pos,
-                lib_idx,
-                title: t.title.clone(),
-                sub: format!("{} · {}", t.artist, t.album),
-                secs: t.secs,
-                current,
-            });
+        if self.tab != Tab::Lyrics {
+            for pos in 0..list_len {
+                let (lib_idx, current) = match self.tab {
+                    Tab::Library => (list_all[pos], Some(list_all[pos]) == cur_idx),
+                    Tab::Queue => (p.queue[pos], Some(pos) == p.current),
+                    Tab::Lyrics => continue,
+                };
+                let Some(t) = p.tracks.get(lib_idx) else { continue };
+                rows.push(Row {
+                    pos,
+                    lib_idx,
+                    title: t.title.clone(),
+                    sub: format!("{} · {}", t.artist, t.album),
+                    secs: t.secs,
+                    current,
+                });
+            }
         }
 
         Data {
@@ -513,7 +560,9 @@ impl MusicPanel {
             } else {
                 pal::with_alpha(pal::accent(), 0.0)
             })
-            .hover(|s| s.bg(pal::raised()))
+            // Pas de surlignage au survol : la sélection est la seule ligne
+            // allumée (sinon molette + souris = deux lignes allumées).
+            // Le curseur pointeur + le clic suffisent.
             .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                 this.sel = pos;
                 this.activate(cx);
@@ -687,7 +736,7 @@ impl MusicPanel {
                     .hover(|s| s.bg(pal::raised()))
                     .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                         this.player.update(cx, |p, cx| p.clear_queue(cx));
-                        this.sel = 0;
+                        this.reset_sel();
                         cx.notify();
                     }))
                     .child("Vider")
@@ -735,33 +784,55 @@ impl MusicPanel {
                     .child(search_text),
             );
 
-        let mut list = div().flex_1().min_h_0().flex().flex_col().gap(px(2.)).overflow_hidden();
-        if self.tab == Tab::Lyrics {
-            list = self.lyrics_list(d, rows_per_page);
-        } else if d.rows.is_empty() {
-            list = self.empty_state(d);
+        // Bibliothèque/file : conteneur scrollé en pixels façon lanceur (les
+        // lignes sont ses enfants directs pour `scroll_to_item`). Paroles :
+        // rendu fenêtré existant, la molette y tourne les pages.
+        let list = if self.tab == Tab::Lyrics {
+            self.lyrics_list(d, rows_per_page)
+                .on_scroll_wheel(cx.listener(
+                    |this, ev: &ScrollWheelEvent, _, cx| {
+                        this.on_wheel(ev, cx);
+                    },
+                ))
+                .into_any_element()
         } else {
-            for r in &d.rows {
-                list = list.child(self.row_view(r, cx));
+            let scroll = self.scroll.clone();
+            let mut l = div()
+                .id("mu-scroll")
+                .flex_1()
+                .min_h_0()
+                .flex()
+                .flex_col()
+                .gap(px(2.))
+                .overflow_y_scroll()
+                .track_scroll(&scroll);
+            if d.rows.is_empty() {
+                l = l.child(self.empty_state(d));
+            } else {
+                for r in &d.rows {
+                    l = l.child(self.row_view(r, cx));
+                }
             }
-        }
-
-        // Pagination : « 13–24 / 340 » + boutons.
-        let page = self.sel / rows_per_page;
-        let pages = d.list_len.div_ceil(rows_per_page).max(1);
-        let start = page * rows_per_page;
-        let end = (start + rows_per_page).min(d.list_len);
-        let synced_lyrics =
-            self.tab == Tab::Lyrics && d.lyrics.as_ref().map_or(false, |l| l.synced);
-        let range = if synced_lyrics {
-            "Synchronisées — clique une ligne pour t'y rendre".to_string()
-        } else if d.list_len == 0 {
-            "0".to_string()
-        } else {
-            format!("{}–{} / {}", start + 1, end, d.list_len)
+            l.into_any_element()
         };
-        let prev_sel = page.saturating_sub(1) * rows_per_page;
-        let next_sel = ((page + 1) * rows_per_page).min(d.list_len.saturating_sub(1));
+
+        // Compteur (« 913 titres »), plus de pages ni boutons : la glissade
+        // et ↑/↓/PgUp/PgDn (avec suivi) couvrent la navigation.
+        let count = match self.tab {
+            Tab::Library => format!(
+                "{} titre{}",
+                d.list_len,
+                if d.list_len > 1 { "s" } else { "" }
+            ),
+            Tab::Queue => format!("File · {}", d.queue_len),
+            Tab::Lyrics => match &d.lyrics {
+                Some(l) if l.synced => {
+                    "Synchronisées — clique une ligne pour t'y rendre".to_string()
+                }
+                Some(l) => format!("{} lignes", l.lines.len()),
+                None => "—".to_string(),
+            },
+        };
 
         let footer = div()
             .flex()
@@ -770,34 +841,10 @@ impl MusicPanel {
             .gap_2()
             .h(px(30.))
             .child(
-                ui::btn("mu-pg-prev")
-                    .w(px(28.))
-                    .hover(|s| s.bg(pal::raised()))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        this.sel = prev_sel;
-                        cx.notify();
-                    }))
-                    .child(ui::glyph(icons::PREV, 10., pal::muted())),
-            )
-            .child(
                 div()
                     .text_xs()
                     .text_color(pal::muted())
-                    .child(if synced_lyrics {
-                        range
-                    } else {
-                        format!("{range}  ·  page {}/{pages}", page + 1)
-                    }),
-            )
-            .child(
-                ui::btn("mu-pg-next")
-                    .w(px(28.))
-                    .hover(|s| s.bg(pal::raised()))
-                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        this.sel = next_sel;
-                        cx.notify();
-                    }))
-                    .child(ui::glyph(icons::NEXT, 10., pal::muted())),
+                    .child(count),
             )
             .child(
                 div()
@@ -807,7 +854,7 @@ impl MusicPanel {
                     .text_right()
                     .text_xs()
                     .text_color(pal::muted())
-                    .child("Espace ▶/⏸ · ←/→ ±5 s · ↑/↓ · Entrée · / chercher · a ajouter · e ensuite · y paroles · Tab · Échap"),
+                    .child("Espace ▶/⏸ · ←/→ ±5 s · ↑/↓ · molette · Entrée · / chercher · a ajouter · e ensuite · y paroles · Tab · Échap"),
             );
 
         div()
@@ -849,7 +896,7 @@ impl Render for MusicPanel {
         let rows_per_page = 9;
         self.rows_per_page = rows_per_page;
 
-        let data = self.collect(rows_per_page, cx);
+        let data = self.collect(cx);
 
         ui::backdrop("mu-bg", ids::MUSIC, 0.62)
             .track_focus(&self.focus)
