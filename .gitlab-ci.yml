@@ -69,7 +69,7 @@ build_aurora:
     - mkdir -p stage && cp target/release/aurora target/release/aurora-lockscreen target/release/widgetctl stage/
     - (cd stage && sha256sum aurora aurora-lockscreen widgetctl > SHA256SUMS)
     - tar -czf "aurora-${CI_COMMIT_TAG}-linux-x86_64.tar.gz" -C stage .
-    - sha256sum "aurora-${CI_COMMIT_TAG}-linux-x86_64.tar.gz" | awk '{print $1}' > "aurora-${CI_COMMIT_TAG}-linux-x86_64.tar.gz.sha256"
+    - sha256sum "aurora-${CI_COMMIT_TAG}-linux-x86_64.tar.gz" > "aurora-${CI_COMMIT_TAG}-linux-x86_64.tar.gz.sha256"
     # Paquet générique : URL stable et publique pour l'installeur curl.
     - 'curl --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "aurora-${CI_COMMIT_TAG}-linux-x86_64.tar.gz" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/aurora/${CI_COMMIT_TAG}/aurora-${CI_COMMIT_TAG}-linux-x86_64.tar.gz"'
     - 'curl --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "aurora-${CI_COMMIT_TAG}-linux-x86_64.tar.gz.sha256" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/aurora/${CI_COMMIT_TAG}/aurora-${CI_COMMIT_TAG}-linux-x86_64.tar.gz.sha256"'
