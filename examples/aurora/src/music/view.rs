@@ -1,4 +1,4 @@
-//! Fenêtre `aurora-music` : disque + commandes à gauche, bibliothèque / file à droite.
+//! Fenêtre `aurora-music` : pochette + karaoké à gauche, bibliothèque / file à droite.
 //!
 //! Les listes sont PAGINÉES (autant de lignes que la hauteur en permet) au lieu
 //! d'être défilantes : une bibliothèque de 20 000 titres ne coûte que ~12 lignes
@@ -62,8 +62,6 @@ impl MusicPanel {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let player = handle(cx);
         cx.observe(&player, |_, _, cx| cx.notify()).detach();
-        // Pré-rend les 25 calques du vinyle en arrière-plan (zéro jank).
-        disc::prewarm(cx);
         Self {
             player,
             tab: Tab::Library,
@@ -173,7 +171,6 @@ impl MusicPanel {
         match key {
             "escape" => {
                 if self.query.is_empty() {
-                    disc::evict();
                     cx.hide_window(ids::MUSIC);
                 } else {
                     self.query.clear();
@@ -254,8 +251,6 @@ struct Data {
     pos: f64,
     dur: f64,
     cover: Option<PathBuf>,
-    arm_idx: usize,
-    spin_frame: usize,
     lyrics: Option<Arc<Lyrics>>,
     error: Option<String>,
     scanning: bool,
@@ -320,8 +315,6 @@ impl MusicPanel {
             pos: p.snap.position,
             dur: p.snap.duration,
             cover: p.cover.clone(),
-            arm_idx: p.arm_idx,
-            spin_frame: p.spin_frame,
             lyrics: p.lyrics.clone(),
             error: p.error.clone(),
             scanning: p.scanning,
@@ -378,42 +371,36 @@ impl MusicPanel {
             .p_5()
             .border_r_1()
             .border_color(pal::border())
-            .child(disc::vinyl(d.arm_idx, d.spin_frame))
+            .child(disc::cover_large(d.cover.clone()))
             .child(
                 div()
                     .w_full()
                     .flex()
-                    .flex_row()
+                    .flex_col()
                     .items_center()
-                    .gap_3()
-                    .child(disc::cover_thumb(d.cover.clone()))
                     .child(
                         div()
-                            .flex_1()
+                            .w_full()
                             .min_w_0()
-                            .flex()
-                            .flex_col()
-                            .child(
-                                div()
-                                    .w_full()
-                                    .min_w_0()
-                                    .truncate()
-                                    .text_size(px(18.))
-                                    .font_weight(FontWeight::BOLD)
-                                    .text_color(pal::text())
-                                    .child(title),
-                            )
-                            .child(
-                                div()
-                                    .w_full()
-                                    .min_w_0()
-                                    .truncate()
-                                    .text_sm()
-                                    .text_color(pal::muted())
-                                    .child(sub),
-                            ),
+                            .truncate()
+                            .text_center()
+                            .text_size(px(18.))
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(pal::text())
+                            .child(title),
+                    )
+                    .child(
+                        div()
+                            .w_full()
+                            .min_w_0()
+                            .truncate()
+                            .text_center()
+                            .text_sm()
+                            .text_color(pal::muted())
+                            .child(sub),
                     ),
             )
+            .children(disc::karaoke(d.lyrics.as_ref(), d.pos))
             .child(
                 div()
                     .w_full()

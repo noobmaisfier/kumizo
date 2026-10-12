@@ -3,17 +3,17 @@
 //! Une seule instance (entité globale, comme le pomodoro) partagée par la barre
 //! et la fenêtre `aurora-music`.
 //!
-//! Zéro coût au repos : mpv n'est lancé qu'à la première lecture, le dossier
-//! n'est parcouru qu'à la première ouverture, et le minuteur de 500 ms
-//! n'existe que pendant la lecture.
+//! Zéro coût au repos : le moteur n'est créé qu'à la première lecture, le
+//! dossier n'est parcouru qu'à la première ouverture, et le minuteur de
+//! 500 ms n'existe que pendant la lecture.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use gpui::{App, AppContext, Context, Entity, Global};
+use widgetkit::prelude::*;
 
-use super::disc::{ARM_DOWN, ARM_UP, SPIN_FRAMES};
 use super::engine::{Engine, Snapshot};
 use super::library::{self, Track};
 use super::lyrics::{self, Lyrics};
@@ -51,13 +51,6 @@ pub struct Player {
     cover_gen: u64,
     lyrics_gen: u64,
     rng: u64,
-    /// Animation du vinyle : position du label (0..18) et du bras (0..5).
-    /// Les boucles (`spin_gen`, `arm_gen`) n'existent que pendant leurs
-    /// transitions — zéro CPU au repos comme le reste du shell.
-    pub spin_frame: usize,
-    spin_gen: u64,
-    pub arm_idx: usize,
-    arm_gen: u64,
 }
 
 impl Player {
@@ -88,10 +81,6 @@ impl Player {
             cover_gen: 0,
             lyrics_gen: 0,
             rng: seed | 1,
-            spin_frame: 0,
-            spin_gen: 0,
-            arm_idx: ARM_UP,
-            arm_gen: 0,
         }
     }
 
@@ -132,11 +121,10 @@ impl Player {
                 p.finished = false;
                 p.cover = None;
                 p.lyrics = None;
-                // Sans ça, mpv continuerait à jouer un titre que l'interface ne connaît plus.
+                // Sans ça, le moteur continuerait à jouer un titre que l'interface ne connaît plus.
                 if let Some(e) = &p.engine {
                     e.stop();
                 }
-                p.swing_to(ARM_UP, cx);
                 cx.notify();
             });
         })
@@ -187,8 +175,6 @@ impl Player {
         self.last_sec = 0;
         self.engine().load(&track.path);
         self.spawn_ticker(cx);
-        self.spawn_spin(cx);
-        self.swing_to(ARM_DOWN, cx);
         self.load_cover(track.clone(), cx);
         self.load_lyrics(track, cx);
         cx.notify();
@@ -206,7 +192,7 @@ impl Player {
             return;
         }
         if self.finished {
-            // La file s'est terminée : mpv est inactif, il faut recharger le titre.
+            // La file s'est terminée : le moteur est inactif, il faut recharger le titre.
             if let Some(c) = self.current {
                 self.start(c, cx);
             }
@@ -218,10 +204,6 @@ impl Player {
         self.snap.paused = paused;
         if self.playing {
             self.spawn_ticker(cx);
-            self.spawn_spin(cx);
-            self.swing_to(ARM_DOWN, cx);
-        } else {
-            self.swing_to(ARM_UP, cx);
         }
         cx.notify();
     }
@@ -373,62 +355,6 @@ impl Player {
         .detach();
     }
 
-    /// Rotation du label : 18 positions × 100 ms = 1,8 s/tour (≈ 33 tours/min).
-    /// Ne tourne que pendant la lecture ; la boucle meurt dès la pause.
-    fn spawn_spin(&mut self, cx: &mut Context<Self>) {
-        self.spin_gen = self.spin_gen.wrapping_add(1);
-        let g = self.spin_gen;
-        cx.spawn(async move |this, cx| loop {
-            async_io::Timer::after(Duration::from_millis(100)).await;
-            let keep = this
-                .update(cx, |p, cx| {
-                    if p.spin_gen != g || !p.playing {
-                        return false;
-                    }
-                    p.spin_frame = (p.spin_frame + 1) % SPIN_FRAMES;
-                    cx.notify();
-                    true
-                })
-                .unwrap_or(false);
-            if !keep {
-                break;
-            }
-        })
-        .detach();
-    }
-
-    /// Bascule du bras vers `target` (~100 ms par cran, ≈ 700 ms au total).
-    /// Un nouveau basculement invalide l'ancien via `arm_gen`.
-    fn swing_to(&mut self, target: usize, cx: &mut Context<Self>) {
-        let target = target.min(ARM_UP);
-        self.arm_gen = self.arm_gen.wrapping_add(1);
-        let g = self.arm_gen;
-        if self.arm_idx == target {
-            return;
-        }
-        cx.spawn(async move |this, cx| loop {
-            async_io::Timer::after(Duration::from_millis(100)).await;
-            let keep = this
-                .update(cx, |p, cx| {
-                    if p.arm_gen != g {
-                        return false;
-                    }
-                    if p.arm_idx < target {
-                        p.arm_idx += 1;
-                    } else if p.arm_idx > target {
-                        p.arm_idx -= 1;
-                    }
-                    cx.notify();
-                    p.arm_idx != target
-                })
-                .unwrap_or(false);
-            if !keep {
-                break;
-            }
-        })
-        .detach();
-    }
-
     fn tick(&mut self, cx: &mut Context<Self>) {
         let Some(snap) = self.engine.as_ref().map(Engine::snapshot) else {
             return;
@@ -454,7 +380,7 @@ impl Player {
         let sec = snap.position as u64;
         let changed = sec != self.last_sec || snap.paused != self.snap.paused;
         self.last_sec = sec;
-        // Durée : le tag fait foi tant que mpv n'a rien annoncé.
+        // Durée : le tag fait foi tant que le moteur n'a rien annoncé.
         let duration = if snap.duration > 0.0 {
             snap.duration
         } else {
@@ -530,4 +456,86 @@ pub fn handle(cx: &mut App) -> Entity<Player> {
         cx.set_global(PlayerGlobal(e));
     }
     cx.global::<PlayerGlobal>().0.clone()
+}
+
+
+// ── Service `music` ─────────────────────────────────────────────────────────
+/// Pilote le lecteur depuis la ligne de commande (et les scripts) :
+///
+/// ```text
+/// widgetctl service music toggle
+/// widgetctl service music play | pause | next | prev | stop
+/// widgetctl service music seek 60
+/// widgetctl service music volume 15
+/// ```
+///
+/// Le nom CLI vient du type (`Music` → `music`). Teste le moteur sans
+/// toucher au clavier — donc sans empoisonner le keymap Wayland (`wtype`).
+pub struct Music;
+
+impl Service for Music {
+    fn init(_cx: &mut Context<Self>) -> Self {
+        Self
+    }
+
+    fn ipc_action(
+        &mut self,
+        cx: &mut Context<Self>,
+        action: &str,
+        payload: Option<&str>,
+    ) -> bool {
+        let player = handle(cx);
+        match action {
+            "toggle" => {
+                player.update(cx, |p, cx| p.toggle(cx));
+                true
+            }
+            "play" => {
+                if !player.read(cx).playing {
+                    player.update(cx, |p, cx| p.toggle(cx));
+                }
+                true
+            }
+            "pause" => {
+                if player.read(cx).playing {
+                    player.update(cx, |p, cx| p.toggle(cx));
+                }
+                true
+            }
+            "next" => {
+                player.update(cx, |p, cx| p.next(cx));
+                true
+            }
+            "prev" => {
+                player.update(cx, |p, cx| p.prev(cx));
+                true
+            }
+            "stop" => {
+                player.update(cx, |p, cx| {
+                    p.playing = false;
+                    p.finished = false;
+                    if let Some(e) = p.engine.as_ref() {
+                        e.stop();
+                    }
+                    cx.notify();
+                });
+                true
+            }
+            "seek" => {
+                let Some(t) = payload.and_then(|v| v.trim().parse::<f64>().ok()) else {
+                    return false;
+                };
+                player.update(cx, |p, cx| p.seek_to(t, cx));
+                true
+            }
+            "volume" => {
+                let Some(v) = payload.and_then(|v| v.trim().parse::<u8>().ok()) else {
+                    return false;
+                };
+                player.update(cx, |p, cx| p.set_volume(v, cx));
+                true
+            }
+            _ => false,
+        }
+    }
 }
