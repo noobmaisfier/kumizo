@@ -400,7 +400,6 @@ impl MusicPanel {
                             .child(sub),
                     ),
             )
-            .children(disc::karaoke(d.lyrics.as_ref(), d.pos))
             .child(
                 div()
                     .w_full()

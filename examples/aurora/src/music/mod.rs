@@ -4,7 +4,7 @@
 //! library : parcours du dossier, tags (lofty), pochettes
 //! model   : file d'attente + état de lecture (entité globale)
 //! lyrics  : paroles locales (.lrc / .txt / tags)
-//! disc    : pochette, karaoké, barre de lecture, boutons
+//! disc    : pochette, barre de lecture, boutons
 //! view    : fenêtre `aurora-music`
 //!
 //! NOTE LICENCE : rockbox-playback est GPL-2.0-or-later, voir `Cargo.toml`.

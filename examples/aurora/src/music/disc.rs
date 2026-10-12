@@ -1,16 +1,12 @@
-//! Briques visuelles du lecteur : pochette, karaoké, barre de lecture, boutons.
+//! Briques visuelles du lecteur : pochette, barre de lecture, boutons.
 //!
-//! Aucun vinyle : l'ancre visuelle est la pochette grand format (300 px) puis,
-//! quand un `.lrc` synchronisé existe, un bandeau karaoké (précédente / en
-//! cours / suivante). Zéro minuteur dédié : le ticker 500 ms du `Player`
-//! suffit (les lignes changent à la seconde, pas à 10 Hz).
-
-use std::sync::Arc;
+//! L'ancre visuelle est la pochette grand format (300 px). Les paroles vivent
+//! dans l'onglet Paroles à droite : aucun bandeau karaoké ici (doublon).
+//! Zéro minuteur dédié : le ticker 500 ms du `Player` suffit.
 
 use gpui::prelude::*;
-use gpui::{div, px, App, Div, Entity, FontWeight, Rgba, Stateful};
+use gpui::{div, px, App, Div, Entity, Rgba, Stateful};
 
-use super::lyrics::Lyrics;
 use super::model::{Player, Repeat};
 use crate::{
     icons,
@@ -44,65 +40,6 @@ pub fn cover_large(cover: Option<std::path::PathBuf>) -> Div {
         .rounded_xl()
         .overflow_hidden()
         .child(picture)
-}
-
-/// Bandeau karaoké : ligne précédente (discrète), ligne en cours (accent,
-/// gras, grande), ligne suivante (discrète). `None` quand rien à montrer
-/// (pas de paroles, ou paroles non synchronisées : l'onglet Paroles à droite
-/// couvre ces cas). Texte seul, sans clic (l'onglet Paroles gère le seek).
-pub fn karaoke(lyrics: Option<&Arc<Lyrics>>, pos: f64) -> Option<Div> {
-    let ly = lyrics?;
-    if !ly.synced || ly.lines.is_empty() {
-        return None;
-    }
-    let text = |i: usize| {
-        let t = ly.lines.get(i).map(|(_, t)| t.as_str()).unwrap_or("");
-        if t.is_empty() { "♪".to_string() } else { t.to_string() }
-    };
-    let cur = ly.current(pos)?;
-    let mut col = div()
-        .w_full()
-        .flex()
-        .flex_col()
-        .items_center()
-        .gap_1()
-        .py_1();
-    if cur > 0 {
-        col = col.child(
-            div()
-                .w_full()
-                .min_w_0()
-                .truncate()
-                .text_center()
-                .text_sm()
-                .text_color(pal::muted())
-                .child(text(cur - 1)),
-        );
-    }
-    col = col.child(
-        div()
-            .w_full()
-            .min_w_0()
-            .truncate()
-            .text_center()
-            .text_size(px(19.))
-            .font_weight(FontWeight::BOLD)
-            .text_color(pal::accent())
-            .child(text(cur)),
-    );
-    if cur + 1 < ly.lines.len() {
-        col = col.child(
-            div()
-                .w_full()
-                .min_w_0()
-                .truncate()
-                .text_center()
-                .text_sm()
-                .text_color(pal::muted())
-                .child(text(cur + 1)),
-        );
-    }
-    Some(col)
 }
 
 /// Barre de lecture cliquable : 48 segments, chacun connaît sa fraction.
