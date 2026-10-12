@@ -35,7 +35,7 @@ jobs:
       image: rust:1-bookworm
     steps:
       - uses: actions/checkout@v4
-      - run: apt-get update -qq && apt-get install -y -qq pkg-config libpam0g-dev libwayland-dev libxkbcommon-dev libfontconfig1-dev libasound2-dev
+      - run: apt-get update -qq && apt-get install -y -qq pkg-config libpam0g-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libfontconfig1-dev libasound2-dev
       - uses: actions/cache@v4
         with:
           path: |
@@ -57,7 +57,7 @@ jobs:
       image: rust:1-bookworm
     steps:
       - uses: actions/checkout@v4
-      - run: apt-get update -qq && apt-get install -y -qq pkg-config libpam0g-dev libwayland-dev libxkbcommon-dev libfontconfig1-dev libasound2-dev
+      - run: apt-get update -qq && apt-get install -y -qq pkg-config libpam0g-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libfontconfig1-dev libasound2-dev
       - uses: actions/cache@v4
         with:
           path: |
@@ -89,7 +89,7 @@ jobs:
       image: rust:1-bookworm
     steps:
       - uses: actions/checkout@v4
-      - run: apt-get update -qq && apt-get install -y -qq pkg-config libpam0g-dev libwayland-dev libxkbcommon-dev libfontconfig1-dev libasound2-dev curl ca-certificates
+      - run: apt-get update -qq && apt-get install -y -qq pkg-config libpam0g-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libfontconfig1-dev libasound2-dev curl ca-certificates
       - uses: actions/cache@v4
         with:
           path: |

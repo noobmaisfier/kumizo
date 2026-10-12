@@ -54,7 +54,7 @@ have() { command -v "$1" >/dev/null 2>&1; }
 
 # -- Prérequis --------------------------------------------------------------
 # Paquets de compilation (noms Debian ; cf. .github/workflows/ci.yml).
-APT_PKGS="build-essential pkg-config libpam0g-dev libwayland-dev libxkbcommon-dev libfontconfig1-dev libasound2-dev git curl"
+APT_PKGS="build-essential pkg-config libpam0g-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libfontconfig1-dev libasound2-dev git curl"
 missing=""
 for c in curl tar sha256sum git gcc pkg-config; do
     have "$c" || missing="$missing $c"
