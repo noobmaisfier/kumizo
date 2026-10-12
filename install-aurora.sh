@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Installe aurora DEPUIS LES SOURCES (barre + lockscreen + widgetctl).
 #
-#   curl -fsSL https://raw.githubusercontent.com/noobmaisfier/kumizo/main/dist/install-aurora.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/noobmaisfier/kumizo/main/install-aurora.sh | sh
 #
 # Options (flags ou env) :
 #   --to DIR     destination des binaires (défaut : ~/.local/bin)

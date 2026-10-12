@@ -4,7 +4,8 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "GPUI Wayland Layer Shell extension traits and ergonomic wrappers for WidgetKit"
+repository.workspace = true
+description = "GPUI Wayland Layer Shell extension traits and ergonomic wrappers for Kumizo"
 
 [dependencies]
 gpui = { workspace = true }

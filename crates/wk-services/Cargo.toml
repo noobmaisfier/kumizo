@@ -4,7 +4,8 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Asynchronous system services for WidgetKit (Clock, Battery, Audio, MPRIS)"
+repository.workspace = true
+description = "Asynchronous system services for Kumizo (Clock, Battery, Audio, MPRIS)"
 
 [dependencies]
 gpui = { workspace = true }

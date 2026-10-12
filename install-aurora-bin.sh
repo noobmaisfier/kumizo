@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Installe les BINAIRES précompilés d'aurora (barre + lockscreen + widgetctl).
 #
-#   curl -fsSL https://raw.githubusercontent.com/noobmaisfier/kumizo/main/dist/install-aurora-bin.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/noobmaisfier/kumizo/main/install-aurora-bin.sh | sh
 #
 # Options (flags ou env) :
 #   --version vX.Y.Z   version à installer (défaut : dernière release, env AURORA_VERSION)
@@ -59,7 +59,7 @@ curl -fSL -o "$tmp/$tgz" "$base" || die "téléchargement impossible.
   La release n'existe pas (encore) pour $VER : les binaires sont publiés
   par GitHub Actions à chaque tag v*. En attendant, installe depuis
   les sources :
-  curl -fsSL https://raw.githubusercontent.com/$REPO/main/dist/install-aurora.sh | sh"
+  curl -fsSL https://raw.githubusercontent.com/$REPO/main/install-aurora.sh | sh"
 curl -fsSL -o "$tmp/$tgz.sha256" "$base.sha256" \
     || die "somme de contrôle introuvable pour $VER"
 (cd "$tmp" && sha256sum -c "$tgz.sha256") || die "somme de contrôle invalide"

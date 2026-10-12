@@ -4,7 +4,8 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "UNIX domain socket daemon IPC protocol and server for WidgetKit"
+repository.workspace = true
+description = "UNIX domain socket daemon IPC protocol and server for Kumizo"
 
 [dependencies]
 serde = { workspace = true }

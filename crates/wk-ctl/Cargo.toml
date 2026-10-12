@@ -4,7 +4,8 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Command-line control tool (widgetctl) for WidgetKit daemon"
+repository.workspace = true
+description = "Command-line control tool (widgetctl) for Kumizo daemon"
 
 [[bin]]
 name = "widgetctl"

@@ -4,7 +4,8 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "Native Wayland compositor IPC integrations (Hyprland, Sway, Niri) for WidgetKit"
+repository.workspace = true
+description = "Native Wayland compositor IPC integrations (Hyprland, Sway, Niri) for Kumizo"
 
 [dependencies]
 gpui = { workspace = true }

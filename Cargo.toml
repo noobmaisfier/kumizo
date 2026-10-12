@@ -21,7 +21,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["WidgetKit Contributors"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/widgetkit/widgetkit"
+repository = "https://github.com/noobmaisfier/kumizo"
 readme = "README.md"
 keywords = ["wayland", "gpui", "status-bar", "desktop", "widgets"]
 categories = ["gui", "os::unix-apis"]
@@ -76,8 +76,8 @@ libc = "0.2"
 # native dependencies are pulled in.
 image = { version = "0.25", default-features = false, features = ["png"] }
 smallvec = "1"
-wk-ui = { path = "crates/wk-ui" }
-wk-gpui-ext = { path = "crates/wk-gpui-ext" }
-wk-services = { path = "crates/wk-services" }
-wk-compositor = { path = "crates/wk-compositor" }
-wk-ipc = { path = "crates/wk-ipc" }
+wk-ui = { version = "0.1.0", path = "crates/wk-ui" }
+wk-gpui-ext = { version = "0.1.0", path = "crates/wk-gpui-ext" }
+wk-services = { version = "0.1.0", path = "crates/wk-services" }
+wk-compositor = { version = "0.1.0", path = "crates/wk-compositor" }
+wk-ipc = { version = "0.1.0", path = "crates/wk-ipc" }
