@@ -13,7 +13,9 @@
 #   --ref REF        branche/tag à compiler (défaut : main, env AURORA_REF)
 #   --src DIR        dossier du dépôt (défaut : ./ si c'est le dépôt, sinon ~/src/kumizo)
 #   --to DIR         destination des binaires (défaut : ~/.local/bin)
-#   --no-sway        ne touche pas à la config sway
+#   --sway           écrit aussi dans la config sway (sauvegardée avant).
+#                    Par défaut le script NE MODIFIE AUCUN fichier de config :
+#                    il affiche juste les 2 lignes à ajouter.
 #   --check          vérifie seulement les prérequis, sans rien installer
 
 set -eu
@@ -25,7 +27,7 @@ VER="${AURORA_VERSION:-latest}"
 REF="${AURORA_REF:-main}"
 SRC=""
 DEST="${HOME}/.local/bin"
-NO_SWAY=0
+DO_SWAY=0
 CHECK=0
 
 while [ $# -gt 0 ]; do
@@ -36,10 +38,10 @@ while [ $# -gt 0 ]; do
         --ref) [ "$MODE" = "bin" ] && { echo "conflit : --ref avec --bin/--version" >&2; exit 2; }; REF="${2:?}"; [ "$MODE" = "auto" ] && MODE="source"; shift 2 ;;
         --src) [ "$MODE" = "bin" ] && { echo "conflit : --src avec --bin/--version" >&2; exit 2; }; SRC="${2:?}"; [ "$MODE" = "auto" ] && MODE="source"; shift 2 ;;
         --to) DEST="${2:?}"; shift 2 ;;
-        --no-sway) NO_SWAY=1; shift ;;
+        --sway) DO_SWAY=1; shift ;;
         --check) CHECK=1; shift ;;
         -h|--help)
-            echo "usage: install-aurora.sh [--bin] [--source] [--version vX.Y.Z] [--ref REF] [--src DIR] [--to DIR] [--no-sway] [--check]";
+            echo "usage: install-aurora.sh [--bin] [--source] [--version vX.Y.Z] [--ref REF] [--src DIR] [--to DIR] [--sway] [--check]";
             exit 0 ;;
         *) echo "option inconnue : $1" >&2; exit 2 ;;
     esac
@@ -166,22 +168,26 @@ par GitHub Actions à chaque tag v*). Relance avec --source pour compiler."
         ;;
 esac
 
-# -- Sway (sauvegardé avant, idempotent) -----------------------------------------
-if [ "$NO_SWAY" -eq 0 ]; then
+# -- Sway : affiché par défaut, écrit seulement avec --sway --------------------
+if [ "$DO_SWAY" -eq 0 ]; then
+    say "ajoute à ta config sway :"
+    say '  exec ~/.local/bin/aurora'
+    say '  bindsym $mod+m exec ~/.local/bin/kumizo toggle aurora-music'
+    say "(ou relance avec --sway pour les ajouter automatiquement)"
+else
     cfg="${HOME}/.config/sway/config"
     if [ ! -f "$cfg" ]; then
-        say "pas de config sway ($cfg) : ajoute à la main :"
-        say '  exec ~/.local/bin/aurora'
-        say '  bindsym $mod+m exec ~/.local/bin/kumizo toggle aurora-music'
-    else
-        bak="${cfg}.bak_aurora_$(date +%Y%m%d-%H%M%S)"
-        cp "$cfg" "$bak" && say "sauvegarde sway : $bak"
-        grep -qF 'exec ~/.local/bin/aurora' "$cfg" \
-            || echo 'exec ~/.local/bin/aurora' >> "$cfg"
-        grep -qF 'kumizo toggle aurora-music' "$cfg" \
-            || echo 'bindsym $mod+m exec ~/.local/bin/kumizo toggle aurora-music' >> "$cfg"
-        say "sway : lancement + Super+M en place (recharge sway pour appliquer)"
+        die "pas de config sway ($cfg) : crée-la puis ajoute à la main :
+  exec ~/.local/bin/aurora
+  bindsym \$mod+m exec ~/.local/bin/kumizo toggle aurora-music"
     fi
+    bak="${cfg}.bak_aurora_$(date +%Y%m%d-%H%M%S)"
+    cp "$cfg" "$bak" && say "sauvegarde sway : $bak"
+    grep -qF 'exec ~/.local/bin/aurora' "$cfg" \
+        || echo 'exec ~/.local/bin/aurora' >> "$cfg"
+    grep -qF 'kumizo toggle aurora-music' "$cfg" \
+        || echo 'bindsym $mod+m exec ~/.local/bin/kumizo toggle aurora-music' >> "$cfg"
+    say "sway : lancement + Super+M en place (recharge sway pour appliquer)"
 fi
 
 # -- Avertissements (non bloquants) ----------------------------------------------

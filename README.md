@@ -74,7 +74,9 @@ curl -fsSL https://raw.githubusercontent.com/noobmaisfier/kumizo/main/install-au
 
 This installs the latest release binary when available, otherwise it builds
 from source (~10 min first time). Flags: `--bin` (binary only), `--source`
-(source only), `--to DIR`, `--no-sway`, `--check` (prerequisites only).
+(source only), `--to DIR`, `--check` (prerequisites only). The installer
+never touches your sway config — it prints the 2 lines to add, unless you
+pass `--sway`.
 
 Add to your Sway config (the installer proposes it, with a backup):
 
