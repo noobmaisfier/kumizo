@@ -113,13 +113,14 @@ pub fn is_light() -> bool {
 /// Clés `change-theme` des thèmes appliqués à tout le système (sway, foot,
 /// yazi, vim, gtk, herdr, puis aurora par IPC). Les thèmes absents de cette
 /// table ne changent qu'aurora : le script ne sait pas les décliner.
-const SYSTEM_KEYS: [(&str, &str); 6] = [
+const SYSTEM_KEYS: [(&str, &str); 7] = [
     ("flexoki-light", "Flexoki Light"),
     ("mocha", "Catppuccin Mocha"),
     ("aurora", "Aurora"),
     ("github-light", "GitHub Light"),
     ("nord", "Nord"),
     ("tokyo-night", "Tokyo Night"),
+    ("gruvbox-dark", "Gruvbox"),
 ];
 
 /// Clé `change-theme` d'un thème, si le script sait l'appliquer au système.
