@@ -31,38 +31,20 @@ const WS_ICONS: [&str; 10] = [
     "\u{f075a}", // 10
 ];
 
-/// Exécute un script au hasard de `~/.local/bin/change-theme/` (bascule
-/// de thème sway/foot/yazi/nvim/tmux + fond d'écran). Sans script
-/// exécutable, ne fait rien (pas d'erreur, pas de bruit).
+/// Bascule de thème aléatoire : délègue à `~/.local/bin/change-theme random`
+/// (le script possède la liste des thèmes ; sway/foot/yazi/nvim/kumizo et le
+/// fond d'écran suivent). Sans script exécutable, ne fait rien.
 fn shuffle_theme() {
     let Some(home) = std::env::var_os("HOME") else {
         return;
     };
-    let Ok(entries) = std::fs::read_dir(std::path::PathBuf::from(home).join(".local/bin/change-theme")) else {
-        return;
-    };
-    let mut scripts: Vec<std::path::PathBuf> = entries
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| {
-            p.is_file()
-                && p.metadata()
-                    .map(|m| std::os::unix::fs::PermissionsExt::mode(&m.permissions()) & 0o111 != 0)
-                    .unwrap_or(false)
-        })
-        .collect();
-    scripts.sort();
-    if scripts.is_empty() {
+    let script = std::path::PathBuf::from(home).join(".local/bin/change-theme");
+    if !script.is_file() {
         return;
     }
-    // Pas de dépendance de tirage : nanos xor pid, biais négligeable ici.
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.subsec_nanos() as u64)
-        .unwrap_or(0);
-    let pick = &scripts[((nanos ^ std::process::id() as u64 * 0x9e3779b1) % scripts.len() as u64) as usize];
-    if let Some(s) = pick.to_str() {
-        ui::run(s, &[]);
+    // `ui::run` ajoute ~/.local/bin au PATH et n'attend pas la fin du script.
+    if let Some(path) = script.to_str() {
+        ui::run(path, &["random"]);
     }
 }
 
@@ -243,8 +225,7 @@ impl TopBar {
             .on_click(|_, _, cx| ui::toggle_exclusive(ids::CLIPBOARD, cx))
             .child(ui::glyph(icons::CLIPBOARD, 14., pal::text()));
 
-        // Pinceau : bascule de thème (un script au hasard de
-        // `~/.local/bin/change-theme/`).
+        // Pinceau : thème au hasard (`change-theme random`).
         let theme = btn("bar-theme")
             .w(px(28.))
             .hover(|s| s.bg(pal::raised()))
