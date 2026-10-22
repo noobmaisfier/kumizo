@@ -1,3 +1,14 @@
+# ---------------------------------------------------------------------------
+# CI suspendue jusqu'à nouvel ordre (22 oct. 2026)
+# Aucune pipeline ne se crée : push main, tags, MR — tout est bloqué.
+# Réactivation : supprimer ce bloc `workflow`, ou définir la variable de
+# projet KUMIZO_CI=on (Paramètres > CI/CD > Variables).
+# Côté GitHub, le workflow `ci` est désactivé (gh workflow disable ci).
+# ---------------------------------------------------------------------------
+workflow:
+  rules:
+    - if: '$KUMIZO_CI == "on"'
+
 stages:
   - test
   - build
