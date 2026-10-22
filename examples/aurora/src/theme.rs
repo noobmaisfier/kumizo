@@ -100,6 +100,16 @@ pub fn current() -> &'static Theme {
     &THEMES[current_index()]
 }
 
+/// Vrai si le fond du thème est clair. Sert aux rares endroits où il faut
+/// adapter le contraste (icônes de tray monochromes, par exemple).
+pub fn is_light() -> bool {
+    let c = current().bg;
+    let r = ((c >> 16) & 0xff) as f32;
+    let g = ((c >> 8) & 0xff) as f32;
+    let b = (c & 0xff) as f32;
+    0.2126 * r + 0.7152 * g + 0.0722 * b > 127.5
+}
+
 /// Résout une cible CLI (« Flexoki Light » ou un index « 3 ») en index de
 /// thème. Les noms sont comparés sans tenir compte de la casse ; un index
 /// numérique est accepté tel quel (`set` borne ensuite).

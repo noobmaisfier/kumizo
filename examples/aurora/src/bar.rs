@@ -11,7 +11,7 @@ use crate::{
     icons,
     osd::{self, OsdKind, OsdState},
     pomodoro::{self, Pomodoro},
-    theme::pal,
+    theme::{self, pal},
     ui::{self, btn, ids, pill},
 };
 
@@ -366,17 +366,39 @@ impl TopBar {
             );
         }
 
-        // Tray
+        // Tray. Certaines apps (Free Download Manager) fournissent un logo
+        // monochrome blanc, invisible sur un thème clair. On pose alors une
+        // pastille `muted` derrière l'icône ; sur thème sombre le logo blanc
+        // se détache déjà, la pastille serait superflue.
         let tray_svc = self.tray.read(cx);
         let entries = tray_svc.items();
         if !entries.is_empty() {
+            let chip = theme::is_light();
             let mut tray_row = pill().gap_1();
             for (i, e) in entries.iter().enumerate() {
                 let tray = self.tray.clone();
                 let id = e.id.clone();
                 let icon = match e.icon.clone() {
                     Some(img) => gpui::img(img).w(px(16.)).h(px(16.)).into_any_element(),
-                    None => ui::glyph(icons::WINDOWS, 13., pal::muted()).into_any_element(),
+                    None => {
+                        // Sans pastille, le glyphe de secours suit `muted` ;
+                        // avec, il doit trancher sur le fond `muted`.
+                        let color = if chip { pal::surface() } else { pal::muted() };
+                        ui::glyph(icons::WINDOWS, 13., color).into_any_element()
+                    }
+                };
+                let icon = if chip {
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .size(px(20.))
+                        .rounded_md()
+                        .bg(pal::muted())
+                        .child(icon)
+                        .into_any_element()
+                } else {
+                    icon
                 };
                 tray_row = tray_row.child(
                     btn(("tray", i))
