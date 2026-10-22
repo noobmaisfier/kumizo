@@ -250,7 +250,7 @@ impl TopBar {
             row = row.child(
                 div()
                     .min_w_0()
-                    .max_w(px(220.))
+                    .max_w(px(160.))
                     .truncate()
                     .text_sm()
                     .text_color(pal::text())
