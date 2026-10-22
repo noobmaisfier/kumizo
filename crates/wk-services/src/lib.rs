@@ -10,6 +10,7 @@
 //! - [`Network`]: Wi-Fi status via NetworkManager, iwd or `/proc/net/wireless`
 //! - [`Tray`]: System tray host (StatusNotifierItem watcher, icons, menus)
 //! - [`Brightness`]: Screen backlight via sysfs + `brightnessctl`
+//! - [`Memory`]: RAM usage from `/proc/meminfo` (polled, notify on change)
 //! - [`Source`]: build your own event-driven data source (process stdout, file, socket) without a full `Service`
 
 pub mod apps;
@@ -19,6 +20,7 @@ pub mod bluetooth;
 pub mod brightness;
 pub mod clipboard;
 pub mod clock;
+pub mod memory;
 pub mod mpris;
 pub mod network;
 pub mod notifications;
@@ -34,6 +36,7 @@ pub use bluetooth::{Bluetooth, BluetoothDevice};
 pub use brightness::Brightness;
 pub use clipboard::{Clipboard, ClipboardItem};
 pub use clock::{Clock, ClockResolution};
+pub use memory::Memory;
 pub use mpris::{Mpris, PlaybackStatus};
 pub use network::{Network, WifiBackend, WifiNetwork};
 pub use notifications::{Notification, NotificationAction, Notifications, Urgency};

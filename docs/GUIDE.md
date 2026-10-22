@@ -27,8 +27,8 @@ Three things combine in every shell:
    data comes from struct fields or from a service read via
    `entity.read(cx)`.
 3. **Service** (optional but the general case) — a reactive data source
-   (`Clock`, `Battery`, `Audio`, `Brightness`, `Mpris`, `Network`, `Tray`,
-   `Compositor`, or a custom one). The only way to redraw is `cx.notify()`:
+   (`Clock`, `Battery`, `Memory`, `Audio`, `Brightness`, `Mpris`, `Network`,
+   `Tray`, `Compositor`, or a custom one). The only way to redraw is `cx.notify()`:
    called directly in the view, in a closure passed to `update`, or emitted
    by an observed service.
 
@@ -233,7 +233,8 @@ Register ONLY services your views consume (each opens real system
 connections). Built-ins (`crates/wk-services/src/`, plus `Compositor` in
 `crates/wk-compositor/src/`; all re-exported by the prelude):
 `Clock` (`time_hms()`, `set_resolution()` `[&mut]`),
-`Battery` (`percent()`, `state()`, `is_charging()`), `Audio` (`volume()`,
+`Battery` (`percent()`, `state()`, `is_charging()`), `Memory` (`percent()`,
+`used()`, `used_gib()`, `total_gib()`), `Audio` (`volume()`,
 `toggle_mute()` `[&mut]`, IPC `toggle_mute/volume_set/…`),
 `Brightness` (`percent()`, `set_percent()` `[&mut]`), `Mpris` (`title()`,
 `display_label()` = `"artist - title"`, `play_pause()`), `Network`
@@ -260,6 +261,10 @@ percent(), state() -> BatteryState, is_charging(), energy_rate_watts(),
 time_to_empty(), time_to_full(), read_sysfs()
 // BatteryState::{Charging, Discharging, Empty, FullyCharged, PendingCharge,
 //   PendingDischarge, Unknown} + as_str(), icon(percent)
+
+// Memory (/proc/meminfo, relu toutes les 2 s, notify seulement si ça change)
+percent(), used(), available(), total(), used_gib(), total_gib(),
+read_meminfo() -> Option<(total, available)>
 
 // Audio (PipeWire wpctl, PulseAudio pactl fallback)
 volume(), is_muted(), sink_name() -> &str, icon(),
