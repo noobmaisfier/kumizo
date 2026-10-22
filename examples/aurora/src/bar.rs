@@ -148,28 +148,25 @@ impl TopBar {
         let mut ws_row = div().flex().flex_row().items_center().gap_1();
         for (id, name, active, urgent, count) in workspaces {
             let compositor = self.compositor.clone();
-            let (bg, fg) = if active {
-                (pal::accent(), pal::on_accent())
+            // Pas de fond plein : l'actif se distingue par la couleur de son
+            // icone (l'accent), l'urgence par le rouge, le reste par le texte.
+            let fg = if active {
+                pal::accent()
             } else if urgent {
-                (pal::danger(), pal::on_accent())
+                pal::danger()
+            } else if count > 0 {
+                pal::text()
             } else {
-                (
-                    pal::with_alpha(pal::raised(), 0.0),
-                    if count > 0 { pal::text() } else { pal::muted() },
-                )
+                pal::muted()
             };
             ws_row = ws_row.child(
                 btn(("ws", id as usize))
-                    .min_w(px(if active { 36. } else { 26. }))
-                    .bg(bg)
+                    .min_w(px(26.))
+                    .bg(pal::with_alpha(pal::raised(), 0.0))
                     .text_color(fg)
                     .text_xs()
-                    .font_weight(if active {
-                        FontWeight::BOLD
-                    } else {
-                        FontWeight::NORMAL
-                    })
-                    .hover(|s| s.opacity(0.8))
+                    .font_weight(FontWeight::NORMAL)
+                    .hover(|s| s.bg(pal::raised()))
                     .on_click(move |_, _, cx| {
                         compositor.update(cx, |c, _| c.switch_workspace(id));
                     })
@@ -389,13 +386,21 @@ impl TopBar {
             pal::text()
         };
         // La RAM n'est rouge que sous forte pression : le cache compte
-        // comme « utilisé », on ne veut pas crier trop tôt.
+        // comme « utilisé », on ne veut pas crier trop tôt. L'icone reste
+        // verte tant que tout va bien ; la valeur suit le seuil.
         let ram_color = if mem_pct >= 90 {
             pal::danger()
         } else if mem_pct >= 75 {
             pal::warn()
         } else {
             pal::text()
+        };
+        let ram_icon = if mem_pct >= 90 {
+            pal::danger()
+        } else if mem_pct >= 75 {
+            pal::warn()
+        } else {
+            pal::ok()
         };
 
         let mut sys = div().flex().flex_row().items_center().gap_3();
@@ -439,7 +444,7 @@ impl TopBar {
                     .child(ui::glyph(
                         ui::vol_glyph(vol, muted),
                         14.,
-                        if muted { pal::muted() } else { pal::text() },
+                        if muted { pal::muted() } else { pal::accent2() },
                     ))
                     .child(div().text_xs().child(if muted {
                         "muet".to_string()
@@ -453,7 +458,7 @@ impl TopBar {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .child(ui::glyph(bri_icon, 14., pal::text()))
+                    .child(ui::glyph(bri_icon, 14., pal::warn()))
                     .child(div().text_xs().child(format!("{bri_pct}%"))),
             )
             // RAM : juste avant la batterie (usage/total en Gio, coloré sous
@@ -463,7 +468,7 @@ impl TopBar {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .child(ui::glyph(icons::RAM, 14., ram_color))
+                    .child(ui::glyph(icons::RAM, 14., ram_icon))
                     .child(
                         div()
                             .text_xs()
