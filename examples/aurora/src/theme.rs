@@ -110,6 +110,52 @@ pub fn is_light() -> bool {
     0.2126 * r + 0.7152 * g + 0.0722 * b > 127.5
 }
 
+/// Clés `change-theme` des thèmes appliqués à tout le système (sway, foot,
+/// yazi, vim, gtk, herdr, puis aurora par IPC). Les thèmes absents de cette
+/// table ne changent qu'aurora : le script ne sait pas les décliner.
+const SYSTEM_KEYS: [(&str, &str); 6] = [
+    ("flexoki-light", "Flexoki Light"),
+    ("mocha", "Catppuccin Mocha"),
+    ("aurora", "Aurora"),
+    ("github-light", "GitHub Light"),
+    ("nord", "Nord"),
+    ("tokyo-night", "Tokyo Night"),
+];
+
+/// Clé `change-theme` d'un thème, si le script sait l'appliquer au système.
+pub fn system_key(index: usize) -> Option<&'static str> {
+    let name = THEMES.get(index)?.name;
+    SYSTEM_KEYS
+        .iter()
+        .find(|(_, n)| *n == name)
+        .map(|(k, _)| *k)
+}
+
+/// Thèmes système dans l'ordre du script, avec leur index dans `THEMES`.
+pub fn system_themes() -> impl Iterator<Item = (usize, &'static str)> {
+    SYSTEM_KEYS.iter().filter_map(|(key, name)| {
+        THEMES
+            .iter()
+            .position(|t| t.name == *name)
+            .map(|i| (i, *key))
+    })
+}
+
+/// Applique un thème à tout le système via `~/.local/bin/change-theme`.
+/// Le script rebascule ensuite aurora par IPC (`kumizo service theme set`).
+pub fn apply_system(key: &str) {
+    let Some(home) = std::env::var_os("HOME") else {
+        return;
+    };
+    let script = PathBuf::from(home).join(".local/bin/change-theme");
+    if !script.is_file() {
+        return;
+    }
+    if let Some(path) = script.to_str() {
+        crate::ui::run(path, &[key]);
+    }
+}
+
 /// Résout une cible CLI (« Flexoki Light » ou un index « 3 ») en index de
 /// thème. Les noms sont comparés sans tenir compte de la casse ; un index
 /// numérique est accepté tel quel (`set` borne ensuite).

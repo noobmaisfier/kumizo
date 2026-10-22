@@ -18,6 +18,7 @@ pub mod ids {
     pub const CONTROL: &str = "aurora-control";
     pub const NOTIFS: &str = "aurora-notifs";
     pub const TOASTS: &str = "aurora-toasts";
+    pub const THEMES: &str = "aurora-themes";
     pub const OSD: &str = "aurora-osd";
 }
 

@@ -764,7 +764,15 @@ impl ControlCenter {
                         theme::swatch(th.border)
                     })
                     .hover(|s| s.opacity(0.8))
-                    .on_click(move |_, _, cx| theme::set(i, cx))
+                    .on_click(move |_, _, cx| {
+                        // Thème système : passer par `change-theme` pour que
+                        // sway/foot/yazi/vim/herdr suivent ; sinon aurora seul.
+                        if let Some(key) = theme::system_key(i) {
+                            theme::apply_system(key);
+                        } else {
+                            theme::set(i, cx);
+                        }
+                    })
                     .child(
                         div()
                             .size(px(12.))

@@ -31,30 +31,11 @@ const WS_ICONS: [&str; 10] = [
     "\u{f075a}", // 10
 ];
 
-/// Bascule de thème aléatoire : délègue à `~/.local/bin/change-theme random`
-/// (le script possède la liste des thèmes ; sway/foot/yazi/nvim/kumizo et le
-/// fond d'écran suivent). Sans script exécutable, ne fait rien.
-fn shuffle_theme() {
-    let Some(home) = std::env::var_os("HOME") else {
-        return;
-    };
-    let script = std::path::PathBuf::from(home).join(".local/bin/change-theme");
-    if !script.is_file() {
-        return;
-    }
-    // `ui::run` ajoute ~/.local/bin au PATH et n'attend pas la fin du script.
-    if let Some(path) = script.to_str() {
-        ui::run(path, &["random"]);
-    }
-}
-
 pub struct TopBar {
     clock: Entity<Clock>,
     battery: Entity<Battery>,
     memory: Entity<Memory>,
     audio: Entity<Audio>,
-    /// Gardée vivante : l'observer ci-dessus pilote l'OSD.
-    #[allow(dead_code)]
     brightness: Entity<Brightness>,
     network: Entity<Network>,
     bluetooth: Entity<Bluetooth>,
@@ -164,8 +145,6 @@ impl TopBar {
                 a.title.clone()
             }
         });
-        let n_windows = comp.windows().len();
-
         let mut ws_row = div().flex().flex_row().items_center().gap_1();
         for (id, name, active, urgent, count) in workspaces {
             let compositor = self.compositor.clone();
@@ -202,44 +181,34 @@ impl TopBar {
             );
         }
 
-        let launcher = btn("bar-launcher")
-            .w(px(28.))
-            .hover(|s| s.bg(pal::raised()))
-            .on_click(|_, _, cx| ui::toggle_exclusive(ids::LAUNCHER, cx))
-            .child(ui::glyph(icons::SEARCH, 14., pal::accent()));
+        // Pomodoro : pastille **séparée**, à droite de l'îlot des workspaces.
+        // Les raccourcis sway ouvrent le lanceur, les fenêtres, le
+        // presse-papier et les thèmes ; la droite reste le statut pur.
+        let pomodoro_pill = {
+            let p = self.pomodoro.read(cx);
+            let color = if p.running { p.phase.color() } else { pal::muted() };
+            let time = p.mmss();
+            let pomodoro = self.pomodoro.clone();
+            pill()
+                .id("bar-pomodoro")
+                .cursor_pointer()
+                .hover(|s| s.bg(pal::raised()))
+                .on_click(move |_, _, cx| {
+                    pomodoro.update(cx, |p, cx| p.toggle(cx));
+                })
+                .child(ui::glyph(icons::HOURGLASS, 13., color))
+                .child(
+                    div()
+                        .text_sm()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(color)
+                        .child(time),
+                )
+        };
 
-        let tasks = btn("bar-tasks")
-            .hover(|s| s.bg(pal::raised()))
-            .on_click(|_, _, cx| ui::toggle_exclusive(ids::TASKS, cx))
-            .child(ui::glyph(icons::WINDOWS, 14., pal::text()))
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(pal::muted())
-                    .child(n_windows.to_string()),
-            );
-
-        let clipboard = btn("bar-clipboard")
-            .w(px(28.))
-            .hover(|s| s.bg(pal::raised()))
-            .on_click(|_, _, cx| ui::toggle_exclusive(ids::CLIPBOARD, cx))
-            .child(ui::glyph(icons::CLIPBOARD, 14., pal::text()));
-
-        // Pinceau : thème au hasard (`change-theme random`).
-        let theme = btn("bar-theme")
-            .w(px(28.))
-            .hover(|s| s.bg(pal::raised()))
-            .on_click(|_, _, _| shuffle_theme())
-            .child(ui::glyph(icons::BRUSH, 14., pal::text()));
-
-        let mut row = pill()
-            .child(launcher)
-            .child(ws_row)
-            .child(tasks)
-            .child(clipboard)
-            .child(theme);
+        let mut main = pill().child(ws_row);
         if let Some(t) = title {
-            row = row.child(
+            main = main.child(
                 div()
                     .min_w_0()
                     .max_w(px(300.))
@@ -249,7 +218,13 @@ impl TopBar {
                     .child(t),
             );
         }
-        div().flex().min_w_0().child(row)
+        div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_2()
+            .child(main)
+            .child(pomodoro_pill)
     }
 
     // ── Centre : horloge · média ───────────────────────────────────────────
@@ -338,33 +313,9 @@ impl TopBar {
             .child(self.media_pill(cx))
     }
 
-    // ── Droite : pomodoro · tray · système · notifications · power ─────────
+    // ── Droite : tray · système · notifications ────────────────────────────
     fn right(&self, cx: &App) -> Div {
         let mut row = div().flex().flex_row().items_center().gap_2();
-        // Pomodoro
-        {
-            let p = self.pomodoro.read(cx);
-            let color = if p.running { p.phase.color() } else { pal::muted() };
-            let time = p.mmss();
-            let pomodoro = self.pomodoro.clone();
-            row = row.child(
-                pill()
-                    .id("bar-pomodoro")
-                    .cursor_pointer()
-                    .hover(|s| s.bg(pal::raised()))
-                    .on_click(move |_, _, cx| {
-                        pomodoro.update(cx, |p, cx| p.toggle(cx));
-                    })
-                    .child(ui::glyph(icons::HOURGLASS, 13., color))
-                    .child(
-                        div()
-                            .text_sm()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(color)
-                            .child(time),
-                    ),
-            );
-        }
 
         // Tray. Certaines apps (Free Download Manager) fournissent un logo
         // monochrome blanc, invisible sur un thème clair. On pose alors une
@@ -420,6 +371,9 @@ impl TopBar {
         let (bt_avail, bt_on, bt_count) = (bt.is_available(), bt.is_powered(), bt.connected_count());
         let a = self.audio.read(cx);
         let (vol, muted) = (a.volume(), a.is_muted());
+        let bri = self.brightness.read(cx);
+        let bri_pct = bri.percent();
+        let bri_icon = bri.icon();
         let b = self.battery.read(cx);
         let (pct, charging) = (b.percent(), b.is_charging());
         let mem = self.memory.read(cx);
@@ -493,6 +447,15 @@ impl TopBar {
                         format!("{vol}%")
                     })),
             )
+            // Luminosité : juste après le volume (même forme de cellule).
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(ui::glyph(bri_icon, 14., pal::text()))
+                    .child(div().text_xs().child(format!("{bri_pct}%"))),
+            )
             // RAM : juste avant la batterie (usage/total en Gio, coloré sous
             // pression mémoire).
             .child(
@@ -565,18 +528,7 @@ impl TopBar {
                     }),
             );
         }
-        row = row.child(bell);
-
-        // Power
-        row.child(
-            pill()
-                .id("bar-power")
-                .px_3()
-                .cursor_pointer()
-                .hover(|s| s.bg(pal::raised()))
-                .on_click(|_, _, cx| ui::toggle_exclusive(ids::POWER, cx))
-                .child(ui::glyph(icons::POWER, 14., pal::danger())),
-        )
+        row.child(bell)
     }
 }
 

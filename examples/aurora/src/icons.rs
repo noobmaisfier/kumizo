@@ -33,6 +33,7 @@ pub const CLIPBOARD: &str = "\u{f0ea}";
 pub const CLOSE: &str = "\u{f00d}";
 pub const TRASH: &str = "\u{f1f8}";
 pub const HOURGLASS: &str = "\u{f252}";
+pub const CHECK: &str = "\u{f00c}";
 pub const BRUSH: &str = "\u{f1fc}";
 pub const COFFEE: &str = "\u{f0f4}";
 pub const PLUS: &str = "\u{f067}";

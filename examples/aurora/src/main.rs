@@ -3,6 +3,7 @@
 //! Fenêtres (ids préfixés `aurora-`, pilotables via `kumizo toggle <id>`) :
 //!   aurora-bar       barre flottante (toujours visible)
 //!   aurora-launcher  lanceur d'apps            (plein écran, clavier exclusif)
+//!   aurora-themes    sélecteur de thème        (plein écran, clavier exclusif)
 //!   aurora-tasks     fenêtres ouvertes         (plein écran, clavier exclusif)
 //!   aurora-power     menu d'alimentation       (plein écran, clavier exclusif)
 //!   aurora-control   centre de contrôle        (plein écran transparent, panneau à droite)
@@ -26,6 +27,7 @@ mod power;
 mod tasks;
 mod theme;
 mod theme_ctl;
+mod theme_picker;
 mod toasts;
 mod ui;
 
@@ -90,6 +92,10 @@ fn main() {
         .window(
             fullscreen(ids::LAUNCHER, "aurora-launcher", KeyboardInteractivity::Exclusive),
             |cx: &mut gpui::App| cx.new(launcher::AppLauncher::new),
+        )
+        .window(
+            fullscreen(ids::THEMES, "aurora-themes", KeyboardInteractivity::Exclusive),
+            |cx: &mut gpui::App| cx.new(theme_picker::ThemePicker::new),
         )
         .window(
             fullscreen(ids::TASKS, "aurora-tasks", KeyboardInteractivity::Exclusive),
