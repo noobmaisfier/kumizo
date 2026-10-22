@@ -20,14 +20,6 @@ gpui = { workspace = true }
 async-io = { workspace = true }
 libc = { workspace = true }
 serde_json = { workspace = true }
-lofty = { workspace = true }
-resvg = "0.46.0"
-image = { workspace = true }
-smallvec = { workspace = true }
-# Moteur audio : rockbox-playback 0.7 (codecs C via `cc`, sortie cpal).
-# SANS les features `http` par défaut (reqwest/tokio) : le lecteur reste 100 %
-# local, aucun accès réseau.
-# NOTE LICENCE : cette crate est GPL-2.0-or-later ; le binaire `aurora` lié
-# avec elle tombe sous GPL-2.0-or-later (le workspace reste MIT OR Apache-2.0
-# pour son propre code). À prendre en compte avant toute distribution.
-rockbox-playback = { version = "0.7", default-features = false, features = ["cpal"] }
+# Pas de moteur audio ici : le shell ne lit que les médias MPRIS (navigateur,
+# lecteur externe…). Un lecteur local vit dans son propre process et se
+# publie en MPRIS — le shell reste ainsi MIT OR Apache-2.0.

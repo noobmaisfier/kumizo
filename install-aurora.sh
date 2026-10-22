@@ -172,22 +172,18 @@ esac
 if [ "$DO_SWAY" -eq 0 ]; then
     say "ajoute à ta config sway :"
     say '  exec ~/.local/bin/aurora'
-    say '  bindsym $mod+m exec ~/.local/bin/kumizo toggle aurora-music'
     say "(ou relance avec --sway pour les ajouter automatiquement)"
 else
     cfg="${HOME}/.config/sway/config"
     if [ ! -f "$cfg" ]; then
         die "pas de config sway ($cfg) : crée-la puis ajoute à la main :
-  exec ~/.local/bin/aurora
-  bindsym \$mod+m exec ~/.local/bin/kumizo toggle aurora-music"
+  exec ~/.local/bin/aurora"
     fi
     bak="${cfg}.bak_aurora_$(date +%Y%m%d-%H%M%S)"
     cp "$cfg" "$bak" && say "sauvegarde sway : $bak"
     grep -qF 'exec ~/.local/bin/aurora' "$cfg" \
         || echo 'exec ~/.local/bin/aurora' >> "$cfg"
-    grep -qF 'kumizo toggle aurora-music' "$cfg" \
-        || echo 'bindsym $mod+m exec ~/.local/bin/kumizo toggle aurora-music' >> "$cfg"
-    say "sway : lancement + Super+M en place (recharge sway pour appliquer)"
+    say "sway : lancement en place (recharge sway pour appliquer)"
 fi
 
 # -- Avertissements (non bloquants) ----------------------------------------------

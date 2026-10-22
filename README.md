@@ -65,8 +65,8 @@ crate to see a complete minimal shell. Rules that keep the codebase healthy:
 
 ## Try Aurora (no code)
 
-Aurora is a complete shell: bar, launcher, music player, clipboard manager,
-notifications, lockscreen.
+Aurora is a complete shell: bar, launcher, clipboard manager, notifications,
+control center, lockscreen.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/noobmaisfier/kumizo/main/install-aurora.sh | sh
@@ -82,16 +82,14 @@ Add to your Sway config (the installer proposes it, with a backup):
 
 ```
 exec ~/.local/bin/aurora
-bindsym $mod+m exec ~/.local/bin/kumizo toggle aurora-music
 ```
 
-Then `kumizo ping` should answer `PONG`. The music player reads `~/Music`
-(or `$AURORA_MUSIC_DIR`).
+Then `kumizo ping` should answer `PONG`.
 
-> **License note**: the prebuilt `aurora` binary links
-> `rockbox-playback` (GPL-2.0), so the binary is GPL-2.0-licensed. No
-> constraint for personal use; the source stays public here. The SDK crates
-> themselves are MIT OR Apache-2.0 and link nothing GPL.
+> **License note**: the `aurora` binary links nothing GPL — it stays
+> MIT OR Apache-2.0, like the SDK crates. A local music player is a
+> *separate* program (`kumizo-music`, GPL-2.0 via `rockbox-playback`) that
+> publishes itself in MPRIS; the shell only speaks MPRIS.
 
 ## The crates
 
@@ -110,9 +108,9 @@ Then `kumizo ping` should answer `PONG`. The music player reads `~/Music`
 involved:
 
 ```bash
-kumizo ping                            # PONG
-kumizo toggle aurora-music             # show/hide the music panel
-kumizo service music toggle|next|prev  # key-free control, scriptable
+kumizo ping                       # PONG
+kumizo toggle aurora-launcher     # show/hide the launcher
+kumizo service audio toggle_mute  # key-free control, scriptable
 ```
 
 ## Repository layout
@@ -138,5 +136,5 @@ verify behavior on a real session, and never commit generated binaries
 
 ## License
 
-SDK crates: MIT OR Apache-2.0 (see `LICENSE-MIT`, `LICENSE-APACHE`).
-Aurora binary: GPL-2.0 (via `rockbox-playback`), see note above.
+SDK crates and the `aurora` binary: MIT OR Apache-2.0 (see `LICENSE-MIT`,
+`LICENSE-APACHE`).

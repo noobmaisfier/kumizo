@@ -1,9 +1,9 @@
 # Aurora — example shell built on `kumizo-kit`
 
 Aurora is a complete Wayland desktop shell and the living proof that
-`kumizo-kit` scales to daily use: bar, launcher, music player, clipboard
-manager, notifications, control center, tasks, pomodoro, OSD, lockscreen —
-one process, GPU-rendered.
+`kumizo-kit` scales to daily use: bar, launcher, clipboard manager,
+notifications, control center, tasks, pomodoro, OSD, lockscreen — one
+process, GPU-rendered.
 
 > Aurora is an **example**, not the product. The product is the SDK
 > (`kumizo-kit`, see the [repo README](../../README.md)). If Aurora suffices
@@ -22,7 +22,6 @@ proposes it, with a backup):
 
 ```
 exec ~/.local/bin/aurora
-bindsym $mod+m exec ~/.local/bin/kumizo toggle aurora-music
 ```
 
 Check: `kumizo ping` → `PONG`.
@@ -34,17 +33,15 @@ cargo build --release -p aurora -p wk-ctl
 cp target/release/aurora target/release/aurora-lockscreen target/release/kumizo ~/.local/bin/
 ```
 
-Requirements: Linux + Wayland (Sway), Rust stable, `gcc` (rockbox compiles
-its C codecs), PipeWire/ALSA, `playerctl` (web pill), `JetBrainsMono Nerd
-Font` (icons).
+Requirements: Linux + Wayland (Sway), Rust stable, PipeWire/ALSA, `playerctl`
+(MPRIS pill), `JetBrainsMono Nerd Font` (icons).
 
 ## What's inside
 
 | File | Window / feature |
 |---|---|
-| `bar.rs` | Top bar + unified media pill (local if playing, else MPRIS, else icon) |
+| `bar.rs` | Top bar (time only) + MPRIS media pill + RAM/volume/battery cluster |
 | `launcher.rs` | Fullscreen app launcher with glide scrolling |
-| `music/` | Local music player (see below) |
 | `control.rs` | Control center (audio, bluetooth, network, brightness, DnD) |
 | `clipboard.rs` | Clipboard history manager |
 | `notifs.rs` / `toasts.rs` | Notification history + ephemeral toasts |
@@ -55,30 +52,29 @@ Font` (icons).
 | `theme.rs` / `theme_ctl.rs` | 11 hardcoded themes, `kumizo service theme …` |
 | `lockscreen.rs` | Lockscreen wiring (separate `aurora-lockscreen` binary) |
 
-## Music player
+## Media (MPRIS)
 
-Local library player (`~/Music` by default; override with `$AURORA_MUSIC_DIR`
-or `~/.config/aurora/music_dir`). Engine: `rockbox-playback` (GPL-2.0 —
-hence the prebuilt binary is GPL-licensed; the SDK itself is MIT/Apache).
-Supported: opus, mp3, m4a/3GP, and whatever rockbox decodes.
+The shell shows and drives media through **MPRIS** only — whatever player
+answers on the session bus (browser, external player…). The bar's media pill
+shows the title and offers previous / play-pause / next.
+
+There is **no local music player inside the shell**: a local player is its own
+program (`kumizo-music`, separate process, GPL-2.0 because of
+`rockbox-playback`) that publishes itself in MPRIS — the shell then displays
+it like any other player, and stays MIT OR Apache-2.0 itself.
 
 ```bash
-kumizo toggle aurora-music        # show/hide the panel
-kumizo service music toggle       # play/pause
-kumizo service music play | pause | next | prev | stop
-kumizo service music seek 60      # seconds
-kumizo service music volume 15    # 0-100
+playerctl -l                 # players on the bus
+playerctl -p kumizo play     # drive one directly
+kumizo service mpris next    # and through the shell
 ```
-
-Tabs: queue (glide list, keyboard follows the view), lyrics (`.lrc`/`.txt`/
-tags), big 300 px cover anchor, seek bar, volume.
 
 ## Drive it without keys
 
 ```bash
 kumizo ping
 kumizo status
-kumizo toggle aurora-music
+kumizo toggle aurora-launcher
 kumizo service theme next
 kumizo service theme set "Flexoki Light"
 ```
@@ -87,9 +83,7 @@ kumizo service theme set "Flexoki Light"
 
 ```
 src/main.rs       services + windows + run()
-src/ui.rs         window ids (MUSIC = "aurora-music", …)
-src/music/        model.rs (state + IPC) / view.rs (panel) /
-                  engine.rs (rockbox worker) / disc.rs (cover, seek,
-                  controls) / library.rs (scan) / lyrics.rs
-tests/rockbox_probe.rs   sequential 3-format playback probe
+src/ui.rs         window ids (BAR = "aurora-bar", …) + shared UI helpers
+src/bar.rs        top bar: clock, MPRIS pill, system cluster
+src/theme.rs      11 palettes + `pal::` semantic tokens
 ```

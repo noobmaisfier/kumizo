@@ -15,7 +15,6 @@ pub mod ids {
     pub const TASKS: &str = "aurora-tasks";
     pub const POWER: &str = "aurora-power";
     pub const CLIPBOARD: &str = "aurora-clipboard";
-    pub const MUSIC: &str = "aurora-music";
     pub const CONTROL: &str = "aurora-control";
     pub const NOTIFS: &str = "aurora-notifs";
     pub const TOASTS: &str = "aurora-toasts";
@@ -121,12 +120,7 @@ pub fn toggle_exclusive(target: &'static str, cx: &mut App) {
         ids::TASKS,
         ids::POWER,
         ids::CLIPBOARD,
-        ids::MUSIC,
     ] {
-        // Fenêtre inexistante quand le widget est débranché : rien à cacher.
-        if !crate::MUSIC_ENABLED && id == ids::MUSIC {
-            continue;
-        }
         if id != target {
             cx.hide_window(id);
         }

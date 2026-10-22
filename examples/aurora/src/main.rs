@@ -3,22 +3,22 @@
 //! Fenêtres (ids préfixés `aurora-`, pilotables via `kumizo toggle <id>`) :
 //!   aurora-bar       barre flottante (toujours visible)
 //!   aurora-launcher  lanceur d'apps            (plein écran, clavier exclusif)
-//!   aurora-music     lecteur de musique locale (plein écran, clavier exclusif)
 //!   aurora-tasks     fenêtres ouvertes         (plein écran, clavier exclusif)
 //!   aurora-power     menu d'alimentation       (plein écran, clavier exclusif)
 //!   aurora-control   centre de contrôle        (plein écran transparent, panneau à droite)
 //!   aurora-notifs    historique notifications  (plein écran transparent, panneau à droite)
 //!   aurora-toasts    popups de notification    (coin haut-droit, ouvert par la barre)
 //!   aurora-osd       volume / luminosité       (bas-centre, ouvert par la barre)
+//!
+//! Pas de lecteur de musique : le shell affiche et pilote les médias
+//! *distants* (navigateur, etc.) via MPRIS. Un lecteur local vit dans son
+//! propre process (`kumizo-music`) et se publie lui aussi en MPRIS.
 
 mod bar;
 mod clipboard;
 mod control;
 mod icons;
 mod launcher;
-/// Widget musique : code conservé et compilé, mais débranché du shell.
-/// Réactiver = passer `MUSIC_ENABLED` à `true` (fenêtre + pastille barre).
-mod music;
 mod notifs;
 mod osd;
 mod pomodoro;
@@ -28,11 +28,6 @@ mod theme;
 mod theme_ctl;
 mod toasts;
 mod ui;
-
-/// Interrupteur du widget musique. À `false` : ni fenêtre `aurora-music`,
-/// ni pastille ♪, ni thread audio — le code reste compilé pour une
-/// réactivation en un basculement.
-pub const MUSIC_ENABLED: bool = true;
 
 use gpui::prelude::*;
 use kumizo_kit::prelude::*;
@@ -54,7 +49,7 @@ fn fullscreen(id: &'static str, namespace: &'static str, keyboard: KeyboardInter
 fn main() {
     theme::init();
 
-    let app = Kumizo::new()
+    Kumizo::new()
         // ── Services (uniquement ceux que les vues consomment) ──────────────
         .service::<Clock>()
         .service::<Battery>()
@@ -70,7 +65,6 @@ fn main() {
         .service::<Tray>()
         .service::<Notifications>()
         .service::<theme_ctl::Theme>()
-        .service::<music::Music>()
         // ── Barre ───────────────────────────────────────────────────────────
         .window(
             LayerWindow::new(ids::BAR)
@@ -108,17 +102,7 @@ fn main() {
         .window(
             fullscreen(ids::CLIPBOARD, "aurora-clipboard", KeyboardInteractivity::Exclusive),
             |cx: &mut gpui::App| cx.new(clipboard::ClipboardPanel::new),
-        );
-    // ── Musique : débranchée (`MUSIC_ENABLED = false`), code conservé ──────
-    let app = if MUSIC_ENABLED {
-        app.window(
-            fullscreen(ids::MUSIC, "aurora-music", KeyboardInteractivity::Exclusive),
-            |cx: &mut gpui::App| cx.new(music::MusicPanel::new),
         )
-    } else {
-        app
-    };
-    app
         // ── Toasts (ouverts/fermés par la barre selon `toasts()`) ───────────
         .window(
             LayerWindow::new(ids::TOASTS)
