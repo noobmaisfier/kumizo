@@ -58,6 +58,7 @@ fn main() {
         // ── Services (uniquement ceux que les vues consomment) ──────────────
         .service::<Clock>()
         .service::<Battery>()
+        .service::<Memory>()
         .service::<Audio>()
         .service::<Brightness>()
         .service::<Bluetooth>()

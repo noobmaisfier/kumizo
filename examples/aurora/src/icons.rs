@@ -27,6 +27,7 @@ pub const PAUSE: &str = "\u{f04c}";
 pub const NEXT: &str = "\u{f051}";
 pub const PREV: &str = "\u{f048}";
 pub const MUSIC: &str = "\u{f001}";
+pub const RAM: &str = "\u{f2db}";
 pub const WINDOWS: &str = "\u{f2d2}";
 pub const CLIPBOARD: &str = "\u{f0ea}";
 pub const CLOSE: &str = "\u{f00d}";

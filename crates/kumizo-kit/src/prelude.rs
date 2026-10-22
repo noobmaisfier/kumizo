@@ -9,8 +9,7 @@ pub use wk_gpui_ext::{Anchor, KeyboardInteractivity, Layer, LayerWindow, Margins
 // System Services
 pub use wk_services::{
     AppInfo, Apps, Audio, Battery, BatteryState, Bluetooth, BluetoothDevice, Brightness, Clipboard,
-    ClipboardItem, Clock, ClockResolution, Emitter, FileSource, Memory, Mpris, Network,
-    Notification,
+    ClipboardItem, Clock, ClockResolution, Emitter, FileSource, Memory, Mpris, Network, Notification,
     NotificationAction, Notifications, OpenMenu, PlaybackStatus, ProcessSource, Service, Source,
     SourceState, StopToken, TrackExt, Tray, TrayItem, TrayMenuItem, TrayStatus, Urgency, WifiBackend,
     WifiNetwork,

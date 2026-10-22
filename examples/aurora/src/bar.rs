@@ -69,6 +69,7 @@ fn shuffle_theme() {
 pub struct TopBar {
     clock: Entity<Clock>,
     battery: Entity<Battery>,
+    memory: Entity<Memory>,
     audio: Entity<Audio>,
     /// Gardée vivante : l'observer ci-dessus pilote l'OSD.
     #[allow(dead_code)]
@@ -91,6 +92,7 @@ impl TopBar {
     pub fn new(cx: &mut Context<Self>) -> Self {
         let audio = cx.service::<Audio>();
         let brightness = cx.service::<Brightness>();
+        let memory = cx.service::<Memory>();
         let notifs = cx.service::<Notifications>();
         let pomodoro = pomodoro::handle(cx);
         let osd = osd::handle(cx);
@@ -152,6 +154,7 @@ impl TopBar {
         Self {
             clock: cx.service::<Clock>(),
             battery: cx.service::<Battery>(),
+            memory,
             audio,
             brightness,
             network: cx.service::<Network>(),
@@ -407,9 +410,10 @@ impl TopBar {
     }
 
     fn center(&self, cx: &App) -> Div {
+        // Heure seule : la date alourdit la barre (la pastille horloge
+        // ouvre toujours le centre de notifications).
         let clock = self.clock.read(cx);
         let time = clock.time_hm().to_string();
-        let date = clock.date_formatted().to_string();
 
         let clock_pill = pill()
             .id("bar-clock")
@@ -421,8 +425,7 @@ impl TopBar {
                     .font_weight(FontWeight::BOLD)
                     .text_color(pal::text())
                     .child(time),
-            )
-            .child(div().text_xs().text_color(pal::muted()).child(date));
+            );
 
         let mut row = div().flex().flex_row().items_center().gap_2().child(clock_pill);
         if crate::MUSIC_ENABLED {
@@ -495,12 +498,23 @@ impl TopBar {
         let (vol, muted) = (a.volume(), a.is_muted());
         let b = self.battery.read(cx);
         let (pct, charging) = (b.percent(), b.is_charging());
+        let mem = self.memory.read(cx);
+        let mem_pct = mem.percent();
 
         let bat_color = if charging {
             pal::ok()
         } else if pct <= 15 {
             pal::danger()
         } else if pct <= 30 {
+            pal::warn()
+        } else {
+            pal::text()
+        };
+        // La RAM n'est rouge que sous forte pression : le cache compte
+        // comme « utilisé », on ne veut pas crier trop tôt.
+        let ram_color = if mem_pct >= 90 {
+            pal::danger()
+        } else if mem_pct >= 75 {
             pal::warn()
         } else {
             pal::text()
@@ -554,6 +568,25 @@ impl TopBar {
                     } else {
                         format!("{vol}%")
                     })),
+            )
+            // RAM : juste avant la batterie (usage/total en Gio, coloré sous
+            // pression mémoire).
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(ui::glyph(icons::RAM, 14., ram_color))
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(ram_color)
+                            .child(format!(
+                                "{:.1}/{:.1}G",
+                                mem.used_gib(),
+                                mem.total_gib()
+                            )),
+                    ),
             )
             .child(
                 div()
