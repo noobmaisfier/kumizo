@@ -346,32 +346,74 @@ fn find_icon_path(name: &str) -> Option<PathBuf> {
         base_dirs.push(PathBuf::from(&home).join(".icons"));
     }
 
-    // 1. Check hicolor and standard icon sizes
-    let sizes = ["48x48", "64x64", "128x128", "32x32", "24x24", "scalable"];
-    for base in &base_dirs {
-        for size in sizes {
-            for ext in ["png", "svg"] {
-                let candidate = base
-                    .join("hicolor")
-                    .join(size)
-                    .join("apps")
-                    .join(format!("{name}.{ext}"));
-                if candidate.is_file() {
-                    return Some(candidate);
-                }
-            }
-        }
+    let mut candidates: Vec<PathBuf> = Vec::new();
 
-        // Direct file in directory
-        for ext in ["png", "svg"] {
+    // Direct file in a base directory (e.g. /usr/share/pixmaps/foo.png).
+    for base in &base_dirs {
+        for ext in ["png", "svg", "xpm"] {
             let candidate = base.join(format!("{name}.{ext}"));
             if candidate.is_file() {
-                return Some(candidate);
+                candidates.push(candidate);
             }
         }
     }
 
-    None
+    // Themed layout: <base>/<theme>/<size>/apps/<name>.<ext>
+    // (hicolor, Luv, Adwaita, the user's icon theme, …). Collect every
+    // matching size so we can pick the sharpest one afterwards — FreeDesktop
+    // apps routinely ship only a 256x256 (or 512x512) asset, which the old
+    // fixed size list missed.
+    for base in &base_dirs {
+        let Ok(themes) = fs::read_dir(base) else {
+            continue;
+        };
+        for theme in themes.flatten() {
+            let theme_dir = theme.path();
+            if !theme_dir.is_dir() {
+                continue;
+            }
+            let Ok(sizes) = fs::read_dir(&theme_dir) else {
+                continue;
+            };
+            for size in sizes.flatten() {
+                let size_dir = size.path();
+                if !size_dir.is_dir() {
+                    continue;
+                }
+                let apps_dir = size_dir.join("apps");
+                if !apps_dir.is_dir() {
+                    continue;
+                }
+                for ext in ["png", "svg", "xpm"] {
+                    let candidate = apps_dir.join(format!("{name}.{ext}"));
+                    if candidate.is_file() {
+                        candidates.push(candidate);
+                    }
+                }
+            }
+        }
+    }
+
+    // Prefer the largest available size (scalable counts as 10000); on ties,
+    // prefer SVG for crispness at small render sizes.
+    candidates.into_iter().max_by_key(|p| {
+        let size = p
+            .ancestors()
+            .find_map(|a| {
+                let n = a.file_name()?.to_str()?;
+                if n == "scalable" {
+                    return Some(10000u32);
+                }
+                n.split('x').next()?.parse::<u32>().ok()
+            })
+            .unwrap_or(0);
+        let svg = if p.extension().and_then(|e| e.to_str()) == Some("svg") {
+            1u32
+        } else {
+            0
+        };
+        (size, svg)
+    })
 }
 
 fn load_png(path: &Path) -> Option<Arc<RenderImage>> {
