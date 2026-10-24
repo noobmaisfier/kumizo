@@ -242,7 +242,7 @@ Kumizo provides ready-to-use system services (see [`API.md`](./API.md)), includi
 | **Network** | SSID, IP, connection state | Connect/disconnect, IP change |
 | **Bluetooth** | Connected devices, state | Pairing, disconnection |
 | **Compositor** | Workspaces, active window | Workspace change, focus change |
-| **SystemTray** | Icons and menus of applications | Icon add/remove |
+| **Tray** | Icons and menus of applications | Icon add/remove |
 
 **Typical usage:**
 
