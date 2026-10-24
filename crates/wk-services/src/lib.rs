@@ -13,20 +13,35 @@
 //! - [`Memory`]: RAM usage from `/proc/meminfo` (polled, notify on change)
 //! - [`Source`]: build your own event-driven data source (process stdout, file, socket) without a full `Service`
 
+/// FreeDesktop .desktop application catalog and launching.
 pub mod apps;
+/// Audio volume/mute control (PipeWire, PulseAudio).
 pub mod audio;
+/// Battery state via UPower D-Bus and Linux sysfs.
 pub mod battery;
+/// Bluetooth devices and connection state (BlueZ).
 pub mod bluetooth;
+/// Screen backlight control via sysfs.
 pub mod brightness;
+/// Clipboard history and copy operations.
 pub mod clipboard;
+/// System clock with nanosecond precision.
 pub mod clock;
+/// RAM usage from /proc/meminfo.
 pub mod memory;
+/// MPRIS media player state and control.
 pub mod mpris;
+/// Wi-Fi and network status (NetworkManager, iwd).
 pub mod network;
+/// In-process notifications server (org.freedesktop.Notifications).
 pub mod notifications;
+/// Reactive system service trait.
 pub mod service;
+/// Build custom event-driven data sources without a full Service.
 pub mod source;
+/// System tray host (StatusNotifierItem watcher, icons, menus).
 pub mod tray;
+/// Window control primitives for IPC-driven show/hide/toggle.
 pub mod window;
 
 pub use apps::{AppInfo, Apps};

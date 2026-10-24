@@ -40,11 +40,12 @@ pub struct TextBuffer {
 }
 
 impl TextBuffer {
+    /// Creates an empty, unmasked text buffer.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Password-style buffer: [`TextBuffer::display`] shows `•` per char.
+    /// Password-style buffer: display shows `•` per char instead of the text.
     pub fn masked() -> Self {
         Self {
             masked: true,
@@ -52,36 +53,33 @@ impl TextBuffer {
         }
     }
 
+    /// Returns the raw text content as a string slice.
     pub fn value(&self) -> &str {
         &self.text
     }
 
+    /// Returns `true` if the buffer contains no text.
     pub fn is_empty(&self) -> bool {
         self.text.is_empty()
     }
 
+    /// Returns the caret position as a char index (`0` = before the first char).
     pub fn cursor(&self) -> usize {
         self.cursor
     }
 
-    /// What to draw: the text, or one `•` per char when masked.
-    pub fn display(&self) -> String {
-        if self.masked {
-            "•".repeat(self.text.chars().count())
-        } else {
-            self.text.clone()
-        }
-    }
-
+    /// Clears the text and resets the caret to position 0.
     pub fn clear(&mut self) {
         self.text.clear();
         self.cursor = 0;
     }
 
+    /// Sets whether the buffer is masked (password-style).
     pub fn set_masked(&mut self, masked: bool) {
         self.masked = masked;
     }
 
+    /// Sets the maximum number of characters allowed (`0` = unlimited).
     pub fn set_max_chars(&mut self, max: usize) {
         self.max_chars = max;
     }
@@ -116,6 +114,8 @@ impl TextBuffer {
         true
     }
 
+    /// Deletes the char before the caret (backspace semantics). Returns whether
+    /// anything changed.
     pub fn backspace(&mut self) -> bool {
         if self.cursor == 0 {
             return false;
@@ -138,6 +138,8 @@ impl TextBuffer {
         true
     }
 
+    /// Deletes the char after the caret (delete key semantics). Returns whether
+    /// anything changed.
     pub fn delete(&mut self) -> bool {
         let len = self.text.chars().count();
         if self.cursor >= len {
@@ -159,6 +161,7 @@ impl TextBuffer {
         true
     }
 
+    /// Moves the caret one char to the left. Returns whether it moved.
     pub fn move_left(&mut self) -> bool {
         if self.cursor == 0 {
             return false;
@@ -167,6 +170,7 @@ impl TextBuffer {
         true
     }
 
+    /// Moves the caret one char to the right. Returns whether it moved.
     pub fn move_right(&mut self) -> bool {
         if self.cursor >= self.text.chars().count() {
             return false;
@@ -175,6 +179,7 @@ impl TextBuffer {
         true
     }
 
+    /// Moves the caret to the start of the text. Returns whether it moved.
     pub fn move_home(&mut self) -> bool {
         if self.cursor == 0 {
             return false;
@@ -183,6 +188,7 @@ impl TextBuffer {
         true
     }
 
+    /// Moves the caret to the end of the text. Returns whether it moved.
     pub fn move_end(&mut self) -> bool {
         let len = self.text.chars().count();
         if self.cursor >= len {
@@ -271,9 +277,13 @@ fn split_at_char(s: &str, at: usize) -> (String, String) {
 /// Caller-provided look. No defaults: headless means the shell decides.
 #[derive(Debug, Clone, Copy)]
 pub struct TextStyle {
+    /// Text colour.
     pub text: Rgba,
+    /// Placeholder colour (shown when the buffer is empty).
     pub placeholder: Rgba,
+    /// Caret colour.
     pub caret: Rgba,
+    /// Font size in pixels.
     pub size_px: f32,
 }
 
@@ -297,7 +307,12 @@ pub fn text_input(
     let guard = buf.read(cx);
     let size = px(style.size_px);
     let caret = div().w(px(2.)).h(size).bg(style.caret);
-    let shown = guard.display();
+    let text = guard.value();
+    let shown = if guard.masked {
+        "•".repeat(text.chars().count())
+    } else {
+        text.to_string()
+    };
     let mut kids = Vec::new();
     if shown.is_empty() {
         kids.push(text_span(placeholder.to_string(), style.placeholder, style.size_px));
@@ -334,7 +349,12 @@ pub fn text_area(
 ) -> Stateful<Div> {
     let size = px(style.size_px);
     let guard = buf.read(cx);
-    let shown = guard.display();
+    let text = guard.value();
+    let shown = if guard.masked {
+        "•".repeat(text.chars().count())
+    } else {
+        text.to_string()
+    };
     let at = guard.cursor().min(shown.chars().count());
     // (`guard` is dead after this: rows only capture `buf`, the entity.)
 
@@ -468,7 +488,9 @@ mod tests {
         let mut b = TextBuffer::masked();
         b.insert_str("secret");
         assert_eq!(b.value(), "secret");
-        assert_eq!(b.display(), "••••••");
+        let text = b.value();
+        let shown = if b.masked { "•".repeat(text.chars().count()) } else { text.to_string() };
+        assert_eq!(shown, "••••••");
     }
 
     #[test]

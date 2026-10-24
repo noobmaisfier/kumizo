@@ -8,10 +8,15 @@
 //! - Multi-monitor assignment
 //! - Zero Idle CPU event notifications
 
+/// Native Wayland compositor IPC integration (Sway).
 pub mod compositor;
+/// Native Wayland compositor IPC integration (Hyprland).
 pub mod hyprland;
+/// Native Wayland compositor IPC integration (Niri).
 pub mod niri;
+/// Native Wayland compositor IPC integration (Sway).
 pub mod sway;
+/// Shared types for compositor IPC (Workspace, AppWindow, …).
 pub mod types;
 
 pub use compositor::Compositor;

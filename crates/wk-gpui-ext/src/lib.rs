@@ -5,10 +5,15 @@
 //! Provides first-class support for `wlr-layer-shell-unstable-v1` configuration
 //! in pure Rust desktop environments built with GPUI.
 
+/// Anchor bitflags for Wayland layer-shell surfaces.
 pub mod anchor;
+/// Keyboard interactivity modes for layer-shell windows.
 pub mod keyboard;
+/// Wayland layer-shell layers (Background, Bottom, Top, Overlay).
 pub mod layer;
+/// Ergonomic builder for Wayland Layer Shell windows.
 pub mod layer_window;
+/// Outer margins for window surfaces.
 pub mod margins;
 
 pub use anchor::Anchor;

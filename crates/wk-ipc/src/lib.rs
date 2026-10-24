@@ -4,9 +4,13 @@
 //!
 //! Kumizo is single-instance: one process, one socket ([`socket_path`]).
 
+/// IPC client for sending requests to the running Kumizo shell.
 pub mod client;
+/// Window control commands sent over IPC.
 pub mod control;
+/// IPC request/response protocol types.
 pub mod protocol;
+/// UNIX domain socket IPC server.
 pub mod server;
 
 pub use client::IpcClient;

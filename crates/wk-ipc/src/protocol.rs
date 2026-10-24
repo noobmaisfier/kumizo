@@ -36,17 +36,29 @@ pub enum Request {
     /// Query daemon status and active window metadata.
     Status,
     /// Toggle visibility of a window by its identifier.
-    ToggleWindow { name: String },
+    ToggleWindow {
+        /// Unique window identifier.
+        name: String,
+    },
     /// Show a specific window.
-    ShowWindow { name: String },
+    ShowWindow {
+        /// Unique window identifier.
+        name: String,
+    },
     /// Hide a specific window.
-    HideWindow { name: String },
+    HideWindow {
+        /// Unique window identifier.
+        name: String,
+    },
     /// Request the daemon to reload configuration or re-render.
     Reload,
     /// Trigger an action on a registered service (e.g. mpris next, audio toggle).
     ServiceAction {
+        /// Service short name (e.g. "audio", "mpris").
         service: String,
+        /// Action name (e.g. "toggle_mute", "next").
         action: String,
+        /// Optional action payload.
         payload: Option<String>,
     },
 }
@@ -58,12 +70,21 @@ pub enum Response {
     Pong,
     /// Status response containing active windows and services.
     Status {
+        /// Seconds since the shell started.
         uptime_secs: u64,
+        /// List of visible window IDs.
         windows: Vec<String>,
+        /// List of registered service short names.
         services: Vec<String>,
     },
     /// Successful action completion message.
-    Ok { message: String },
+    Ok {
+        /// Human-readable success message.
+        message: String,
+    },
     /// Error description.
-    Error { message: String },
+    Error {
+        /// Human-readable error message.
+        message: String,
+    },
 }

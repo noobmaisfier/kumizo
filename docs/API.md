@@ -502,11 +502,44 @@ pub fn text_area(id: impl Into<gpui::ElementId>, buf: &Entity<TextBuffer>) -> im
 ### Text in GPUI elements
 
 GPUI allows `.child(String)` and `.child(&'static str)` directly — no `Text` wrapper needed. For formatted strings, prefer `.child(format!(...))` over looking for a `Text::new(...)` that does not exist in the public API.
-```
 
 ---
 
-## 4. Wayland — `wk-gpui-ext`
+## 4. Security — `wk-pam`
+
+Minimal Linux-PAM password check, hand-written FFI against `libpam.so`. No `bindgen`/`libclang` dependency.
+
+```rust
+/// Outcome of verifying a password against a PAM service.
+pub enum AuthError {
+    /// The password was wrong.
+    WrongPassword,
+    /// The account is unknown to the auth backend.
+    UnknownUser,
+    /// The account is locked out after too many failures.
+    LockedOut,
+    /// The authentication backend could not be reached.
+    Unavailable,
+    /// Any other PAM error, with the raw status code.
+    System(c_int),
+}
+
+impl AuthError {
+    /// Message safe to display to the user at a lock screen.
+    /// Vague on purpose: never leaks whether an account exists.
+    pub fn user_message(self) -> &'static str;
+}
+
+/// Check `password` for `user` against `service` (e.g. `"swaylock"` or `"login"`).
+/// Synchronous and blocking — call off the UI thread.
+pub fn verify(service: &str, user: &str, password: &str) -> Result<(), AuthError>;
+```
+
+`verify` wipes its copy of the secret before returning. The `strdup` copies handed to PAM are freed by PAM itself.
+
+---
+
+## 5. Wayland — `wk-gpui-ext`
 
 ### Window configuration
 

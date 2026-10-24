@@ -9,6 +9,7 @@
 //! workspace, so no second GPUI copy. Unlike that kit, these components
 //! impose no theme: just the editing state machine and a caret.
 
+/// Headless text input primitives (TextBuffer, TextStyle).
 pub mod text;
 
 pub use text::{TextAction, TextBuffer, TextStyle, text_area, text_input};
