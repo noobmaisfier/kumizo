@@ -1,0 +1,589 @@
+# API Reference — Kumizo
+
+Types, signatures, commands. **No explanations.**
+For context and rationale, see [`GUIDE.md`](./GUIDE.md).
+
+Signatures listed here are those of the SDK `kumizo-kit` crate and its dependencies (`wk-services`, `wk-gpui-ext`, `wk-ipc`, `wk-ctl`).
+
+---
+
+## Conventions
+
+- `Entity<T>`: GPUI model, created via `cx.new(...)`.
+- `View<T>`: GPUI view, created via `cx.new(...)` returning `Entity<V>`.
+- `Context<T>`: GPUI context, alias `cx` in examples.
+- `impl IntoElement`: any displayable GPUI element.
+- All services are `Send + Sync`.
+- Methods that trigger a redraw take `cx: &mut Context<Self>` and call `cx.notify()`.
+
+---
+
+## 1. Core — `kumizo-kit`
+
+### Traits
+
+```rust
+pub trait Service: 'static + Sized {
+    /// Initialize the service within GPUI's context.
+    fn init(cx: &mut gpui::Context<Self>) -> Self;
+
+    /// Apply an action requested through `kumizo service <name> <action> [payload]`.
+    /// Runs on the GPUI main thread. Returns `true` when the action was recognised;
+    /// unknown actions must return `false`.
+    fn ipc_action(
+        &mut self,
+        cx: &mut gpui::Context<Self>,
+        action: &str,
+        payload: Option<&str>,
+    ) -> bool { false }
+}
+
+pub trait IntoWindowView<V: 'static + Render> {
+    fn build(self, cx: &mut gpui::App) -> Entity<V>;
+}
+
+pub trait ServiceContextExt<V: 'static> {
+    fn service<S: Service>(&mut self) -> Entity<S>;
+    fn try_service<S: Service>(&mut self) -> Option<Entity<S>>;
+}
+
+pub trait AppContextServiceExt {
+    fn service<S: Service>(&self) -> Entity<S>;
+    fn try_service<S: Service>(&self) -> Option<Entity<S>>;
+}
+```
+
+### Types
+
+```rust
+pub struct Kumizo { /* … */ }
+
+impl Kumizo {
+    pub fn new() -> Self;
+    pub fn service<S: Service>(mut self) -> Self;
+    pub fn window<V: 'static + Render>(
+        mut self,
+        config: LayerWindow,
+        builder: impl IntoWindowView<V> + 'static,
+    ) -> Self;
+    pub fn ipc(mut self, enabled: bool) -> Self;
+    pub fn run(mut self);
+}
+```
+
+---
+
+## 2. Services — `wk-services`
+
+Each service exposes `init` (constructor) and `ipc_action` (command entry point). State is read via `entity.read(cx)` in a view.
+
+### Clock
+
+```rust
+pub struct Clock;
+pub enum ClockResolution { Seconds, Minutes }
+
+impl Service for Clock {
+    fn init(cx: &mut Context<Self>) -> Self;
+    fn ipc_action(&mut self, cx: &mut Context<Self>, action: &str, payload: Option<&str>) -> bool;
+}
+
+impl Clock {
+    pub fn time_hms(&self) -> String;
+    pub fn time_hm(&self) -> String;
+    pub fn date_formatted(&self) -> String;
+    pub fn hour(&self) -> u32;
+    pub fn minute(&self) -> u32;
+    pub fn second(&self) -> u32;
+    pub fn datetime(&self) -> String;
+    pub fn set_resolution(&mut self, resolution: ClockResolution);
+}
+```
+
+### Battery
+
+```rust
+pub struct Battery;
+pub enum BatteryState { Charging, Discharging, Empty, FullyCharged, PendingCharge, PendingDischarge, Unknown }
+
+impl Service for Battery {
+    fn init(cx: &mut Context<Self>) -> Self;
+    fn ipc_action(&mut self, cx: &mut Context<Self>, action: &str, payload: Option<&str>) -> bool;
+}
+
+impl Battery {
+    pub fn percent(&self) -> u8;
+    pub fn state(&self) -> BatteryState;
+    pub fn is_charging(&self) -> bool;
+    pub fn energy_rate_watts(&self) -> Option<f64>;
+    pub fn time_to_empty(&self) -> Option<std::time::Duration>;
+    pub fn time_to_full(&self) -> Option<std::time::Duration>;
+}
+```
+
+### Memory
+
+```rust
+pub struct Memory;
+
+impl Service for Memory {
+    fn init(cx: &mut Context<Self>) -> Self;
+    fn ipc_action(&mut self, cx: &mut Context<Self>, action: &str, payload: Option<&str>) -> bool;
+}
+
+impl Memory {
+    pub fn percent(&self) -> u8;
+    pub fn used(&self) -> u64;
+    pub fn available(&self) -> u64;
+    pub fn total(&self) -> u64;
+    pub fn used_gib(&self) -> f64;
+    pub fn total_gib(&self) -> f64;
+    pub fn read_meminfo(&self) -> Option<(u64, u64)>;
+}
+```
+
+### Audio
+
+```rust
+pub struct Audio;
+
+impl Service for Audio {
+    fn init(cx: &mut Context<Self>) -> Self;
+    fn ipc_action(&mut self, cx: &mut Context<Self>, action: &str, payload: Option<&str>) -> bool;
+}
+
+impl Audio {
+    pub fn volume(&self) -> u8;
+    pub fn is_muted(&self) -> bool;
+    pub fn sink_name(&self) -> &str;
+    pub fn icon(&self) -> &str;
+    pub fn set_volume(&mut self, pct: u8);
+    pub fn increase_volume(&mut self, step: u8);
+    pub fn decrease_volume(&mut self, step: u8);
+    pub fn toggle_mute(&mut self);
+}
+```
+
+### Brightness
+
+```rust
+pub struct Brightness;
+
+impl Service for Brightness {
+    fn init(cx: &mut Context<Self>) -> Self;
+    fn ipc_action(&mut self, cx: &mut Context<Self>, action: &str, payload: Option<&str>) -> bool;
+}
+
+impl Brightness {
+    pub fn percent(&self) -> u8;
+    pub fn icon(&self) -> &str;
+    pub fn device(&self) -> &str;
+    pub fn set_percent(&mut self, pct: u8);
+    pub fn increase(&mut self);
+    pub fn decrease(&mut self);
+}
+```
+
+### Mpris
+
+```rust
+pub struct Mpris;
+pub enum PlaybackStatus { Playing, Paused, Stopped }
+
+impl Service for Mpris {
+    fn init(cx: &mut Context<Self>) -> Self;
+    fn ipc_action(&mut self, cx: &mut Context<Self>, action: &str, payload: Option<&str>) -> bool;
+}
+
+impl Mpris {
+    pub fn title(&self) -> &str;
+    pub fn artist(&self) -> &str;
+    pub fn album(&self) -> &str;
+    pub fn display_label(&self) -> String; // "artist - title"
+    pub fn player_name(&self) -> Option<&str>;
+    pub fn status(&self) -> PlaybackStatus;
+    pub fn play_pause(&mut self);
+    pub fn next(&mut self);
+    pub fn previous(&mut self);
+    pub fn stop(&mut self);
+}
+```
+
+### Network
+
+```rust
+pub struct Network;
+pub enum WifiBackend { NetworkManager, Iwd, Fallback }
+pub struct WifiNetwork { pub ssid: String, pub strength: u8, pub secured: bool, pub active: bool }
+
+impl Service for Network {
+    fn init(cx: &mut Context<Self>) -> Self;
+    fn ipc_action(&mut self, cx: &mut Context<Self>, action: &str, payload: Option<&str>) -> bool;
+}
+
+impl Network {
+    pub fn backend(&self) -> WifiBackend;
+    pub fn ssid(&self) -> Option<&str>;
+    pub fn signal_percent(&self) -> Option<u8>;
+    pub fn display_label(&self) -> String;
+    pub fn icon(&self) -> &str;
+    pub fn has_radio(&self) -> bool;
+    pub fn device(&self) -> Option<&str>;
+    pub fn networks(&self) -> &[WifiNetwork];
+    pub fn wifi_enabled(&self) -> bool;
+    pub fn request_scan(&mut self);
+    pub fn set_enabled(&mut self, on: bool);
+    pub fn connect(&mut self, ssid: &str);
+    pub fn connect_with_password(&mut self, ssid: &str, password: &str);
+    pub fn disconnect(&mut self);
+}
+```
+
+### Bluetooth
+
+```rust
+pub struct Bluetooth;
+pub struct BluetoothDevice {
+    pub path: String, pub address: String, pub name: String,
+    pub icon: Option<String>, pub paired: bool, pub connected: bool,
+    pub trusted: bool, pub battery_percent: Option<u8>,
+}
+
+impl Service for Bluetooth {
+    fn init(cx: &mut Context<Self>) -> Self;
+    fn ipc_action(&mut self, cx: &mut Context<Self>, action: &str, payload: Option<&str>) -> bool;
+}
+
+impl Bluetooth {
+    pub fn is_available(&self) -> bool;
+    pub fn is_powered(&self) -> bool;
+    pub fn is_discovering(&self) -> bool;
+    pub fn devices(&self) -> &[BluetoothDevice];
+    pub fn connected_devices(&self) -> &[BluetoothDevice];
+    pub fn paired_devices(&self) -> &[BluetoothDevice];
+    pub fn connected_count(&self) -> usize;
+    pub fn icon(&self) -> &str;
+    pub fn toggle_power(&mut self);
+    pub fn toggle_scan(&mut self);
+    pub fn toggle_device_connection(&mut self, path: String, connected: bool);
+}
+```
+
+### Compositor (`wk-compositor`)
+
+```rust
+pub struct Compositor;
+pub enum CompositorKind { Sway, Hyprland, Niri, Unknown }
+pub struct Workspace { pub id: i32, pub name: String, pub is_active: bool, pub is_urgent: bool, pub window_count: usize, pub monitor: String }
+pub struct AppWindow { pub id: i64, pub title: String, pub class: String, pub workspace_id: i32, pub workspace_name: String, pub is_focused: bool }
+pub struct ActiveWindow { pub title: String, pub class: String, pub workspace_id: i32 }
+
+impl Service for Compositor {
+    fn init(cx: &mut Context<Self>) -> Self;
+    fn ipc_action(&mut self, cx: &mut Context<Self>, action: &str, payload: Option<&str>) -> bool;
+}
+
+impl Compositor {
+    pub fn kind(&self) -> CompositorKind;
+    pub fn workspaces(&self) -> &[Workspace];
+    pub fn active_workspace_id(&self) -> i32;
+    pub fn active_window(&self) -> Option<&ActiveWindow>;
+    pub fn windows(&self) -> &[AppWindow];
+    pub fn focus_window(&mut self, con_id: i64);
+    pub fn switch_workspace(&mut self, id: i32);
+    pub fn close_window(&mut self, con_id: i64);
+}
+```
+
+### Apps
+
+```rust
+pub struct Apps;
+pub struct AppInfo {
+    pub id: String, pub name: String, pub comment: String,
+    pub exec: String, pub icon_name: String, pub icon: Option<std::sync::Arc<gpui::RenderImage>>,
+    pub categories: Vec<String>, pub keywords: Vec<String>,
+}
+
+impl Service for Apps {
+    fn init(cx: &mut Context<Self>) -> Self;
+    fn ipc_action(&mut self, cx: &mut Context<Self>, action: &str, payload: Option<&str>) -> bool;
+}
+
+impl Apps {
+    pub fn apps(&self) -> &[AppInfo];
+    pub fn search(&self, query: &str) -> Vec<AppInfo>;
+    pub fn find_icon(&self, class_or_app_id: &str) -> Option<...>;
+    pub fn launch(&mut self, app: &AppInfo);
+}
+```
+
+### Notifications
+
+```rust
+pub enum Urgency { Low, Normal, Critical }
+pub struct NotificationAction { pub key: String, pub label: String }
+pub struct Notification {
+    pub id: u32, pub app_name: String, pub summary: String, pub body: String,
+    pub app_icon: Option<std::sync::Arc<gpui::RenderImage>>, pub urgency: Urgency,
+    pub actions: Vec<NotificationAction>, pub created_at: time::OffsetDateTime,
+    pub generation: u64,
+}
+
+pub struct Notifications;
+
+impl Service for Notifications {
+    fn init(cx: &mut Context<Self>) -> Self;
+    fn ipc_action(&mut self, cx: &mut Context<Self>, action: &str, payload: Option<&str>) -> bool;
+}
+
+impl Notifications {
+    pub fn toasts(&self) -> &[Notification];
+    pub fn history(&self) -> &[Notification];
+    pub fn unread_count(&self) -> usize;
+    pub fn is_dnd(&self) -> bool;
+    pub fn toggle_dnd(&mut self);
+    pub fn dismiss_toast(&mut self, id: u32);
+    pub fn remove_history(&mut self, id: u32);
+    pub fn clear_history(&mut self);
+    pub fn invoke_action(&self, id: u32, key: &str);
+}
+```
+
+### Tray
+
+```rust
+pub struct TrayItem { pub id: String, pub title: String, pub icon: Option<std::sync::Arc<gpui::RenderImage>>, pub attention: bool }
+pub struct TrayMenuItem { pub id: i32, pub label: String, pub enabled: bool, pub separator: bool, pub toggle: Option<bool>, pub children: Vec<TrayMenuItem> }
+pub struct OpenMenu { pub owner: String, pub title: String, pub items: Vec<TrayMenuItem> }
+pub enum TrayStatus { Active, Passive, NeedsAttention }
+
+pub struct Tray;
+
+impl Service for Tray {
+    fn init(cx: &mut Context<Self>) -> Self;
+    fn ipc_action(&mut self, cx: &mut Context<Self>, action: &str, payload: Option<&str>) -> bool;
+}
+
+impl Tray {
+    pub fn items(&self) -> Vec<TrayItem>;
+    pub fn menu(&self) -> Option<OpenMenu>;
+    pub fn activate(&mut self, id: &str);
+    pub fn open_menu(&mut self, id: &str);
+    pub fn close_menu(&mut self);
+    pub fn click_menu_item(&mut self, id: i32);
+}
+```
+
+### Clipboard
+
+```rust
+pub struct ClipboardItem { pub id: u64, pub text: String, pub timestamp: time::OffsetDateTime }
+
+pub struct Clipboard;
+
+impl Service for Clipboard {
+    fn init(cx: &mut Context<Self>) -> Self;
+    fn ipc_action(&mut self, cx: &mut Context<Self>, action: &str, payload: Option<&str>) -> bool;
+}
+
+impl Clipboard {
+    pub fn items(&self) -> &[ClipboardItem];
+    pub fn search(&self, query: &str) -> Vec<&ClipboardItem>;
+    pub fn copy_text(&mut self, text: String);
+    pub fn copy_item(&mut self, id: u64);
+    pub fn remove_item(&mut self, id: u64);
+    pub fn clear(&mut self);
+}
+```
+
+---
+
+## 3. UI — `wk-ui`
+
+```rust
+pub struct TextBuffer { /* … */ }
+impl TextBuffer {
+    pub fn masked() -> Self;
+    pub fn value(&self) -> String;
+}
+
+pub enum TextAction { Submit, Cancel, Changed, Ignored }
+
+pub struct TextStyle { /* … */ }
+
+pub fn text_input(...) -> impl IntoElement;
+pub fn text_area(...) -> impl IntoElement;
+```
+
+---
+
+## 4. Wayland — `wk-gpui-ext`
+
+### Window configuration
+
+```rust
+pub struct LayerWindow {
+    pub id: String,
+    pub namespace: String,
+    pub layer: Layer,
+    pub anchor: Anchor,
+    pub exclusive_zone: i32,
+    pub margins: Margins,
+    pub keyboard_interactivity: KeyboardInteractivity,
+    pub monitor: MonitorTarget,
+    pub width: Option<f32>,
+    pub height: Option<f32>,
+    pub transparent: bool,
+    pub start_hidden: bool,
+}
+
+impl LayerWindow {
+    pub fn new(id: impl Into<String>) -> Self;
+    pub fn layer(mut self, layer: Layer) -> Self;
+    pub fn anchor(mut self, anchor: Anchor) -> Self;
+    pub fn exclusive_zone(mut self, zone: i32) -> Self;
+    pub fn namespace(mut self, namespace: impl Into<String>) -> Self;
+    pub fn margins(mut self, margins: Margins) -> Self;
+    pub fn keyboard_interactivity(mut self, interactivity: KeyboardInteractivity) -> Self;
+    pub fn monitor(mut self, monitor: MonitorTarget) -> Self;
+    pub fn size(mut self, width: Option<f32>, height: Option<f32>) -> Self;
+    pub fn height(mut self, height: f32) -> Self;
+    pub fn width(mut self, width: f32) -> Self;
+    pub fn start_hidden(mut self, hidden: bool) -> Self;
+    pub fn transparent(mut self, transparent: bool) -> Self;
+
+    pub fn to_gpui_options(&self) -> gpui::WindowOptions;
+    pub fn to_gpui_options_with_display(
+        &self,
+        display_bounds: Option<gpui::Bounds<gpui::Pixels>>,
+    ) -> gpui::WindowOptions;
+}
+
+pub enum Layer { Background, Bottom, Top, Overlay }
+pub enum KeyboardInteractivity { None, OnDemand, Exclusive }
+pub enum MonitorTarget { Primary, All, Named(String) }
+
+pub struct Anchor(u32);
+impl Anchor {
+    pub const TOP: Anchor = Anchor(1 << 0);
+    pub const BOTTOM: Anchor = Anchor(1 << 1);
+    pub const LEFT: Anchor = Anchor(1 << 2);
+    pub const RIGHT: Anchor = Anchor(1 << 3);
+}
+impl std::ops::BitOr for Anchor { type Output = Anchor; }
+
+pub struct Margins { /* top, right, bottom, left */ }
+impl Margins {
+    pub fn zero() -> Self;
+    pub fn new(top: i32, right: i32, bottom: i32, left: i32) -> Self;
+}
+```
+
+---
+
+## 5. IPC — `wk-ipc`
+
+### Socket path
+
+```rust
+pub fn socket_path() -> std::path::PathBuf;
+// $XDG_RUNTIME_DIR/kumizo.sock, override with $KUMIZO_SOCKET, /tmp fallback.
+```
+
+### Requests
+
+```rust
+pub enum Request {
+    Ping,
+    Status,
+    ToggleWindow { name: String },
+    ShowWindow { name: String },
+    HideWindow { name: String },
+    Reload,
+    ServiceAction { service: String, action: String, payload: Option<String> },
+}
+```
+
+### Responses
+
+```rust
+pub enum Response {
+    Pong,
+    Status { uptime_secs: u64, windows: Vec<String>, services: Vec<String> },
+    Ok { message: String },
+    Error { message: String },
+}
+```
+
+### Client
+
+```rust
+pub struct IpcClient { /* … */ }
+
+impl IpcClient {
+    pub fn connect() -> Self;                        // session socket
+    pub fn new(path: impl AsRef<Path>) -> Self;      // explicit path (tests)
+    pub fn socket_path(&self) -> &std::path::Path;
+    pub fn is_alive(&self) -> bool;                  // Ping → Pong?
+    pub fn send(&self, req: Request) -> anyhow::Result<Response>;
+}
+```
+
+---
+
+## 6. CLI — `wk-ctl` (binary `kumizo`)
+
+```
+kumizo <COMMAND> [OPTIONS]
+
+COMMANDS:
+    ping                        Check if the shell is responding
+    status                      Display uptime, windows, and services
+    toggle <WINDOW_NAME>        Toggle visibility of the specified window
+    show <WINDOW_NAME>          Show/open the specified window
+    hide <WINDOW_NAME>          Hide/destroy the specified window
+    reload                      Re-render every registered window
+    service <NAME> <ACTION>     Send a command to a registered service
+                                Example: kumizo service audio toggle_mute
+                                Example: kumizo service mpris next
+
+OPTIONS:
+    -h, --help                  Print this help information
+```
+
+Socket: `$XDG_RUNTIME_DIR/kumizo.sock` (override with `$KUMIZO_SOCKET`).
+
+Install:
+
+```bash
+cargo install kumizo
+```
+
+---
+
+## 7. Feature flags & workspace
+
+| Crate | Role |
+|---|---|
+| `kumizo-kit` | SDK facade: `Kumizo` builder, prelude, app wiring |
+| `wk-gpui-ext` | GPUI Wayland layer-shell extension traits and wrappers |
+| `wk-services` | Async system services (Clock, Battery, Audio, MPRIS…) |
+| `wk-compositor` | Compositor IPC (Hyprland, Sway, Niri) |
+| `wk-ipc` | UNIX-socket daemon protocol + server |
+| `wk-ui` | Shared headless UI primitives |
+| `wk-pam` | Minimal Linux-PAM check, no bindgen/libclang |
+| `wk-ctl` | `kumizo` CLI to drive a running shell |
+
+Workspace dependencies are pinned: `gpui-pre =0.3.8`, `gpui-pre-platform =0.3.8`. Exactly one `gpui-pre` version in the whole dependency graph.
+
+---
+
+## 8. Versions & compatibility
+
+| Kumizo | GPUI | Rust MSRV | Wayland |
+|---|---|---|---|
+| `0.1.x` | `=0.3.8` | `1.80` | layer-shell, wlr-foreign-toplevel |
+| `0.2.x` (planned) | `>=0.3.8, <0.4` | `1.82` | + ext-session-lock-v1 |
+
+> GPUI is **pinned** (`=`). Any update is a documented minor event in `CHANGELOG.md`. Breaking GPUI changes are absorbed in `wk-gpui-ext` only.
