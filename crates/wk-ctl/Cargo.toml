@@ -1,5 +1,5 @@
 [package]
-name = "wk-ctl"
+name = "kumizo"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

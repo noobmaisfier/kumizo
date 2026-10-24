@@ -5,32 +5,22 @@
 [![GPUI](https://img.shields.io/badge/render-GPUI%20(wgpu)-green.svg)](https://github.com/zed-industries/zed)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-lightgrey.svg)](LICENSE-MIT)
 
-**Kumizo** (`kumizo-kit`) is a high-performance, pure-Rust SDK for building
-your own Wayland desktop shell — status bars, docks, launchers, OSDs, popups,
-panels — as **one single process**, rendered with GPU acceleration (GPUI/wgpu).
+**Kumizo** (`kumizo-kit`) is a pure-Rust SDK for building your own Wayland desktop shell — status bars, docks, launchers, OSDs, popups, panels — as **one single process**, rendered with GPU acceleration (GPUI/wgpu).
 
-Unlike web- or interpreted-based solutions (AGS, Eww, Waybar, QuickShell):
+- **One process** — one GPU init, one font stack, one socket; every window and widget lives in it. A shell is a single `main()` declaring services and windows once.
+- **GPU-accelerated rendering** — GPUI/wgpu, no web or interpreted layer.
+- **Pure Rust widgets** — a widget is a plain struct implementing `gpui::Render`; total layout freedom, no imposed UI kit.
+- **Zero idle CPU** — services are event-driven (D-Bus signals, compositor sockets); nothing redraws unless `cx.notify()` is called.
+- **Scriptable CLI** — `kumizo ping`, `kumizo toggle <window>`, `kumizo service <name> <action>` drive a running shell over its socket.
 
-- **Single instance**: one process, one GPU/font stack, one socket. Every
-  window and every widget of your shell lives in it (~110 MB instead of
-  ~210 MB for three separate processes).
-- **You write the widgets**: a widget is a plain Rust struct implementing
-  `gpui::Render`. Total layout freedom, no imposed UI kit.
-- **Zero idle CPU**: services are event-driven (D-Bus signals, compositor
-  sockets); nothing redraws unless `cx.notify()` is called.
+## Build your own shell
 
-**Aurora**, the example shell in `examples/aurora`, is the living proof: it is
-used daily as a real desktop shell. If it suffices for you, install it
-directly — otherwise build your own on `kumizo-kit`.
-
-## Build your own shell in 5 minutes
-
-Requirements: Linux + Wayland (Sway), a Rust stable toolchain and `gcc`.
+Requirements: Linux + Wayland, a Rust stable toolchain, and `gcc`.
 
 ```bash
 cargo new my-shell && cd my-shell
 cargo add kumizo-kit
-cargo add gpui-pre --rename gpui --version "=0.3.8"   # same snapshot the SDK uses: exactly ONE gpui copy
+cargo add gpui-pre --rename gpui --version "=0.3.8"
 ```
 
 A shell is services + windows + `run()`:
@@ -41,100 +31,61 @@ use kumizo_kit::prelude::*;
 
 fn main() {
     Kumizo::new()
-        .service::<Clock>()     // one call per service, BEFORE the windows
+        .service::<Clock>()
         .window(
-            LayerWindow::new("<id>")...,
-            |cx: &mut gpui::App| cx.new(MyView::new),
-        )
-        .window(                // as many windows as needed, same process
-            LayerWindow::new("<popup>")....start_hidden(true),
-            |cx: &mut gpui::App| cx.new(MyPopup::new),
+            LayerWindow::new("bar")
+                .layer(Layer::Top)
+                .anchor(Anchor::TOP | Anchor::LEFT | Anchor::RIGHT)
+                .exclusive_zone(36),
+            |cx: &mut gpui::App| cx.new(MyBar::new),
         )
         .run();
 }
 ```
 
-Browse the [`examples/shell`](https://github.com/noobmaisfier/kumizo/tree/main/examples/shell)
-crate to see a complete minimal shell. Rules that keep the codebase healthy:
+A widget is a view reading services:
 
-- **Architecture B**: services own pure data, shell views own windows.
-- `wk-ui` stays headless and hand-written; mouse caret positioning only on
-  long-text components.
-- Read [`docs/GUIDE.md`](https://github.com/noobmaisfier/kumizo/blob/main/docs/GUIDE.md) before
-  adding a widget — it documents the builder order, services and lifecycle.
+```rust
+struct MyBar { clock: Entity<Clock> }
 
-## Try Aurora (no code)
+impl MyBar {
+    fn new(cx: &mut Context<Self>) -> Self {
+        Self { clock: cx.service::<Clock>() }
+    }
+}
 
-Aurora is a complete shell: bar, launcher, clipboard manager, notifications,
-control center, lockscreen.
+impl Render for MyBar {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        div().child(self.clock.read(cx).time_hms())
+    }
+}
+```
+
+See `examples/aurora` for a complete example shell, and [`docs/GUIDE.md`](docs/GUIDE.md) for the widget recipe, services reference, and GPUI pitfalls.
+
+### Install the CLI
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/noobmaisfier/kumizo/main/install-aurora.sh | sh
+cargo install kumizo
 ```
 
-This installs the latest release binary when available, otherwise it builds
-from source (~10 min first time). Flags: `--bin` (binary only), `--source`
-(source only), `--to DIR`, `--check` (prerequisites only). The installer
-never touches your sway config — it prints the 2 lines to add, unless you
-pass `--sway`.
+This installs the `kumizo` binary (send commands to a running shell over its socket).
 
-Add to your Sway config (the installer proposes it, with a backup):
-
-```
-exec ~/.local/bin/aurora
-```
-
-Then `kumizo ping` should answer `PONG`.
-
-> **License note**: the `aurora` binary links nothing GPL — it stays
-> MIT OR Apache-2.0, like the SDK crates. A local music player is a
-> *separate* program (`kumizo-music`, GPL-2.0 via `rockbox-playback`) that
-> publishes itself in MPRIS; the shell only speaks MPRIS.
-
-## The crates
-
-| Crate | Role |
-|---|---|
-| `kumizo-kit` | SDK facade: `Kumizo` builder, prelude, app wiring |
-| `wk-gpui-ext` | GPUI Wayland layer-shell extension traits and wrappers |
-| `wk-services` | Async system services (Clock, Battery, Audio, MPRIS…) |
-| `wk-compositor` | Compositor IPC (Hyprland, Sway, Niri) |
-| `wk-ipc` | UNIX-socket daemon protocol + server |
-| `wk-ui` | Shared headless UI primitives |
-| `wk-pam` | Minimal Linux-PAM check, no bindgen/libclang |
-| `wk-ctl` | `kumizo` CLI to drive a running shell |
-
-`kumizo` talks to the running shell over its socket, no synthetic input
-involved:
+## CLI
 
 ```bash
 kumizo ping                       # PONG
-kumizo toggle aurora-launcher     # show/hide the launcher
-kumizo service audio toggle_mute  # key-free control, scriptable
+kumizo toggle aurora-launcher     # show/hide a window
+kumizo service audio toggle_mute  # scriptable, key-free control
 ```
 
-## Repository layout
+`kumizo` (`wk-ctl`) talks to your shell over its UNIX socket (`$XDG_RUNTIME_DIR/kumizo.sock`).
 
-```
-crates/          the SDK (publishable to crates.io)
-examples/aurora  the living example shell (daily driver)
-examples/shell   minimal shell example — start here to learn
-docs/            the developer guide (concepts, recipe, reference, pitfalls)
-install-aurora.sh  one-line installer for aurora
-.github/workflows/ci.yml  check → builds → release on every v* tag
-```
+- **Native (no code needed):** `ping`, `status`, `show <window>`, `hide <window>`, `toggle <window>`, `reload` — handled by the IPC core for every window you declare.
+- **Service actions:** `kumizo service <name> <action>` calls `ipc_action` on the registered service. SDK services (`Audio`, `Battery`, `Mpris`, `Brightness`, `Network`, `Tray`, `Clipboard`, `Notifications`, …) already implement their actions, so `kumizo service audio toggle_mute` works out of the box once you register `.service::<Audio>()`. For your own custom services, implement `Service::ipc_action` to expose CLI actions.
 
-Branches: `main` (stable) and `develop` (work in progress). CI runs on
-`main` only, plus a release job per `v*` tag.
-
-## Contributing
-
-Keep `main` green: `cargo check --workspace` and
-`cargo test --workspace --lib` must pass. Confirm scope before large builds,
-verify behavior on a real session, and never commit generated binaries
-(`dist/` stays untracked except the installer scripts).
+IPC is on by default (`.ipc(true)`).
 
 ## License
 
-SDK crates and the `aurora` binary: MIT OR Apache-2.0 (see `LICENSE-MIT`,
-`LICENSE-APACHE`).
+MIT OR Apache-2.0 (see `LICENSE-MIT`, `LICENSE-APACHE`).

@@ -8,11 +8,7 @@ members = [
     "crates/wk-ui",
     "crates/wk-pam",
     "crates/wk-ctl",
-    "examples/shell",
-    "examples/kiln",
     "examples/aurora",
-    "examples/sources",
-    "examples/lockscreen",
 ]
 resolver = "2"
 
