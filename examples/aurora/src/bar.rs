@@ -166,7 +166,7 @@ impl TopBar {
                     .text_color(fg)
                     .text_xs()
                     .font_weight(FontWeight::NORMAL)
-                    .hover(|s| s.bg(ui::hover_bg()))
+                    .hover(|s| s.bg(pal::raised()))
                     .on_click(move |_, _, cx| {
                         compositor.update(cx, |c, _| c.switch_workspace(id));
                     })
@@ -196,7 +196,7 @@ impl TopBar {
             pill()
                 .id("bar-pomodoro")
                 .cursor_pointer()
-                .hover(|s| s.bg(ui::hover_bg()))
+                .hover(|s| s.bg(pal::raised()))
                 .on_click(move |_, _, cx| {
                     pomodoro.update(cx, |p, cx| p.toggle(cx));
                 })
@@ -271,7 +271,7 @@ impl TopBar {
             row = row
                 .child(
                     btn("mp-prev")
-                        .hover(|s| s.bg(ui::hover_bg()))
+                        .hover(|s| s.bg(pal::raised()))
                         .on_click(move |_, _, cx| {
                             pr.update(cx, |m, _| m.previous());
                         })
@@ -279,7 +279,7 @@ impl TopBar {
                 )
                 .child(
                     btn("mp-play")
-                        .hover(|s| s.bg(ui::hover_bg()))
+                        .hover(|s| s.bg(pal::raised()))
                         .on_click(move |_, _, cx| {
                             pp.update(cx, |m, _| m.play_pause());
                         })
@@ -287,7 +287,7 @@ impl TopBar {
                 )
                 .child(
                     btn("mp-next")
-                        .hover(|s| s.bg(ui::hover_bg()))
+                        .hover(|s| s.bg(pal::raised()))
                         .on_click(move |_, _, cx| {
                             nx.update(cx, |m, _| m.next());
                         })
@@ -306,7 +306,7 @@ impl TopBar {
         let clock_pill = pill()
             .id("bar-clock")
             .cursor_pointer()
-            .hover(|s| s.bg(ui::hover_bg()))
+            .hover(|s| s.bg(pal::raised()))
             .on_click(|_, _, cx| ui::toggle_exclusive(ids::NOTIFS, cx))
             .child(
                 div()
@@ -365,7 +365,7 @@ impl TopBar {
                 };
                 tray_row = tray_row.child(
                     btn(("tray", i))
-                        .hover(|s| s.bg(ui::hover_bg()))
+                        .hover(|s| s.bg(pal::raised()))
                         .on_click(move |_, _, cx| {
                             tray.update(cx, |t, _| t.activate(&id));
                         })
@@ -514,7 +514,7 @@ impl TopBar {
             pill()
                 .id("bar-system")
                 .cursor_pointer()
-                .hover(|s| s.bg(ui::hover_bg()))
+                .hover(|s| s.bg(pal::raised()))
                 .on_click(|_, _, cx| ui::toggle_exclusive(ids::CONTROL, cx))
                 .child(sys),
         );
@@ -525,7 +525,7 @@ impl TopBar {
         let mut bell = pill()
             .id("bar-bell")
             .cursor_pointer()
-            .hover(|s| s.bg(ui::hover_bg()))
+            .hover(|s| s.bg(pal::raised()))
             .on_click(|_, _, cx| ui::toggle_exclusive(ids::NOTIFS, cx))
             .child(ui::glyph(
                 if dnd { icons::BELL_OFF } else { icons::BELL },
