@@ -28,6 +28,8 @@ Kumizo is **blazingly fast**, **lightweight**, and **feature rich**. It is a sin
 When it comes to design, you are limited only by your imagination: every widget is a plain Rust `struct` implementing `gpui::Render`, giving you total layout freedom with no imposed UI kit.
 
 > 💡 **In short**: Kumizo is an SDK for **desktop artisans**. It does not give you a ready-made bar; it gives you the tools to build your own, without compromising on performance.
+>
+> 📘 **Note on language**: this guide is in English. The API reference [`API.md`](./API.md) is also in English, as it mirrors `rustdoc` / `docs.rs` signatures.
 
 ---
 
@@ -80,11 +82,11 @@ struct ClockView {
 }
 
 impl Render for ClockView {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .flex()
             .items_center()
-            .child(Text::new(self.now.clone()))
+            .child(self.now.clone())
     }
 }
 ```
@@ -150,7 +152,9 @@ In `main()`, add (if not already done) a window for the bar:
 
 ### Step 2 — Choose (or write) the service
 
-Kumizo provides a `Battery` service ready to use. Check its availability in [Services reference](#5-services-reference). If it does not exist, write it:
+Kumizo provides ready-to-use system services (see [API.md](./API.md)), including `Battery`.
+If you need a **custom** service — say, reading an exotic sensor — here is the minimal shape
+every service must have:
 
 ```rust
 struct BatteryService {
@@ -171,18 +175,24 @@ impl BatteryService {
 
 ```rust
 struct BatteryView {
-    level: u8,
-    charging: bool,
+    battery: Entity<Battery>,
+}
+
+impl BatteryView {
+    fn new(cx: &mut Context<Self>) -> Self {
+        Self { battery: cx.service::<Battery>() }
+    }
 }
 
 impl Render for BatteryView {
-    fn render(&mut self, _cx: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let level = self.battery.read(cx).percent();
         div()
             .flex()
             .items_center()
             .gap_1()
-            .child(Text::new(format!("{}%", self.level)))
-            .child(if self.charging { "⚡" } else { "" })
+            .child(format!("{}%", level))
+            .child(if self.battery.read(cx).is_charging() { "⚡" } else { "" })
     }
 }
 ```
@@ -206,12 +216,12 @@ fn main() {
 }
 ```
 
-At each `cx.notify()` from the service, the view is recreated and `render()` is called again.
+At each `cx.notify()`, GPUI re-invokes `render()` on the persisted view — the view is not recreated.
 
 ### Step 5 — Verify the result
 
 ```bash
-cargo run --bin aurora  # or your binary
+cargo run --example aurora  # or your binary
 ```
 
 You should see the battery display and update in real time. If not, consult [GPUI pitfalls](#6-gpui-pitfalls-and-method-rules).
@@ -220,7 +230,9 @@ You should see the battery display and update in real time. If not, consult [GPU
 
 ## 5. Services reference <a name="5-services-reference"></a>
 
-Kumizo provides ready-to-use services. Here are the most common ones (exact signatures are in [`API.md`](./API.md)):
+Kumizo provides ready-to-use system services (see [`API.md`](./API.md)), including `Clock`,
+`Battery`, `Audio`, `Memory`, `Network`, `Bluetooth`, `Compositor`, `Apps`, `Notifications`,
+`Tray`, `Clipboard`, `Mpris`, `Brightness`.
 
 | Service | Data exposed | Typical events |
 |---|---|---|
@@ -239,9 +251,9 @@ Kumizo provides ready-to-use services. Here are the most common ones (exact sign
 let audio = cx.service::<Audio>();
 
 // In a view, read state without blocking
-fn render(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
     let audio = self.audio.read(cx);
-    Text::new(format!("🔊 {}%", audio.volume()))
+    div().child(format!("🔊 {}%", audio.volume()))
 }
 ```
 
