@@ -112,7 +112,7 @@ impl Render for ThemePicker {
                     .gap_3()
                     .px_3()
                     .h(px(46.))
-                    .rounded_xl()
+                    .rounded(px(ui::RADIUS_ROW))
                     .cursor_pointer()
                     .bg(if selected {
                         pal::raised()
@@ -125,7 +125,13 @@ impl Render for ThemePicker {
                     } else {
                         pal::with_alpha(pal::accent(), 0.0)
                     })
-                    .hover(|s| s.bg(pal::raised()))
+                    .hover(move |s| {
+                        s.bg(if selected {
+                            pal::raised()
+                        } else {
+                            ui::hover_bg()
+                        })
+                    })
                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                         this.apply(pos, cx);
                     }))
@@ -138,7 +144,7 @@ impl Render for ThemePicker {
                             .items_center()
                             .justify_center()
                             .gap(px(3.))
-                            .rounded_md()
+                            .rounded(px(ui::RADIUS_SM))
                             .bg(theme::swatch(th.bg))
                             .border_1()
                             .border_color(theme::swatch(th.border))
@@ -187,7 +193,7 @@ impl Render for ThemePicker {
                     .w(px(400.))
                     .flex()
                     .flex_col()
-                    .rounded_2xl()
+                    .rounded(px(ui::RADIUS_PANEL))
                     .bg(pal::bg_a(0.97))
                     .border_1()
                     .border_color(pal::border())

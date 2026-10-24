@@ -13,11 +13,19 @@
 
 use std::ffi::CString;
 use std::os::raw::{c_char, c_int, c_void};
+use std::path::PathBuf;
+use std::process::Command;
+use std::sync::Arc;
 use std::time::Duration;
 
 use gpui::prelude::*;
-use gpui::{div, px, Context, Entity, FocusHandle, FontWeight, KeyDownEvent, Rgba, Window};
+use gpui::{
+    div, linear_color_stop, linear_gradient, px, Context, Entity, FocusHandle, FontFeatures,
+    FontWeight, KeyDownEvent, ObjectFit, RenderImage, Rgba, Window,
+};
+use image::{Frame, ImageBuffer};
 use kumizo_kit::prelude::*;
+use smallvec::smallvec;
 
 // ── Mini-palette (dupliquée, lit le thème choisi dans le shell) ─────────────
 //                 nom                bg        text      muted     accent    danger
@@ -58,6 +66,106 @@ fn colors() -> Colors {
         accent: gpui::rgb(p.4),
         danger: gpui::rgb(p.5),
     }
+}
+
+/// Chiffres tabulaires, comme l'horloge de la barre : les minutes ne font
+/// plus danser la largeur du bloc.
+fn clock_features() -> FontFeatures {
+    FontFeatures(Arc::new(vec![("tnum".to_string(), 1)]))
+}
+
+/// Fond d'écran courant, demandé à awww (même pool que le thème appliqué).
+/// On étend le PATH à la main : le lockscreen est lancé par sway avant que
+/// `~/.local/bin` ne soit forcément présent dans l'environnement.
+fn wallpaper_path() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    let mut dirs = vec![
+        PathBuf::from(&home).join(".local/bin"),
+        PathBuf::from(&home).join(".cargo/bin"),
+    ];
+    if let Some(path) = std::env::var_os("PATH") {
+        dirs.extend(std::env::split_paths(&path));
+    }
+    let path_env = std::env::join_paths(dirs).ok()?;
+
+    let out = Command::new("awww")
+        .arg("query")
+        .env("PATH", path_env)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let path = text
+        .split("currently displaying: image: ")
+        .nth(1)?
+        .lines()
+        .next()?
+        .trim();
+    let path = PathBuf::from(path);
+    path.is_file().then_some(path)
+}
+
+/// Vrai si le fond du thème est sombre (même critère que le shell).
+fn is_dark(c: Rgba) -> bool {
+    0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b < 0.5
+}
+
+/// Décode le fond d'écran, le réduit fortement puis le remonte : un flou
+/// « cheap » mais stable, sans traîner un filtre gaussien sur 4K.
+/// Sur thème sombre, l'image est aussi assombrie et légèrement désaturée
+/// (« Doux ») : on garde les formes sans avoir à monter le voile.
+fn wallpaper(dark: bool) -> Option<Arc<RenderImage>> {
+    let path = wallpaper_path()?;
+    let img = image::open(&path).ok()?;
+    let (w, h) = (img.width(), img.height());
+    if w == 0 || h == 0 {
+        return None;
+    }
+
+    let scale = (1920.0 / w.max(h) as f32).min(1.0);
+    let tw = ((w as f32 * scale) as u32).max(1);
+    let th = ((h as f32 * scale) as u32).max(1);
+
+    let small = image::imageops::resize(
+        &img,
+        (tw / 8).max(8),
+        (th / 8).max(8),
+        image::imageops::FilterType::Triangle,
+    );
+    let small = image::imageops::blur(&small, 2.0);
+    let small = if dark {
+        grade(small, 0.62, 0.8)
+    } else {
+        small
+    };
+    let blurred = image::imageops::resize(&small, tw, th, image::imageops::FilterType::Triangle);
+
+    // GPUI attend du BGRA (même conversion que `load_png` dans wk-services).
+    let mut raw = blurred.into_raw();
+    for px in raw.chunks_exact_mut(4) {
+        px.swap(0, 2);
+    }
+    let buf: ImageBuffer<image::Rgba<u8>, Vec<u8>> = ImageBuffer::from_raw(tw, th, raw)?;
+    Some(Arc::new(RenderImage::new(smallvec![Frame::new(buf)])))
+}
+
+/// Multiplie la luminosité et rapproche les couleurs du gris : assombrit
+/// sans écraser le point noir, contrairement à un voile plat.
+fn grade(mut img: image::RgbaImage, brightness: f32, saturation: f32) -> image::RgbaImage {
+    for p in img.pixels_mut() {
+        let [r, g, b, a] = p.0;
+        let (r, g, b) = (r as f32, g as f32, b as f32);
+        let luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        p.0 = [
+            ((luma + (r - luma) * saturation) * brightness).clamp(0.0, 255.0) as u8,
+            ((luma + (g - luma) * saturation) * brightness).clamp(0.0, 255.0) as u8,
+            ((luma + (b - luma) * saturation) * brightness).clamp(0.0, 255.0) as u8,
+            a,
+        ];
+    }
+    img
 }
 
 // ── PAM (FFI brut, libpam) ──────────────────────────────────────────────────
@@ -166,6 +274,7 @@ struct Lock {
     busy: bool,
     error: bool,
     colors: Colors,
+    wallpaper: Option<Arc<RenderImage>>,
     focus: FocusHandle,
 }
 
@@ -174,13 +283,16 @@ impl Lock {
         let user = std::env::var("USER")
             .or_else(|_| std::env::var("LOGNAME"))
             .unwrap_or_else(|_| "utilisateur".into());
+        let colors = colors();
+        let wallpaper = wallpaper(is_dark(colors.bg));
         Self {
             clock: cx.service::<Clock>(),
             user,
             password: String::new(),
             busy: false,
             error: false,
-            colors: colors(),
+            colors,
+            wallpaper,
             focus: cx.focus_handle(),
         }
     }
@@ -265,43 +377,79 @@ impl Render for Lock {
             ("Tape ton mot de passe puis Entrée", c.muted)
         };
 
-        div()
+        let mut root = div()
             .track_focus(&self.focus)
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| this.on_key(ev, cx)))
             .size_full()
+            .relative()
             .bg(c.bg)
             .flex()
             .flex_col()
             .items_center()
             .justify_center()
-            .gap_4()
-            .child(
-                div()
-                    .text_size(px(120.))
-                    .font_weight(FontWeight::BOLD)
-                    .text_color(c.text)
-                    .child(time),
-            )
-            .child(div().text_size(px(20.)).text_color(c.muted).child(date))
-            .child(
-                div()
-                    .mt(px(40.))
-                    .w(px(360.))
-                    .h(px(52.))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded_full()
-                    .border_2()
-                    .border_color(if self.error { c.danger } else { c.accent })
-                    .text_color(c.text)
-                    .child(if dots.is_empty() {
-                        div().text_color(c.muted).child(self.user.clone())
-                    } else {
-                        div().child(dots)
-                    }),
-            )
-            .child(div().text_sm().text_color(status_color).child(status))
+            .gap_4();
+
+        // Fond : le wallpaper courant (pool du thème) flouté, voilé par un
+        // dégradé de la couleur `bg` pour garder l'horloge lisible. Sur thème
+        // sombre, l'image est déjà assombrie (« Doux ») : le voile peut donc
+        // rester léger et laisser respirer le wallpaper.
+        if let Some(wall) = self.wallpaper.clone() {
+            let (top, bottom) = if is_dark(c.bg) {
+                (0.15, 0.40)
+            } else {
+                (0.35, 0.70)
+            };
+            root = root
+                .child(
+                    gpui::img(wall)
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .size_full()
+                        .object_fit(ObjectFit::Cover),
+                )
+                .child(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .size_full()
+                        .bg(linear_gradient(
+                            180.,
+                            linear_color_stop(c.bg.opacity(top), 0.),
+                            linear_color_stop(c.bg.opacity(bottom), 1.),
+                        )),
+                );
+        }
+
+        root.child(
+            div()
+                .text_size(px(120.))
+                .font_weight(FontWeight::BOLD)
+                .font_features(clock_features())
+                .text_color(c.text)
+                .child(time),
+        )
+        .child(div().text_size(px(20.)).text_color(c.muted).child(date))
+        .child(
+            div()
+                .mt(px(40.))
+                .w(px(360.))
+                .h(px(52.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded_full()
+                .border_2()
+                .border_color(if self.error { c.danger } else { c.accent })
+                .text_color(c.text)
+                .child(if dots.is_empty() {
+                    div().text_color(c.muted).child(self.user.clone())
+                } else {
+                    div().child(dots)
+                }),
+        )
+        .child(div().text_sm().text_color(status_color).child(status))
     }
 }
 

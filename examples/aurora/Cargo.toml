@@ -20,6 +20,8 @@ gpui = { workspace = true }
 async-io = { workspace = true }
 libc = { workspace = true }
 serde_json = { workspace = true }
+image = { workspace = true, features = ["jpeg", "webp"] }
+smallvec = { workspace = true }
 # Pas de moteur audio ici : le shell ne lit que les médias MPRIS (navigateur,
 # lecteur externe…). Un lecteur local vit dans son propre process et se
 # publie en MPRIS — le shell reste ainsi MIT OR Apache-2.0.

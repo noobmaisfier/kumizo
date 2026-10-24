@@ -147,7 +147,7 @@ impl Render for PowerMenu {
                     .items_center()
                     .justify_center()
                     .gap_2()
-                    .rounded_2xl()
+                    .rounded(px(ui::RADIUS_PANEL))
                     .cursor_pointer()
                     .bg(if armed {
                         pal::danger()

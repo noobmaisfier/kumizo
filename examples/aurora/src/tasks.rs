@@ -142,7 +142,7 @@ impl Render for TaskSwitcher {
                     .flex_col()
                     .justify_between()
                     .p_3()
-                    .rounded_2xl()
+                    .rounded(px(ui::RADIUS_PANEL))
                     .cursor_pointer()
                     .bg(if selected { pal::raised() } else { pal::surface() })
                     .border_2()

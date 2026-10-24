@@ -3,10 +3,35 @@
 //! qui le pose, une seule fois.
 
 use gpui::prelude::*;
-use gpui::{div, px, App, DefiniteLength, Div, ElementId, KeyDownEvent, Rgba, Stateful};
+use gpui::{
+    div, point, px, App, Canvas, DefiniteLength, Div, ElementId, FontFeatures, KeyDownEvent,
+    PathBuilder, Rgba, Stateful,
+};
 use kumizo_kit::prelude::*;
 
 use crate::{icons, theme::pal};
+
+// ── Tokens ──────────────────────────────────────────────────────────────────
+/// Une seule échelle de rayons pour tout le shell : puces, contrôles, lignes,
+/// cartes, panneaux. Les capsules (`pill`, `btn`) restent en `full`.
+pub const RADIUS_XS: f32 = 4.;
+pub const RADIUS_SM: f32 = 6.;
+pub const RADIUS_CTRL: f32 = 8.;
+pub const RADIUS_ROW: f32 = 10.;
+pub const RADIUS_CARD: f32 = 12.;
+pub const RADIUS_PANEL: f32 = 14.;
+
+/// Fond de survol : `raised` à 65 % au lieu d'un aplat. Sur une pastille ou
+/// une carte déjà teintée, le survol se voit sans « sauter » au plein.
+pub fn hover_bg() -> Rgba {
+    pal::with_alpha(pal::raised(), 0.65)
+}
+
+/// Chiffres tabulaires : l'horloge, les durées et les pourcentages gardent la
+/// même largeur quand un chiffre change (fini le micro-décalage).
+pub fn tabular() -> FontFeatures {
+    FontFeatures(std::sync::Arc::new(vec![("tnum".to_string(), 1)]))
+}
 
 /// Ids de fenêtres — préfixés `aurora-` (les ids sont globaux sur le socket).
 pub mod ids {
@@ -81,7 +106,7 @@ pub fn card() -> Div {
         .flex_col()
         .gap_2()
         .p_3()
-        .rounded_xl()
+        .rounded(px(RADIUS_CARD))
         .bg(pal::surface())
         .border_1()
         .border_color(pal::border())
@@ -194,7 +219,7 @@ pub fn segments(
                 .id((prefix, i))
                 .flex_1()
                 .h(px(20.))
-                .rounded_sm()
+                .rounded(px(RADIUS_XS))
                 .cursor_pointer()
                 .bg(if filled { pal::accent() } else { pal::raised() })
                 .hover(|s| s.opacity(0.75))
@@ -202,4 +227,72 @@ pub fn segments(
         );
     }
     row
+}
+
+/// Anneau de progression dessiné au canvas (pas de transform/scale dans ce
+/// snapshot GPUI). Sens horaire depuis midi ; `progress` est borné à 0..=1.
+pub fn ring(
+    progress: f32,
+    size: f32,
+    thickness: f32,
+    color: Rgba,
+    track: Rgba,
+) -> Canvas<()> {
+    gpui::canvas(
+        |_, _, _| {},
+        move |bounds, _, window, _| {
+            let center = bounds.center();
+            let cx = f32::from(center.x);
+            let cy = f32::from(center.y);
+            let r = (size - thickness) / 2.;
+
+            let mut base = PathBuilder::stroke(px(thickness));
+            circle(&mut base, cx, cy, r);
+            if let Ok(path) = base.build() {
+                window.paint_path(path, track);
+            }
+
+            let p = progress.clamp(0.0, 1.0);
+            if p > 0.002 {
+                let mut arc = PathBuilder::stroke(px(thickness));
+                if p >= 0.999 {
+                    circle(&mut arc, cx, cy, r);
+                } else {
+                    let start = -std::f32::consts::FRAC_PI_2;
+                    let end = start + std::f32::consts::TAU * p;
+                    arc.move_to(point(px(cx), px(cy - r)));
+                    arc.arc_to(
+                        point(px(r), px(r)),
+                        px(0.),
+                        p > 0.5,
+                        true,
+                        point(px(cx + r * end.cos()), px(cy + r * end.sin())),
+                    );
+                }
+                if let Ok(path) = arc.build() {
+                    window.paint_path(path, color);
+                }
+            }
+        },
+    )
+    .w(px(size))
+    .h(px(size))
+}
+
+fn circle(b: &mut PathBuilder, cx: f32, cy: f32, r: f32) {
+    b.move_to(point(px(cx + r), px(cy)));
+    b.arc_to(
+        point(px(r), px(r)),
+        px(0.),
+        false,
+        true,
+        point(px(cx - r), px(cy)),
+    );
+    b.arc_to(
+        point(px(r), px(r)),
+        px(0.),
+        false,
+        true,
+        point(px(cx + r), px(cy)),
+    );
 }

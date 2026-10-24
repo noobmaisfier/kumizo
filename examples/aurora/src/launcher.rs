@@ -5,8 +5,8 @@
 
 use gpui::prelude::*;
 use gpui::{
-    div, px, ClickEvent, Context, Entity, FocusHandle, FontWeight, KeyDownEvent, ScrollHandle,
-    Window,
+    div, ease_out_quint, px, Animation, AnimationExt, ClickEvent, Context, Entity, FocusHandle,
+    FontWeight, KeyDownEvent, ScrollHandle, Window,
 };
 use kumizo_kit::prelude::*;
 
@@ -135,7 +135,7 @@ impl Render for AppLauncher {
             .child(
                 ui::btn("lc-reload")
                     .w(px(30.))
-                    .hover(|s| s.bg(pal::raised()))
+                    .hover(|s| s.bg(ui::hover_bg()))
                     .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                         this.apps.update(cx, |a, _| a.reload());
                         this.selected = 0;
@@ -180,7 +180,7 @@ impl Render for AppLauncher {
                     .gap_3()
                     .px_3()
                     .h(px(48.))
-                    .rounded_xl()
+                    .rounded(px(ui::RADIUS_ROW))
                     .cursor_pointer()
                     .bg(if selected {
                         pal::raised()
@@ -193,7 +193,13 @@ impl Render for AppLauncher {
                     } else {
                         pal::with_alpha(pal::accent(), 0.0)
                     })
-                    .hover(|s| s.bg(pal::raised()))
+                    .hover(move |s| {
+                        s.bg(if selected {
+                            pal::raised()
+                        } else {
+                            ui::hover_bg()
+                        })
+                    })
                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                         this.activate(i, cx);
                     }))
@@ -235,14 +241,23 @@ impl Render for AppLauncher {
                     .w(px(640.))
                     .flex()
                     .flex_col()
-                    .rounded_2xl()
+                    .rounded(px(ui::RADIUS_PANEL))
                     .bg(pal::bg_a(0.97))
                     .border_1()
                     .border_color(pal::border())
                     .shadow_lg()
                     .overflow_hidden()
                     .child(input)
-                    .child(list),
+                    .child(list)
+                    // Glissement de 7 px vers le haut en ~140 ms. La fenêtre
+                    // est déjà fondue par `WindowShell` (`wk-open`) ; on
+                    // ajoute le mouvement sans doubler le fade.
+                    .with_animation(
+                        "lc-open",
+                        Animation::new(std::time::Duration::from_millis(140))
+                            .with_easing(ease_out_quint()),
+                        |el, delta| el.mt(px(7.0 * (1.0 - delta))),
+                    ),
             )
     }
 }

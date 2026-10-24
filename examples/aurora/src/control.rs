@@ -49,7 +49,7 @@ fn tile(id: &'static str, g: &'static str, title: &str, sub: String, on: bool) -
         .flex_row()
         .items_center()
         .gap_3()
-        .rounded_xl()
+        .rounded(px(ui::RADIUS_CARD))
         .bg(bg)
         .border_1()
         .border_color(pal::border())
@@ -214,7 +214,7 @@ impl ControlCenter {
             .child(
                 btn("cc-vol-icon")
                     .w(px(30.))
-                    .hover(|s| s.bg(pal::raised()))
+                    .hover(|s| s.bg(ui::hover_bg()))
                     .on_click(move |_, _, cx| {
                         audio_mute.update(cx, |a, _| a.toggle_mute());
                     })
@@ -313,9 +313,9 @@ impl ControlCenter {
                     .gap_2()
                     .px_2()
                     .h(px(34.))
-                    .rounded_lg()
+                    .rounded(px(ui::RADIUS_CTRL))
                     .cursor_pointer()
-                    .hover(|s| s.bg(pal::raised()))
+                    .hover(|s| s.bg(ui::hover_bg()))
                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                         // Clone par clic : le listener est `Fn`, `path`
                         // ne peut pas être déplacé hors du closure.
@@ -426,9 +426,9 @@ impl ControlCenter {
                 .gap_2()
                 .px_2()
                 .h(px(34.))
-                .rounded_lg()
+                .rounded(px(ui::RADIUS_CTRL))
                 .cursor_pointer()
-                .hover(|s| s.bg(pal::raised()))
+                .hover(|s| s.bg(ui::hover_bg()))
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                     if active {
                         this.network.update(cx, |n, _| {
@@ -499,7 +499,7 @@ impl ControlCenter {
                     .gap_2()
                     .px_2()
                     .h(px(36.))
-                    .rounded_lg()
+                    .rounded(px(ui::RADIUS_CTRL))
                     .bg(pal::raised())
                     .child(div().flex_1().min_w_0().child(text_input(
                         "cc-wifi-pw",
@@ -707,7 +707,7 @@ impl ControlCenter {
                 )
                 .child(
                     btn("cc-mp-prev")
-                        .hover(|s| s.bg(pal::raised()))
+                        .hover(|s| s.bg(ui::hover_bg()))
                         .on_click(move |_, _, cx| {
                             p.update(cx, |m, _| m.previous());
                         })
@@ -730,7 +730,7 @@ impl ControlCenter {
                 )
                 .child(
                     btn("cc-mp-next")
-                        .hover(|s| s.bg(pal::raised()))
+                        .hover(|s| s.bg(ui::hover_bg()))
                         .on_click(move |_, _, cx| {
                             n.update(cx, |m, _| m.next());
                         })
@@ -754,7 +754,7 @@ impl ControlCenter {
                     .items_center()
                     .justify_center()
                     .gap(px(3.))
-                    .rounded_lg()
+                    .rounded(px(ui::RADIUS_CTRL))
                     .cursor_pointer()
                     .bg(theme::swatch(th.bg))
                     .border_2()
@@ -901,7 +901,7 @@ impl Render for ControlCenter {
                     .flex()
                     .flex_col()
                     .p_4()
-                    .rounded_2xl()
+                    .rounded(px(ui::RADIUS_PANEL))
                     .bg(pal::bg_a(0.97))
                     .border_1()
                     .border_color(pal::border())

@@ -60,7 +60,7 @@ pub fn card(
         btn(("notif-x", id as usize))
             .w(px(22.))
             .h(px(22.))
-            .hover(|s| s.bg(pal::raised()))
+            .hover(|s| s.bg(ui::hover_bg()))
             .on_click(move |_, _, cx| {
                 cx.stop_propagation();
                 n_close.update(cx, |n, _| {
@@ -81,12 +81,12 @@ pub fn card(
         .flex_col()
         .gap_1()
         .p_3()
-        .rounded_xl()
+        .rounded(px(ui::RADIUS_CARD))
         .bg(pal::surface())
         .border_1()
         .border_color(border)
         .cursor_pointer()
-        .hover(|s| s.bg(pal::raised()))
+        .hover(|s| s.bg(ui::hover_bg()))
         .on_click(move |_, _, cx| {
             n_card.update(cx, |n, _| {
                 n.invoke_action(id, "default");
@@ -237,7 +237,7 @@ impl Render for NotificationCenter {
                     .flex_col()
                     .gap_3()
                     .p_4()
-                    .rounded_2xl()
+                    .rounded(px(ui::RADIUS_PANEL))
                     .bg(pal::bg_a(0.97))
                     .border_1()
                     .border_color(pal::border())

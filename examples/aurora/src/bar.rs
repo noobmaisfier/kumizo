@@ -166,7 +166,7 @@ impl TopBar {
                     .text_color(fg)
                     .text_xs()
                     .font_weight(FontWeight::NORMAL)
-                    .hover(|s| s.bg(pal::raised()))
+                    .hover(|s| s.bg(ui::hover_bg()))
                     .on_click(move |_, _, cx| {
                         compositor.update(cx, |c, _| c.switch_workspace(id));
                     })
@@ -179,26 +179,40 @@ impl TopBar {
         }
 
         // Pomodoro : pastille **séparée**, à droite de l'îlot des workspaces.
-        // Les raccourcis sway ouvrent le lanceur, les fenêtres, le
-        // presse-papier et les thèmes ; la droite reste le statut pur.
+        // L'anneau remplace le glyphe : progression de la phase, couleur du
+        // cycle, durée restante à droite.
         let pomodoro_pill = {
             let p = self.pomodoro.read(cx);
-            let color = if p.running { p.phase.color() } else { pal::muted() };
+            let color = p.phase.color();
+            let frac = p.progress();
+            let fg = if p.running { color } else { pal::muted() };
+            let ring_color = if p.running {
+                color
+            } else {
+                pal::with_alpha(color, 0.5)
+            };
             let time = p.mmss();
             let pomodoro = self.pomodoro.clone();
             pill()
                 .id("bar-pomodoro")
                 .cursor_pointer()
-                .hover(|s| s.bg(pal::raised()))
+                .hover(|s| s.bg(ui::hover_bg()))
                 .on_click(move |_, _, cx| {
                     pomodoro.update(cx, |p, cx| p.toggle(cx));
                 })
-                .child(ui::glyph(icons::HOURGLASS, 13., color))
+                .child(ui::ring(
+                    frac,
+                    18.,
+                    2.5,
+                    ring_color,
+                    pal::with_alpha(color, 0.18),
+                ))
                 .child(
                     div()
                         .text_sm()
                         .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(color)
+                        .font_features(ui::tabular())
+                        .text_color(fg)
                         .child(time),
                 )
         };
@@ -257,7 +271,7 @@ impl TopBar {
             row = row
                 .child(
                     btn("mp-prev")
-                        .hover(|s| s.bg(pal::raised()))
+                        .hover(|s| s.bg(ui::hover_bg()))
                         .on_click(move |_, _, cx| {
                             pr.update(cx, |m, _| m.previous());
                         })
@@ -265,7 +279,7 @@ impl TopBar {
                 )
                 .child(
                     btn("mp-play")
-                        .hover(|s| s.bg(pal::raised()))
+                        .hover(|s| s.bg(ui::hover_bg()))
                         .on_click(move |_, _, cx| {
                             pp.update(cx, |m, _| m.play_pause());
                         })
@@ -273,7 +287,7 @@ impl TopBar {
                 )
                 .child(
                     btn("mp-next")
-                        .hover(|s| s.bg(pal::raised()))
+                        .hover(|s| s.bg(ui::hover_bg()))
                         .on_click(move |_, _, cx| {
                             nx.update(cx, |m, _| m.next());
                         })
@@ -292,11 +306,12 @@ impl TopBar {
         let clock_pill = pill()
             .id("bar-clock")
             .cursor_pointer()
-            .hover(|s| s.bg(pal::raised()))
+            .hover(|s| s.bg(ui::hover_bg()))
             .on_click(|_, _, cx| ui::toggle_exclusive(ids::NOTIFS, cx))
             .child(
                 div()
                     .font_weight(FontWeight::BOLD)
+                    .font_features(ui::tabular())
                     .text_color(pal::text())
                     .child(time),
             );
@@ -341,7 +356,7 @@ impl TopBar {
                         .items_center()
                         .justify_center()
                         .size(px(20.))
-                        .rounded_md()
+                        .rounded(px(ui::RADIUS_SM))
                         .bg(pal::muted())
                         .child(icon)
                         .into_any_element()
@@ -350,7 +365,7 @@ impl TopBar {
                 };
                 tray_row = tray_row.child(
                     btn(("tray", i))
-                        .hover(|s| s.bg(pal::raised()))
+                        .hover(|s| s.bg(ui::hover_bg()))
                         .on_click(move |_, _, cx| {
                             tray.update(cx, |t, _| t.activate(&id));
                         })
@@ -499,7 +514,7 @@ impl TopBar {
             pill()
                 .id("bar-system")
                 .cursor_pointer()
-                .hover(|s| s.bg(pal::raised()))
+                .hover(|s| s.bg(ui::hover_bg()))
                 .on_click(|_, _, cx| ui::toggle_exclusive(ids::CONTROL, cx))
                 .child(sys),
         );
@@ -510,7 +525,7 @@ impl TopBar {
         let mut bell = pill()
             .id("bar-bell")
             .cursor_pointer()
-            .hover(|s| s.bg(pal::raised()))
+            .hover(|s| s.bg(ui::hover_bg()))
             .on_click(|_, _, cx| ui::toggle_exclusive(ids::NOTIFS, cx))
             .child(ui::glyph(
                 if dnd { icons::BELL_OFF } else { icons::BELL },

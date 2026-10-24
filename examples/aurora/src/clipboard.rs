@@ -158,7 +158,7 @@ impl Render for ClipboardPanel {
                 this.child(
                     ui::btn("clip-clear")
                         .px_3()
-                        .hover(|s| s.bg(pal::raised()))
+                        .hover(|s| s.bg(ui::hover_bg()))
                         .on_click(move |_, _, cx| {
                             cx.stop_propagation();
                             clear.update(cx, |c, cx| {
@@ -203,7 +203,7 @@ impl Render for ClipboardPanel {
                     .gap_3()
                     .px_3()
                     .h(px(48.))
-                    .rounded_xl()
+                    .rounded(px(ui::RADIUS_ROW))
                     .cursor_pointer()
                     .bg(if selected {
                         pal::raised()
@@ -216,7 +216,13 @@ impl Render for ClipboardPanel {
                     } else {
                         pal::with_alpha(pal::accent(), 0.0)
                     })
-                    .hover(|s| s.bg(pal::raised()))
+                    .hover(move |s| {
+                        s.bg(if selected {
+                            pal::raised()
+                        } else {
+                            ui::hover_bg()
+                        })
+                    })
                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                         this.activate(i, cx);
                     }))
@@ -274,7 +280,7 @@ impl Render for ClipboardPanel {
                     .w(px(640.))
                     .flex()
                     .flex_col()
-                    .rounded_2xl()
+                    .rounded(px(ui::RADIUS_PANEL))
                     .bg(pal::bg_a(0.97))
                     .border_1()
                     .border_color(pal::border())

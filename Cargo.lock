@@ -461,9 +461,11 @@ version = "0.1.0"
 dependencies = [
  "async-io",
  "gpui-pre",
+ "image",
  "kumizo-kit",
  "libc",
  "serde_json",
+ "smallvec",
 ]
 
 [[package]]
