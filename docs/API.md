@@ -57,6 +57,18 @@ pub trait IntoWindowView<V: 'static + Render> {
     fn build(self, cx: &mut gpui::App) -> Entity<V>;
 }
 
+/// Blanket impl: any closure `FnOnce(&mut App) -> Entity<V>` implements this
+/// trait automatically (see `kumizo-kit/src/app.rs`).
+/// This is what makes `.window(config, |cx| cx.new(MyView::new))` work.
+impl<F, V> IntoWindowView<V> for F
+where
+    F: FnOnce(&mut gpui::App) -> Entity<V>,
+{
+    fn build(self, cx: &mut gpui::App) -> Entity<V> {
+        self(cx)
+    }
+}
+
 pub trait ServiceContextExt<V: 'static> {
     fn service<S: Service>(&mut self) -> Entity<S>;
     fn try_service<S: Service>(&mut self) -> Option<Entity<S>>;
@@ -485,6 +497,11 @@ pub struct TextStyle {
 
 pub fn text_input(id: impl Into<gpui::ElementId>, buf: &Entity<TextBuffer>) -> impl IntoElement;
 pub fn text_area(id: impl Into<gpui::ElementId>, buf: &Entity<TextBuffer>) -> impl IntoElement;
+```
+
+### Text in GPUI elements
+
+GPUI allows `.child(String)` and `.child(&'static str)` directly — no `Text` wrapper needed. For formatted strings, prefer `.child(format!(...))` over looking for a `Text::new(...)` that does not exist in the public API.
 ```
 
 ---
