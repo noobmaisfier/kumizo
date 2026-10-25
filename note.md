@@ -5,7 +5,9 @@
   la branche `iced-migration` existe toujours, elle n'est ni fusionnée ni
   poussée.
 - Les binaires installés dans `~/.local/bin` (`aurora`, `aurora-lockscreen`,
-  `kumizo`) sont la version **GPUI** de `main` (release du 22 oct. 2026).
+  `kumizo`) sont la version **GPUI** de `main` (builds du 24 oct. 2026 ;
+  `kumizo` du 22 oct.). Le code de `main` est publié en **0.11.0** sur
+  crates.io ; les binaires locaux n'ont pas été réinstallés depuis.
 - Les binaires *iced* sont sauvegardés en `~/.local/bin/*.iced.bak` : retour
   arrière possible (recette dans le § « Déploiement »).
 
@@ -22,8 +24,15 @@
   ["ipc"]` : `cargo tree -p kumizo | grep gpui` ne renvoie rien (ni GPUI, ni
   wgpu, ni zbus).
 - Version workspace **0.11.0** ; publication crates.io dans l'ordre
-  `kumizo-kit` → `kumizo` → `kumizo-aurora`.
-- Les anciens crates `wk-*` restent publiés en `0.1.0` (à `yank` si besoin).
+  `kumizo-kit` → `kumizo` → `kumizo-aurora` (vérifié : `cargo install --locked
+  kumizo` puis `kumizo --help`).
+- Les anciens crates `wk-*` **0.1.0** et `kumizo-kit` **0.1.0** ont été
+  **yankés** le 25 oct. 2026 (réversible via `cargo yank --undo`). Il ne reste
+  donc que `kumizo-kit 0.11.0`, `kumizo 0.11.0`, `kumizo-aurora 0.11.0`.
+- Installation du shell : `cargo install --locked --root ~/.local
+  kumizo-aurora kumizo` (~15 min, GPUI en release) ; `~/.local/bin` parce que
+  les dotfiles sway appellent les binaires en absolu. Plus de binaire
+  pré-compilé ni de `curl` dans l'installeur du rice (id-86 v1.13).
 - CI (GitHub + GitLab) et `install-aurora.sh` alignés sur les nouveaux noms de
   packages ; `cargo test --workspace --lib` : 24 tests verts.
 
@@ -65,7 +74,8 @@
 - Redémarrer le shell : `pkill -x aurora` puis relancer détaché
   (JAMAIS `pkill -f` avec un motif qui matche sa propre ligne de commande).
 
-## 22 oct. 2026 — barre sans date, lecteur de musique sorti du shell (branche `main`)- **Top bar** : l'heure seule (plus de date à côté). La pastille horloge
+## 22 oct. 2026 — barre sans date, lecteur de musique sorti du shell (branche `main`)
+- **Top bar** : l'heure seule (plus de date à côté). La pastille horloge
   ouvre toujours le centre de notifications.
 - **Lecteur retiré du shell** : `aurora/src/music/` supprimé (avec
   `tests/rockbox_probe.rs`), fenêtre `aurora-music`, service `music`,

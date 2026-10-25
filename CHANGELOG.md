@@ -1,0 +1,36 @@
+# Changelog
+
+Notable changes to the packages published from this repository:
+`kumizo-kit` (SDK), `kumizo` (CLI) and `kumizo-aurora` (reference shell).
+
+## 0.11.0 — 2026-10-25
+
+### Changed
+
+- **Three packages instead of nine.** `wk-ui`, `wk-gpui-ext`, `wk-services`,
+  `wk-compositor`, `wk-ipc` and `wk-pam` are now modules of `kumizo-kit`
+  (`kumizo_kit::{ui,ext,services,compositor,ipc,pam}`), each behind a feature
+  flag. Repository layout: `kumizo-kit/` (SDK), `kumizo-cli/` (package
+  `kumizo`), `aurora/` (package `kumizo-aurora`).
+- Features: `app` (default; implies every module), `ipc`, `ext`, `ui`,
+  `services`, `compositor`, `pam`, `layer-shell` (default), `full` (alias of
+  the defaults today).
+- The `kumizo` CLI depends on `kumizo-kit` with `default-features = false,
+  features = ["ipc"]`: no GPUI, wgpu or zbus in its build.
+
+### Added
+
+- `kumizo-aurora` package, shipping the `aurora` and `aurora-lockscreen`
+  binaries under their original names.
+
+### Yanked
+
+- `wk-ui`, `wk-gpui-ext`, `wk-services`, `wk-compositor`, `wk-ipc`, `wk-pam`
+  **0.1.0** and `kumizo-kit` **0.1.0** are yanked on crates.io. Existing
+  `Cargo.lock` files still build them; new projects must use `kumizo-kit`
+  0.11.0. Reversible with `cargo yank --undo --version 0.1.0 <crate>`.
+
+---
+
+- `gpui-pre` is pinned to `=0.3.9` (via `gpui-pre-platform` for the platform
+  bootstrap). Any update is a documented minor event in this file.

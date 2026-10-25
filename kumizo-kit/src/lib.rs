@@ -35,6 +35,7 @@
 //! | `compositor` | Sway/Hyprland/Niri IPC |
 //! | `pam` | Linux-PAM check |
 //! | `layer-shell` (default) | real `wlr-layer-shell` surfaces instead of pop-ups |
+//! | `full` | alias for the defaults (`app` + `layer-shell`) |
 //!
 //! A CLI that only talks to the socket can depend on `default-features = false,
 //! features = ["ipc"]` and avoid compiling GPUI, wgpu, zbus and friends.

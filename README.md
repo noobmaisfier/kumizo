@@ -15,15 +15,16 @@
 
 ## Build your own shell
 
-Requirements: Linux + Wayland, a Rust stable toolchain, and `gcc`.
+Requirements: Linux + Wayland, a Rust stable toolchain, `pkg-config`, and the
+Wayland/font/audio development headers — Arch: `wayland libxkbcommon fontconfig
+alsa-lib` (+ `pam` for `kumizo_kit::pam`); Debian: `libwayland-dev
+libxkbcommon-dev libfontconfig1-dev libasound2-dev` (+ `libpam0g-dev`).
 
 ```bash
 cargo new my-shell && cd my-shell
 cargo add kumizo-kit
 cargo add gpui-pre --rename gpui --version "=0.3.9"
 ```
-
-> **Rule: exactly one `gpui-pre` version.** Every crate in your dependency graph that touches GPUI must resolve to the same snapshot (`=0.3.9`). If Cargo compiles two GPUI copies, their types (`Entity`, `Context`, `Render`) are not interchangeable and the shell will not compile.
 
 **Optional UI layers** — Kumizo uses only `gpui-pre`. You are free to add higher-level UI crates on top, as long as every crate that touches GPUI resolves to the same `gpui-pre` snapshot (`=0.3.9`):
 

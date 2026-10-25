@@ -3,12 +3,13 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/noobmaisfier/kumizo/main/install-aurora.sh | sh
 #
-# Par défaut : binaire précompilé de la dernière release si disponible,
-# sinon compilation automatique depuis les sources (~10 min).
+# Chemin recommandé depuis 0.11.0 : cargo install --locked kumizo-aurora kumizo
+# (paquets crates.io). Ce script reste un repli : binaire précompilé de la
+# dernière release si disponible, sinon compilation depuis les sources (~15 min).
 #
 # Options (flags ou env) :
 #   --bin            binaire uniquement (échoue s'il n'existe pas)
-#   --source         sources uniquement (compile, ~10 min la 1re fois)
+#   --source         sources uniquement (compile, ~15 min la 1re fois)
 #   --version vX.Y.Z version du binaire (défaut : dernière release, env AURORA_VERSION)
 #   --ref REF        branche/tag à compiler (défaut : main, env AURORA_REF)
 #   --src DIR        dossier du dépôt (défaut : ./ si c'est le dépôt, sinon ~/src/kumizo)

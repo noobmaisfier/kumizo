@@ -39,7 +39,13 @@ Before diving in, be comfortable with:
 
 - **Rust**: traits, lifetimes, `Rc`/`Arc`, closures. GPUI code uses explicit lifetimes heavily.
 - **GPUI basics**: `Entity<T>`, `Context<T>`, `Render`, `View`. If these terms are unfamiliar, read the GPUI documentation first.
-- **Wayland basics**: `layer-shell` (surfaces placed above/below normal windows) and D-Bus (system service bus).
+- **Wayland basics**: `layer-shell` (surfaces placed above/below normal windows) and D-Bus (system bus for UPower/BlueZ, session bus for MPRIS and notifications).
+
+**Build requirements**: a Rust stable toolchain, `pkg-config`, and the
+Wayland/font/audio headers — Arch: `wayland libxkbcommon fontconfig alsa-lib`;
+Debian: `libwayland-dev libxkbcommon-dev libfontconfig1-dev libasound2-dev`.
+Add `pam`/`libpam0g-dev` only if you use `kumizo_kit::pam`. On Arch, `cargo
+install kumizo-aurora` compiles the whole GPUI stack (~15 min the first time).
 
 You do **not** need to know low-level Wayland details: Kumizo encapsulates them.
 
@@ -221,7 +227,8 @@ At each `cx.notify()`, GPUI re-invokes `render()` on the persisted view — the 
 ### Step 5 — Verify the result
 
 ```bash
-cargo run --example aurora  # or your binary
+cargo run -p kumizo-aurora --bin aurora   # reference shell
+# …or your own binary: cargo run
 ```
 
 You should see the battery display and update in real time. If not, consult [GPUI pitfalls](#6-gpui-pitfalls-and-method-rules).
@@ -238,11 +245,17 @@ Kumizo provides ready-to-use system services (see [`API.md`](./API.md)), includi
 |---|---|---|
 | **Clock** | Time, date, timezone | Tick every second |
 | **Battery** | Level %, charging state, time remaining | State change, plug/unplug |
+| **Memory** | Used/available RAM, percentage | Value change (polled every 2 s) |
 | **Audio** | Volume, mute, active sink | Volume change, sink change |
+| **Brightness** | Backlight percentage, device | Backlight write |
 | **Network** | SSID, IP, connection state | Connect/disconnect, IP change |
 | **Bluetooth** | Connected devices, state | Pairing, disconnection |
+| **Mpris** | Title, artist, album, playback status | Player appears/disappears, track change |
 | **Compositor** | Workspaces, active window | Workspace change, focus change |
+| **Apps** | `.desktop` entries + icons | Rescan (`reload`) |
+| **Notifications** | Toasts, history, DnD | New notification, dismissal |
 | **Tray** | Icons and menus of applications | Icon add/remove |
+| **Clipboard** | Clipboard history | New selection |
 
 **Typical usage:**
 

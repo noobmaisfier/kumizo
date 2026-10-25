@@ -6,19 +6,26 @@ notifications, control center, tasks, pomodoro, OSD, lockscreen — one
 process, GPU-rendered.
 
 > Aurora is an **example**, not the product. The product is the SDK
-> (`kumizo-kit`, see the [repo README](../../README.md)). If Aurora suffices
+> (`kumizo-kit`, see the [repo README](../README.md)). If Aurora suffices
 > for you as-is, install it below; otherwise copy it as a starting point for
 > your own shell.
 
 ## Install (no code)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/noobmaisfier/kumizo/main/install-aurora.sh | sh
+cargo install --locked kumizo-aurora kumizo
 ```
 
-Installs the latest release binary when available, otherwise builds from
-source (~10 min first time). Then add to your Sway config (the installer
-proposes it, with a backup):
+This compiles the shell locally from the crates.io sources (GPUI/wgpu, ~15 min
+the first time) and installs `aurora`, `aurora-lockscreen` and the `kumizo` CLI
+into `~/.cargo/bin`. To land in `~/.local/bin` instead (absolute paths used by
+the Sway snippet below):
+
+```bash
+cargo install --locked --root "$HOME/.local" kumizo-aurora kumizo
+```
+
+Then add to your Sway config:
 
 ```
 exec ~/.local/bin/aurora
@@ -26,15 +33,22 @@ exec ~/.local/bin/aurora
 
 Check: `kumizo ping` → `PONG`.
 
-## Build from source
+## Build from the repository
 
 ```bash
 cargo build --release -p kumizo-aurora -p kumizo
 cp target/release/aurora target/release/aurora-lockscreen target/release/kumizo ~/.local/bin/
 ```
 
-Requirements: Linux + Wayland (Sway), Rust stable, PipeWire/ALSA, `playerctl`
-(MPRIS pill), `JetBrainsMono Nerd Font` (icons).
+Requirements: Linux + Wayland (Sway), Rust stable, `pkg-config`, Wayland/font/
+audio headers (Arch: `wayland libxkbcommon fontconfig alsa-lib`; Debian:
+`libwayland-dev libxkbcommon-dev libfontconfig1-dev libasound2-dev`), `libpam`
+(Arch `pam`, Debian `libpam0g-dev`) for the lockscreen, PipeWire/ALSA,
+`playerctl` (MPRIS pill), `JetBrainsMono Nerd Font` (icons).
+
+> The `install-aurora.sh` script from the repository root still works as a
+> fallback (pre-built release binary or git source build), but crates.io is the
+> supported path since 0.11.0.
 
 ## What's inside
 
