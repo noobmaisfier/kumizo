@@ -6,7 +6,7 @@
   poussée.
 - Les binaires installés dans `~/.local/bin` (`aurora`, `aurora-lockscreen`,
   `kumizo`) sont la version **GPUI** de `main` (builds du 24 oct. 2026 ;
-  `kumizo` du 22 oct.). Le code de `main` est publié en **0.11.0** sur
+  `kumizo` du 22 oct.). Le code de `main` est publié en **0.11.1** sur
   crates.io ; les binaires locaux n'ont pas été réinstallés depuis.
 - Les binaires *iced* sont sauvegardés en `~/.local/bin/*.iced.bak` : retour
   arrière possible (recette dans le § « Déploiement »).
@@ -23,12 +23,14 @@
 - Le CLI dépend de `kumizo-kit` avec `default-features = false, features =
   ["ipc"]` : `cargo tree -p kumizo | grep gpui` ne renvoie rien (ni GPUI, ni
   wgpu, ni zbus).
-- Version workspace **0.11.0** ; publication crates.io dans l'ordre
-  `kumizo-kit` → `kumizo` → `kumizo-aurora` (vérifié : `cargo install --locked
-  kumizo` puis `kumizo --help`).
+- Version workspace **0.11.1** ; publication crates.io dans l'ordre
+  `kumizo-kit` → `kumizo` → `kumizo-aurora` (0.11.0 vérifié par `cargo install
+  --locked kumizo` puis `kumizo --help`). 0.11.1 est une republication
+  **documentation seulement** (README publié sur crates.io pour `kumizo-kit` et
+  `kumizo`, tableau des features avec `full`), tag `v0.11.1`.
 - Les anciens crates `wk-*` **0.1.0** et `kumizo-kit` **0.1.0** ont été
   **yankés** le 25 oct. 2026 (réversible via `cargo yank --undo`). Il ne reste
-  donc que `kumizo-kit 0.11.0`, `kumizo 0.11.0`, `kumizo-aurora 0.11.0`.
+  donc que `kumizo-kit 0.11.1`, `kumizo 0.11.1`, `kumizo-aurora 0.11.1`.
 - Installation du shell : `cargo install --locked --root ~/.local
   kumizo-aurora kumizo` (~15 min, GPUI en release) ; `~/.local/bin` parce que
   les dotfiles sway appellent les binaires en absolu. Plus de binaire
