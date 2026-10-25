@@ -3,7 +3,7 @@
 [![Rust](https://img.shields.io/badge/rust-edition%202021-orange.svg)](https://www.rust-lang.org)
 [![Wayland](https://img.shields.io/badge/wayland-layer--shell-blue.svg)](https://wayland.freedesktop.org/)
 [![GPUI](https://img.shields.io/badge/render-GPUI%20(wgpu)-green.svg)](https://github.com/zed-industries/zed)
-[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-lightgrey.svg)](LICENSE-MIT)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-lightgrey.svg)](https://github.com/noobmaisfier/kumizo/blob/main/LICENSE-MIT)
 
 **Kumizo** (`kumizo-kit`) is a pure-Rust SDK for building your own Wayland desktop shell — status bars, docks, launchers, OSDs, popups, panels — as **one single process**, rendered with GPU acceleration (GPUI/wgpu).
 
@@ -75,7 +75,7 @@ impl Render for MyBar {
 }
 ```
 
-See `aurora/` for a complete example shell, and [`docs/GUIDE.md`](docs/GUIDE.md) for the widget recipe, services reference, and GPUI pitfalls.
+See `aurora/` for a complete example shell, and [`docs/GUIDE.md`](https://github.com/noobmaisfier/kumizo/blob/main/docs/GUIDE.md) for the widget recipe, services reference, and GPUI pitfalls.
 
 ### Install from crates.io
 

@@ -6,6 +6,7 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "High-performance, pure-Rust, GPU-accelerated Wayland desktop shell SDK"
+readme = "../README.md"
 keywords.workspace = true
 categories.workspace = true
 
