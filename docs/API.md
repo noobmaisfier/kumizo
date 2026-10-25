@@ -708,7 +708,7 @@ cargo install kumizo
 | `wk-pam` | Minimal Linux-PAM check, no bindgen/libclang |
 | `wk-ctl` | `kumizo` CLI to drive a running shell |
 
-Workspace dependencies are pinned: `gpui-pre =0.3.8`, `gpui-pre-platform =0.3.8`. Exactly one `gpui-pre` version in the whole dependency graph.
+Workspace dependencies are pinned: `gpui-pre =0.3.9`, `gpui-pre-platform =0.3.9`. Exactly one `gpui-pre` version in the whole dependency graph.
 
 ---
 
@@ -716,7 +716,7 @@ Workspace dependencies are pinned: `gpui-pre =0.3.8`, `gpui-pre-platform =0.3.8`
 
 | Kumizo | GPUI | Rust MSRV | Wayland |
 |---|---|---|---|
-| `0.1.x` | `=0.3.8` | `1.80` | layer-shell, wlr-foreign-toplevel |
-| `0.2.x` (planned) | `>=0.3.8, <0.4` | `1.82` | + ext-session-lock-v1 |
+| `0.1.x` | `=0.3.9` | `1.80` | layer-shell, wlr-foreign-toplevel |
+| `0.2.x` (planned) | `>=0.3.9, <0.4` | `1.82` | + ext-session-lock-v1 |
 
 > GPUI is **pinned** (`=`). Any update is a documented minor event in `CHANGELOG.md`. Breaking GPUI changes are absorbed in `wk-gpui-ext` only.

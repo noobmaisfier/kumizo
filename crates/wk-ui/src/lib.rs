@@ -5,7 +5,7 @@
 //! keeps 100% of its aesthetic freedom (same philosophy as the SDK).
 //!
 //! Reference design: `gpui-component` 0.7.x (`InputState` + `Input`,
-//! `TextareaState` + `Textarea`) — same `gpui-pre =0.3.8` snapshot as this
+//! `TextareaState` + `Textarea`) — same `gpui-pre =0.3.9` snapshot as this
 //! workspace, so no second GPUI copy. Unlike that kit, these components
 //! impose no theme: just the editing state machine and a caret.
 

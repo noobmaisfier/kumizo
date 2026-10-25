@@ -31,13 +31,13 @@ categories = ["gui", "os::unix-apis"]
 # RULE: exactly ONE `gpui-pre` version in the whole dependency graph. Anything
 # downstream (e.g. `gpui-kit`) MUST resolve to this same snapshot, otherwise
 # Cargo compiles two GPUI copies and their types stop being interchangeable.
-gpui = { package = "gpui-pre", version = "=0.3.8", default-features = true }
+gpui = { package = "gpui-pre", version = "=0.3.9", default-features = true }
 
 # Platform bootstrap. GPUI no longer exposes `Application::new()`, so an
 # `Application` has to be built from a concrete `Platform`; `gpui_platform` is
 # the convenience crate that provides `application()` for the host OS.
 # Same snapshot as `gpui` above, so both resolve to the same commit.
-gpui_platform = { package = "gpui-pre-platform", version = "=0.3.8", default-features = false, features = [
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.9", default-features = false, features = [
     "font-kit",
     "wayland",
     "x11",
