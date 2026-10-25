@@ -126,13 +126,13 @@ try_bin() {
 build_source() {
     say "compilation depuis les sources ($REF)"
     if [ -z "$SRC" ]; then
-        if [ -f ./examples/aurora/Cargo.toml ]; then
+        if [ -f ./aurora/Cargo.toml ]; then
             SRC="$PWD"
         else
             SRC="${HOME}/src/kumizo"
         fi
     fi
-    if [ ! -f "$SRC/examples/aurora/Cargo.toml" ]; then
+    if [ ! -f "$SRC/aurora/Cargo.toml" ]; then
         say "clone dans $SRC…"
         mkdir -p "$(dirname "$SRC")"
         git clone --depth 1 --branch "$REF" \
@@ -142,7 +142,7 @@ build_source() {
     cd "$SRC"
     say "dépôt : $SRC"
     say "compilation (long la première fois)…"
-    cargo build --release -p aurora -p wk-ctl || die "cargo build a échoué"
+    cargo build --release -p kumizo-aurora -p kumizo || die "cargo build a échoué"
     mkdir -p "$DEST"
     cp target/release/aurora target/release/aurora-lockscreen target/release/kumizo "$DEST/"
     chmod +x "$DEST/aurora" "$DEST/aurora-lockscreen" "$DEST/kumizo"

@@ -65,11 +65,10 @@ jobs:
             .cargo/git
             target
           key: cargo-${{ hashFiles('Cargo.lock') }}
-      - run: cargo build --release --package shell-example --package wk-ctl
+      - run: cargo build --release --package kumizo
       - run: |
           mkdir -p dist/bin
-          cp target/release/shell dist/bin/kumizo
-          cp target/release/kumizo dist/bin/kumizo-ctl
+          cp target/release/kumizo dist/bin/kumizo
           cp README.md dist/ || true
           tar -czf kumizo-linux-x86_64.tar.gz -C dist .
       - uses: actions/upload-artifact@v4
@@ -97,7 +96,7 @@ jobs:
             .cargo/git
             target
           key: cargo-${{ hashFiles('Cargo.lock') }}
-      - run: cargo build --release --package aurora --package wk-ctl
+      - run: cargo build --release --package kumizo-aurora --package kumizo
       - run: |
           mkdir -p stage && cp target/release/aurora target/release/aurora-lockscreen target/release/kumizo stage/
           (cd stage && sha256sum aurora aurora-lockscreen kumizo > SHA256SUMS)

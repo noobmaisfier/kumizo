@@ -74,15 +74,25 @@ impl Render for MyBar {
 }
 ```
 
-See `examples/aurora` for a complete example shell, and [`docs/GUIDE.md`](docs/GUIDE.md) for the widget recipe, services reference, and GPUI pitfalls.
+See `aurora/` for a complete example shell, and [`docs/GUIDE.md`](docs/GUIDE.md) for the widget recipe, services reference, and GPUI pitfalls.
 
-### Install the CLI
+### Install from crates.io
 
 ```bash
-cargo install kumizo
+cargo install kumizo           # the `kumizo` CLI (~1 crate, no GPUI)
+cargo install kumizo-aurora    # the reference shell: `aurora` + `aurora-lockscreen`
 ```
 
-This installs the `kumizo` binary (send commands to a running shell over its socket).
+The CLI only enables the `ipc` feature of the SDK, so it builds without GPUI, wgpu
+or zbus. The shell enables everything (`app`, `layer-shell`).
+
+### Repository layout
+
+| Path | Package | Role |
+|---|---|---|
+| `kumizo-kit/` | `kumizo-kit` | the SDK, grouped by domain: `ipc`, `ext`, `ui`, `services`, `compositor`, `pam`, `app` |
+| `kumizo-cli/` | `kumizo` | the `kumizo` CLI (IPC client only) |
+| `aurora/` | `kumizo-aurora` | reference shell: `aurora` and `aurora-lockscreen` binaries |
 
 ## CLI
 
@@ -92,7 +102,7 @@ kumizo toggle aurora-launcher     # show/hide a window
 kumizo service audio toggle_mute  # scriptable, key-free control
 ```
 
-`kumizo` (`wk-ctl`) talks to your shell over its UNIX socket (`$XDG_RUNTIME_DIR/kumizo.sock`).
+`kumizo` (crate `kumizo`, built from `kumizo-cli/`) talks to your shell over its UNIX socket (`$XDG_RUNTIME_DIR/kumizo.sock`).
 
 - **Native (no code needed):** `ping`, `status`, `show <window>`, `hide <window>`, `toggle <window>`, `reload` — handled by the IPC core for every window you declare.
 - **Service actions:** `kumizo service <name> <action>` calls `ipc_action` on the registered service. SDK services (`Audio`, `Battery`, `Mpris`, `Brightness`, `Network`, `Tray`, `Clipboard`, `Notifications`, …) already implement their actions, so `kumizo service audio toggle_mute` works out of the box once you register `.service::<Audio>()`. For your own custom services, implement `Service::ipc_action` to expose CLI actions.

@@ -1,0 +1,29 @@
+[package]
+name = "kumizo-aurora"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Aurora shell: floating bar, control center, launcher, tasks, power, notifs, toasts, OSD, pomodoro"
+keywords = ["wayland", "shell", "status-bar", "gpui"]
+categories = ["gui"]
+
+[[bin]]
+name = "aurora"
+path = "src/main.rs"
+
+[[bin]]
+name = "aurora-lockscreen"
+path = "src/lockscreen.rs"
+
+[dependencies]
+kumizo-kit = { workspace = true, features = ["app", "layer-shell"] }
+gpui = { workspace = true }
+async-io = { workspace = true }
+libc = { workspace = true }
+image = { workspace = true, features = ["jpeg", "webp"] }
+smallvec = { workspace = true }
+# Pas de moteur audio ici : le shell ne lit que les médias MPRIS (navigateur,
+# lecteur externe…). Un lecteur local vit dans son propre process et se
+# publie en MPRIS — le shell reste ainsi MIT OR Apache-2.0.

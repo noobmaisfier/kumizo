@@ -438,19 +438,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aurora"
-version = "0.1.0"
-dependencies = [
- "async-io",
- "gpui-pre",
- "image",
- "kumizo-kit",
- "libc",
- "serde_json",
- "smallvec",
-]
-
-[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2704,29 +2691,48 @@ checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 
 [[package]]
 name = "kumizo"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
- "serde",
- "serde_json",
- "wk-ipc",
+ "kumizo-kit",
+]
+
+[[package]]
+name = "kumizo-aurora"
+version = "0.11.0"
+dependencies = [
+ "async-io",
+ "gpui-pre",
+ "image",
+ "kumizo-kit",
+ "libc",
+ "smallvec",
 ]
 
 [[package]]
 name = "kumizo-kit"
-version = "0.1.0"
+version = "0.11.0"
 dependencies = [
  "anyhow",
  "async-channel",
+ "async-io",
+ "bitflags 2.13.2",
+ "futures-lite",
+ "futures-util",
  "gpui-pre",
  "gpui-pre-platform",
+ "image",
+ "libc",
+ "log",
+ "resvg",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "thiserror 1.0.69",
+ "time",
  "tracing",
  "tracing-subscriber",
- "wk-compositor",
- "wk-gpui-ext",
- "wk-ipc",
- "wk-services",
- "wk-ui",
+ "zbus 4.4.0",
 ]
 
 [[package]]
@@ -6369,81 +6375,6 @@ name = "wit-bindgen"
 version = "0.57.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
-
-[[package]]
-name = "wk-compositor"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-channel",
- "async-io",
- "gpui-pre",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "tracing",
- "wk-services",
-]
-
-[[package]]
-name = "wk-gpui-ext"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bitflags 2.13.2",
- "gpui-pre",
- "serde",
-]
-
-[[package]]
-name = "wk-ipc"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-channel",
- "async-io",
- "libc",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "tracing",
-]
-
-[[package]]
-name = "wk-pam"
-version = "0.1.0"
-dependencies = [
- "libc",
-]
-
-[[package]]
-name = "wk-services"
-version = "0.1.0"
-dependencies = [
- "async-channel",
- "async-io",
- "futures-lite",
- "futures-util",
- "gpui-pre",
- "image",
- "libc",
- "log",
- "resvg",
- "serde",
- "smallvec",
- "thiserror 1.0.69",
- "time",
- "tracing",
- "wk-ipc",
- "zbus 4.4.0",
-]
-
-[[package]]
-name = "wk-ui"
-version = "0.1.0"
-dependencies = [
- "gpui-pre",
-]
 
 [[package]]
 name = "writeable"

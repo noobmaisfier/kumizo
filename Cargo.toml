@@ -1,19 +1,9 @@
 [workspace]
-members = [
-    "crates/kumizo-kit",
-    "crates/wk-gpui-ext",
-    "crates/wk-services",
-    "crates/wk-compositor",
-    "crates/wk-ipc",
-    "crates/wk-ui",
-    "crates/wk-pam",
-    "crates/wk-ctl",
-    "examples/aurora",
-]
+members = ["kumizo-kit", "kumizo-cli", "aurora"]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.11.0"
 edition = "2021"
 authors = ["Kumizo Contributors"]
 license = "MIT OR Apache-2.0"
@@ -69,8 +59,8 @@ libc = "0.2"
 # native dependencies are pulled in.
 image = { version = "0.25", default-features = false, features = ["png"] }
 smallvec = "1"
-wk-ui = { version = "0.1.0", path = "crates/wk-ui" }
-wk-gpui-ext = { version = "0.1.0", path = "crates/wk-gpui-ext" }
-wk-services = { version = "0.1.0", path = "crates/wk-services" }
-wk-compositor = { version = "0.1.0", path = "crates/wk-compositor" }
-wk-ipc = { version = "0.1.0", path = "crates/wk-ipc" }
+resvg = "0.46.0"
+
+# Internal: the SDK is the only shared crate, so the CLI and the shell pull the
+# same source through crates.io once published.
+kumizo-kit = { version = "0.11.0", path = "kumizo-kit", default-features = false }

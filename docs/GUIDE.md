@@ -350,10 +350,10 @@ Before considering your widget "done":
 
 ## 🎓 To go further
 
-- **Read `examples/aurora`**: the complete demonstration shell, used in production. Each widget there is a concrete example.
+- **Read `aurora/`**: the complete demonstration shell, used in production. Each widget there is a concrete example.
 - **Explore services**: start with `Clock` (simplest), then `Battery`, then `Audio`.
 - **Contribute**: the project is young; documentation feedback is valuable.
 
 > 💡 **Last advice**: do not try to understand everything at once. Build a trivial widget (a clock), make it work, then complexify. Kumizo rewards iteration.
 
-*This guide is based on the real Kumizo codebase. For exact signatures, up-to-date method names and implementation details, consult [`docs/API.md`](./API.md) and read the code of `examples/aurora`, the best living documentation of the SDK.*
+*This guide is based on the real Kumizo codebase. For exact signatures, up-to-date method names and implementation details, consult [`docs/API.md`](./API.md) and read the code of `aurora/`, the best living documentation of the SDK.*

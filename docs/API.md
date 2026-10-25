@@ -16,7 +16,7 @@ Types, signatures, commands. **No explanations.** For context and rationale, see
 - **IPC:** `socket_path()`, `Request`, `Response`, `IpcClient`
 - **CLI:** `kumizo <cmd>`
 
-Signatures listed here are those of the SDK `kumizo-kit` crate and its dependencies (`wk-services`, `wk-gpui-ext`, `wk-ipc`, `wk-compositor`, `wk-ctl`, `wk-ui`, `wk-pam`).
+Everything lives in the `kumizo-kit` crate, grouped by module. The CLI (`kumizo`) and the reference shell (`kumizo-aurora`) are separate packages.
 
 ---
 
@@ -100,7 +100,7 @@ impl Kumizo {
 
 ---
 
-## 2. Services — `wk-services`
+## 2. Services — `kumizo_kit::services`
 
 Each service exposes `init` (constructor) and `ipc_action` (command entry point). State is read via `entity.read(cx)` in a view.
 
@@ -296,7 +296,7 @@ impl Bluetooth {
 }
 ```
 
-### Compositor (`wk-compositor`)
+### Compositor (`kumizo_kit::compositor`)
 
 ```rust
 pub struct Compositor;
@@ -460,7 +460,7 @@ impl Render for BatteryView {
 
 ---
 
-## 3. UI — `wk-ui`
+## 3. UI — `kumizo_kit::ui`
 
 ```rust
 pub struct TextBuffer { /* … */ }
@@ -505,7 +505,7 @@ GPUI allows `.child(String)` and `.child(&'static str)` directly — no `Text` w
 
 ---
 
-## 4. Security — `wk-pam`
+## 4. Security — `kumizo_kit::pam`
 
 Minimal Linux-PAM password check, hand-written FFI against `libpam.so`. No `bindgen`/`libclang` dependency.
 
@@ -539,7 +539,7 @@ pub fn verify(service: &str, user: &str, password: &str) -> Result<(), AuthError
 
 ---
 
-## 5. Wayland — `wk-gpui-ext`
+## 5. Wayland — `kumizo_kit::ext`
 
 ### Window configuration
 
@@ -603,7 +603,7 @@ impl Margins {
 
 ---
 
-## 5. IPC — `wk-ipc`
+## 5. IPC — `kumizo_kit::ipc`
 
 ### Socket path
 
@@ -653,7 +653,7 @@ impl IpcClient {
 
 ---
 
-## 6. CLI — `wk-ctl` (binary `kumizo`)
+## 6. CLI — `kumizo` (binary `kumizo`, package `kumizo-cli`)
 
 ```
 kumizo <COMMAND> [OPTIONS]
@@ -689,24 +689,36 @@ cargo install kumizo
 
 | Feature | Default | Contents |
 |---|---|---|
-| `default` | ✅ | SDK `kumizo-kit` + standard services |
-| `tray` | ✅ | System tray support (`wk-services::Tray`) |
-| `bt` | ✅ | Bluetooth (`wk-services::Bluetooth`) |
-| `lockscreen` | ❌ | Separate `wk-lockscreen` binary |
-| `dev-tools` | ❌ | Hot-reload, GPUI inspector |
+| `app` | ✅ | `Kumizo` builder, registry, animation, prelude; implies all the modules below |
+| `layer-shell` | ✅ | real `wlr-layer-shell` surfaces (implies `layer-shell-variant`) |
+| `services` | ✅ via `app` | Clock, Battery, Audio, MPRIS, Network, Tray, Bluetooth, Memory… |
+| `compositor` | ✅ via `app` | Sway / Hyprland / Niri IPC |
+| `ipc` | ✅ via `app` | protocol, client, server, `WindowControl` |
+| `ext` | ✅ via `app` | layer-shell wrappers (pulls `gpui`) |
+| `ui` | ✅ via `app` | text input primitives (pulls `gpui`) |
+| `pam` | ❌ | `pam::verify` Linux-PAM check |
+| `full` | alias | `app` + `layer-shell` |
 
-### Crates
+A CLI that only talks to the socket uses `default-features = false, features = ["ipc"]`
+and never compiles GPUI, wgpu or zbus (`cargo tree -p kumizo | grep gpui` → empty).
 
-| Crate | Role |
+### Packages & modules
+
+| Package | Role |
 |---|---|
-| `kumizo-kit` | SDK facade: `Kumizo` builder, prelude, app wiring |
-| `wk-gpui-ext` | GPUI Wayland layer-shell extension traits and wrappers |
-| `wk-services` | Async system services (Clock, Battery, Audio, MPRIS…) |
-| `wk-compositor` | Compositor IPC (Hyprland, Sway, Niri) |
-| `wk-ipc` | UNIX-socket daemon protocol + server |
-| `wk-ui` | Shared headless UI primitives |
-| `wk-pam` | Minimal Linux-PAM check, no bindgen/libclang |
-| `wk-ctl` | `kumizo` CLI to drive a running shell |
+| `kumizo-kit` | the SDK — everything below, behind feature flags |
+| `kumizo` | the `kumizo` CLI (feature `ipc` only) |
+| `kumizo-aurora` | reference shell: `aurora` + `aurora-lockscreen` |
+
+| `kumizo_kit::` module | Feature | Role |
+|---|---|---|
+| `app` | `app` | `Kumizo` builder, registry, animation, prelude |
+| `ext` | `ext` | GPUI Wayland layer-shell traits and wrappers |
+| `services` | `services` | Async system services (Clock, Battery, Audio, MPRIS…) |
+| `compositor` | `compositor` | Compositor IPC (Hyprland, Sway, Niri) |
+| `ipc` | `ipc` | UNIX-socket daemon protocol + server |
+| `ui` | `ui` | Headless UI primitives |
+| `pam` | `pam` | Minimal Linux-PAM check, no bindgen/libclang |
 
 Workspace dependencies are pinned: `gpui-pre =0.3.9`, `gpui-pre-platform =0.3.9`. Exactly one `gpui-pre` version in the whole dependency graph.
 
@@ -716,7 +728,6 @@ Workspace dependencies are pinned: `gpui-pre =0.3.9`, `gpui-pre-platform =0.3.9`
 
 | Kumizo | GPUI | Rust MSRV | Wayland |
 |---|---|---|---|
-| `0.1.x` | `=0.3.9` | `1.80` | layer-shell, wlr-foreign-toplevel |
-| `0.2.x` (planned) | `>=0.3.9, <0.4` | `1.82` | + ext-session-lock-v1 |
+| `0.11.x` | `=0.3.9` | `1.99` | layer-shell, wlr-foreign-toplevel |
 
-> GPUI is **pinned** (`=`). Any update is a documented minor event in `CHANGELOG.md`. Breaking GPUI changes are absorbed in `wk-gpui-ext` only.
+> GPUI is **pinned** (`=`). Any update is a documented minor event in `CHANGELOG.md`. Breaking GPUI changes are absorbed in `kumizo_kit::ext` only.

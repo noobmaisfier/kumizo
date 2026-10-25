@@ -1,0 +1,17 @@
+[package]
+name = "kumizo"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Command-line control tool (kumizo) for the Kumizo shell"
+
+[[bin]]
+name = "kumizo"
+path = "src/main.rs"
+
+[dependencies]
+# Only the IPC slice: the CLI must not compile GPUI/wgpu/zbus.
+kumizo-kit = { workspace = true, features = ["ipc"] }
+anyhow = { workspace = true }

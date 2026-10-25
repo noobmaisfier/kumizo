@@ -1,4 +1,4 @@
-# Note — état du dépôt (22 oct. 2026)
+# Note — état du dépôt (25 oct. 2026)
 
 ## Où on en est
 - Branche de travail : **`main`** (GPUI). La migration `iced` est **en pause** :
@@ -9,10 +9,28 @@
 - Les binaires *iced* sont sauvegardés en `~/.local/bin/*.iced.bak` : retour
   arrière possible (recette dans le § « Déploiement »).
 
+## 25 oct. 2026 — 0.11.0 : trois paquets au lieu de neuf
+- `crates/` supprimé : `wk-ui`, `wk-gpui-ext`, `wk-services`, `wk-compositor`,
+  `wk-ipc`, `wk-pam` deviennent des **modules** de `kumizo-kit`
+  (`kumizo_kit::{ui,ext,services,compositor,ipc,pam}`), chacun derrière une
+  feature (`ipc`, `ext`, `ui`, `services`, `compositor`, `pam`, `app`,
+  `layer-shell`).
+- Nouvelle disposition : `kumizo-kit/` (SDK), `kumizo-cli/` (package `kumizo`),
+  `aurora/` (package `kumizo-aurora`, bins `aurora` + `aurora-lockscreen`
+  inchangés).
+- Le CLI dépend de `kumizo-kit` avec `default-features = false, features =
+  ["ipc"]` : `cargo tree -p kumizo | grep gpui` ne renvoie rien (ni GPUI, ni
+  wgpu, ni zbus).
+- Version workspace **0.11.0** ; publication crates.io dans l'ordre
+  `kumizo-kit` → `kumizo` → `kumizo-aurora`.
+- Les anciens crates `wk-*` restent publiés en `0.1.0` (à `yank` si besoin).
+- CI (GitHub + GitLab) et `install-aurora.sh` alignés sur les nouveaux noms de
+  packages ; `cargo test --workspace --lib` : 24 tests verts.
+
 ## Historique — migration GPUI → iced (18 oct. 2026, suspendue)
 - Migration GPUI → iced complète.
 - SDK = `kumizo` (moteur + services + `lock`) · `kumizo-ui` (widgets optionnels
-  + champ texte, publiables) · `wk-ipc` · `wk-pam` · `wk-ctl`.
+  + champ texte, publiables) · `kumizo_kit::ipc` · `kumizo_kit::pam` · `kumizo-cli`.
 - 14 services (dont `compositor` joignable en CLI : `kumizo service compositor …`).
 - Commandes **typées** sur tous les services (`Audio::toggle_mute()`,
   `Brightness::set(40)`, `Network::connect(ssid)`, …) — plus de
@@ -40,7 +58,7 @@
 ## Reprendre le travail
 - Revenir à l'état iced : `git switch iced-migration`
 - Rebuild + installer :
-  `cargo build --release -p aurora -p wk-ctl` puis copier dans `~/.local/bin`
+  `cargo build --release -p kumizo-aurora -p kumizo` puis copier dans `~/.local/bin`
   (astuce `cp` + `mv` si le binaire tourne déjà).
 - Tester sans toucher la session :
   `KUMIZO_SOCKET=/tmp/opencode/x.sock WAYLAND_DISPLAY=wayland-1 ./target/debug/aurora`
@@ -49,7 +67,7 @@
 
 ## 22 oct. 2026 — barre sans date, lecteur de musique sorti du shell (branche `main`)- **Top bar** : l'heure seule (plus de date à côté). La pastille horloge
   ouvre toujours le centre de notifications.
-- **Lecteur retiré du shell** : `examples/aurora/src/music/` supprimé (avec
+- **Lecteur retiré du shell** : `aurora/src/music/` supprimé (avec
   `tests/rockbox_probe.rs`), fenêtre `aurora-music`, service `music`,
   `MUSIC_ENABLED`, et les deps `rockbox-playback` / `lofty` / `resvg`.
   Conséquence : le binaire `aurora` redevient **MIT OR Apache-2.0**
@@ -61,7 +79,7 @@
   (plus de keybinding `Super+M` vers `aurora-music`).
 
 ### RAM dans la barre (22 oct. 2026, ~14h36)
-- Nouveau service SDK **`Memory`** (`crates/wk-services/src/memory.rs`) :
+- Nouveau service SDK **`Memory`** (`kumizo-kit/src/services/memory.rs`) :
   `/proc/meminfo` relu toutes les 2 s sur l'executor d'arrière-plan,
   `cx.notify()` uniquement quand une valeur change (zéro redessin inutile).
   API : `percent()`, `used()`, `available()`, `total()`, `used_gib()`,
@@ -72,7 +90,7 @@
   vérifié en vrai (`4.2G`, cohérent avec `free -h`).
 
 ### Déploiement dans la session (22 oct. 2026, ~14h26)
-- `cargo build --release -p aurora -p wk-ctl` (6 min 37 s) puis remplacement
+- `cargo build --release -p kumizo-aurora -p kumizo` (6 min 37 s) puis remplacement
   de `~/.local/bin/{aurora,aurora-lockscreen,kumizo}` (cp + mv : le binaire
   tourne, on ne peut pas l'écraser).
 - **Retour arrière** : les binaires *iced* sont sauvegardés dans
