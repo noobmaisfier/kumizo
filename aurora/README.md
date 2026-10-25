@@ -46,9 +46,8 @@ audio headers (Arch: `wayland libxkbcommon fontconfig alsa-lib`; Debian:
 (Arch `pam`, Debian `libpam0g-dev`) for the lockscreen, PipeWire/ALSA,
 `playerctl` (MPRIS pill), `JetBrainsMono Nerd Font` (icons).
 
-> Since 0.11.0 there are **no pre-built binaries**: `cargo install` from
-> crates.io (or `cargo build` from this repository) is the only supported
-> install path.
+> There are **no pre-built binaries**: `cargo install` from crates.io (or
+> `cargo build` from this repository) is the only supported install path.
 
 ## What's inside
 

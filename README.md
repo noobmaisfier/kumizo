@@ -85,7 +85,7 @@ cargo install --locked kumizo-aurora    # the reference shell: `aurora` + `auror
 ```
 
 There are **no pre-built binaries**: crates.io (or `cargo build` from a checkout)
-is the only install path since 0.11.0.
+is the only install path.
 
 The CLI only enables the `ipc` feature of the SDK, so it builds without GPUI, wgpu
 or zbus. The shell enables everything (`app`, `layer-shell`).
