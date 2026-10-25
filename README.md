@@ -80,9 +80,12 @@ See `aurora/` for a complete example shell, and [`docs/GUIDE.md`](https://github
 ### Install from crates.io
 
 ```bash
-cargo install kumizo           # the `kumizo` CLI (~1 crate, no GPUI)
-cargo install kumizo-aurora    # the reference shell: `aurora` + `aurora-lockscreen`
+cargo install --locked kumizo           # the `kumizo` CLI (~1 crate, no GPUI)
+cargo install --locked kumizo-aurora    # the reference shell: `aurora` + `aurora-lockscreen`
 ```
+
+There are **no pre-built binaries**: crates.io (or `cargo build` from a checkout)
+is the only install path since 0.11.0.
 
 The CLI only enables the `ipc` feature of the SDK, so it builds without GPUI, wgpu
 or zbus. The shell enables everything (`app`, `layer-shell`).

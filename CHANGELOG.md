@@ -23,6 +23,15 @@ Notable changes to the packages published from this repository:
 - `kumizo-aurora` package, shipping the `aurora` and `aurora-lockscreen`
   binaries under their original names.
 
+### Removed
+
+- **Binary install scheme.** `install-aurora.sh` is deleted, along with the
+  GitHub/GitLab jobs that produced and published `kumizo-linux-x86_64` /
+  `aurora-*-linux-x86_64` tarballs and the GitHub/GitLab releases. CI is now a
+  single `check` job (workspace check + lib tests). There are no pre-built
+  binaries: `cargo install --locked kumizo-aurora kumizo` (crates.io) or
+  `cargo build` from the repository are the only supported install paths.
+
 ### Yanked
 
 - `wk-ui`, `wk-gpui-ext`, `wk-services`, `wk-compositor`, `wk-ipc`, `wk-pam`

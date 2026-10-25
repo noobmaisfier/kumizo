@@ -33,8 +33,10 @@
   kumizo-aurora kumizo` (~15 min, GPUI en release) ; `~/.local/bin` parce que
   les dotfiles sway appellent les binaires en absolu. Plus de binaire
   pré-compilé ni de `curl` dans l'installeur du rice (id-86 v1.13).
-- CI (GitHub + GitLab) et `install-aurora.sh` alignés sur les nouveaux noms de
-  packages ; `cargo test --workspace --lib` : 24 tests verts.
+- CI (GitHub + GitLab) réduite à la seule tâche `check` : plus de build de
+  binaires, plus de release GitHub/GitLab. `install-aurora.sh` **supprimé** :
+  `cargo install` est le seul chemin d'installation supporté depuis 0.11.0.
+  `cargo test --workspace --lib` : 24 tests verts.
 
 ## Historique — migration GPUI → iced (18 oct. 2026, suspendue)
 - Migration GPUI → iced complète.
@@ -86,7 +88,7 @@
   branche « lecteur local ».
 - `cargo check --workspace --all-targets` : 0 erreur / 0 warning ; tests verts.
 - Docs mises à jour : README racine, README d'aurora, `install-aurora.sh`
-  (plus de keybinding `Super+M` vers `aurora-music`).
+  (ce dernier a été supprimé le 25 oct. 2026, voir plus haut).
 
 ### RAM dans la barre (22 oct. 2026, ~14h36)
 - Nouveau service SDK **`Memory`** (`kumizo-kit/src/services/memory.rs`) :

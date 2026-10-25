@@ -738,7 +738,7 @@ Socket: `$XDG_RUNTIME_DIR/kumizo.sock` (override with `$KUMIZO_SOCKET`).
 Install:
 
 ```bash
-cargo install kumizo
+cargo install --locked kumizo
 ```
 
 ---

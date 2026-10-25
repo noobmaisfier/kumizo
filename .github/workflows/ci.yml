@@ -1,11 +1,9 @@
-# Équivalent GitHub Actions de .gitlab-ci.yml (référence historique).
+# Équivalent GitHub Actions de .gitlab-ci.yml.
 #
-# - check : vérifie + teste le workspace (push main/develop, tags, PR).
-# - build-kumizo : tarball du shell d'exemple (push main/develop/tags).
-# - build-aurora : binaires aurora + kumizo, image Debian bookworm
-#   (glibc 2.36 : tourne sur Debian stable et distros récentes).
-# - release : publie la release + assets à chaque tag `v*`
-#   (binaires consommés par install-aurora.sh).
+# Une seule tâche : `check` (vérifie + teste le workspace sur push main et PR).
+#
+# Aucun binaire n'est construit ni publié : l'installation passe uniquement par
+# crates.io (`cargo install --locked kumizo-aurora kumizo`).
 #
 # Les minutes Actions sont gratuites (2000 min/mois sur les dépôts publics).
 
@@ -14,7 +12,6 @@ name: ci
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
     branches: [main]
 
@@ -45,99 +42,3 @@ jobs:
           key: cargo-${{ hashFiles('Cargo.lock') }}
       - run: cargo check --workspace
       - run: cargo test --workspace --lib
-
-  # ---------------------------------------------------------------------------
-  # Tarball du shell d'exemple
-  # ---------------------------------------------------------------------------
-  build-kumizo:
-    needs: check
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    container:
-      image: rust:1-bookworm
-    steps:
-      - uses: actions/checkout@v4
-      - run: apt-get update -qq && apt-get install -y -qq pkg-config libpam0g-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libfontconfig1-dev libasound2-dev
-      - uses: actions/cache@v4
-        with:
-          path: |
-            .cargo/registry
-            .cargo/git
-            target
-          key: cargo-${{ hashFiles('Cargo.lock') }}
-      - run: cargo build --release --package kumizo
-      - run: |
-          mkdir -p dist/bin
-          cp target/release/kumizo dist/bin/kumizo
-          cp README.md dist/ || true
-          tar -czf kumizo-linux-x86_64.tar.gz -C dist .
-      - uses: actions/upload-artifact@v4
-        with:
-          name: kumizo
-          path: kumizo-linux-x86_64.tar.gz
-          retention-days: 30
-
-  # ---------------------------------------------------------------------------
-  # Binaires aurora (tags v* uniquement)
-  # ---------------------------------------------------------------------------
-  build-aurora:
-    needs: check
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    container:
-      image: rust:1-bookworm
-    steps:
-      - uses: actions/checkout@v4
-      - run: apt-get update -qq && apt-get install -y -qq pkg-config libpam0g-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libfontconfig1-dev libasound2-dev curl ca-certificates
-      - uses: actions/cache@v4
-        with:
-          path: |
-            .cargo/registry
-            .cargo/git
-            target
-          key: cargo-${{ hashFiles('Cargo.lock') }}
-      - run: cargo build --release --package kumizo-aurora --package kumizo
-      - run: |
-          mkdir -p stage && cp target/release/aurora target/release/aurora-lockscreen target/release/kumizo stage/
-          (cd stage && sha256sum aurora aurora-lockscreen kumizo > SHA256SUMS)
-          tar -czf "aurora-${{ github.ref_name }}-linux-x86_64.tar.gz" -C stage .
-          sha256sum "aurora-${{ github.ref_name }}-linux-x86_64.tar.gz" > "aurora-${{ github.ref_name }}-linux-x86_64.tar.gz.sha256"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: aurora
-          path: |
-            aurora-*-linux-x86_64.tar.gz
-            aurora-*-linux-x86_64.tar.gz.sha256
-          retention-days: 30
-
-  # ---------------------------------------------------------------------------
-  # Publication de la release (tags v* uniquement)
-  # ---------------------------------------------------------------------------
-  release:
-    needs: [build-kumizo, build-aurora]
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          path: assets
-          merge-multiple: true
-      - run: |
-          TAG="${{ github.ref_name }}"
-          gh release create "$TAG" \
-            --title "Release $TAG" \
-            --notes "## Kumizo $TAG
-          - Complete Wayland modular shell dressed in risograph style
-          - Neo-brutalist Flexoki palette & tactile physics
-          - Fullscreen Kanban board & Sticky Notes
-          - Integrated PAM lockscreen with wallpaper blur
-          - Fast application launcher & open window switcher
-          - Interactive notifications & persistent clipboard manager" \
-            "assets/kumizo-linux-x86_64.tar.gz" \
-            "assets/aurora-$TAG-linux-x86_64.tar.gz" \
-            "assets/aurora-$TAG-linux-x86_64.tar.gz.sha256"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

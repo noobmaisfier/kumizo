@@ -46,9 +46,9 @@ audio headers (Arch: `wayland libxkbcommon fontconfig alsa-lib`; Debian:
 (Arch `pam`, Debian `libpam0g-dev`) for the lockscreen, PipeWire/ALSA,
 `playerctl` (MPRIS pill), `JetBrainsMono Nerd Font` (icons).
 
-> The `install-aurora.sh` script from the repository root still works as a
-> fallback (pre-built release binary or git source build), but crates.io is the
-> supported path since 0.11.0.
+> Since 0.11.0 there are **no pre-built binaries**: `cargo install` from
+> crates.io (or `cargo build` from this repository) is the only supported
+> install path.
 
 ## What's inside
 

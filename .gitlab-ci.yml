@@ -4,6 +4,10 @@
 # Réactivation : supprimer ce bloc `workflow`, ou définir la variable de
 # projet KUMIZO_CI=on (Paramètres > CI/CD > Variables).
 # Côté GitHub, le workflow `ci` est désactivé (gh workflow disable ci).
+#
+# Une seule tâche : `check`. Aucun binaire n'est construit ni publié :
+# l'installation passe uniquement par crates.io
+# (`cargo install --locked kumizo-aurora kumizo`).
 # ---------------------------------------------------------------------------
 workflow:
   rules:
@@ -11,8 +15,6 @@ workflow:
 
 stages:
   - test
-  - build
-  - release
 
 variables:
   CARGO_HOME: "${CI_PROJECT_DIR}/.cargo"
@@ -38,88 +40,3 @@ check:
   script:
     - cargo check --workspace
     - cargo test --workspace --lib
-
-# ---------------------------------------------------------------------------
-# Stage: Build Release
-# ---------------------------------------------------------------------------
-build_release:
-  stage: build
-  before_script:
-    - apt-get update -qq && apt-get install -y -qq pkg-config libpam0g-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libfontconfig1-dev libasound2-dev
-  script:
-    - cargo build --release --package kumizo
-    - mkdir -p dist/bin
-    - cp target/release/kumizo dist/bin/kumizo
-    - cp README.md dist/ || true
-    - tar -czf kumizo-linux-x86_64.tar.gz -C dist .
-  artifacts:
-    name: "kumizo-${CI_COMMIT_REF_SLUG}"
-    paths:
-      - kumizo-linux-x86_64.tar.gz
-      - dist/bin/kumizo
-    expire_in: 30 days
-  rules:
-    - if: $CI_COMMIT_TAG
-    - if: $CI_COMMIT_BRANCH == "main"
-    - if: $CI_COMMIT_BRANCH == "develop"
-
-# ---------------------------------------------------------------------------
-# Stage: Build aurora release (binaires distribués par install-aurora.sh)
-# Image Debian stable : glibc 2.36, le binaire tourne sur Debian stable
-# et la plupart des distros récentes.
-# ---------------------------------------------------------------------------
-build_aurora:
-  stage: build
-  image: rust:1-bookworm
-  before_script:
-    - apt-get update -qq && apt-get install -y -qq pkg-config libpam0g-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libfontconfig1-dev libasound2-dev curl ca-certificates
-  script:
-    - cargo build --release --package kumizo-aurora --package kumizo
-    - mkdir -p stage && cp target/release/aurora target/release/aurora-lockscreen target/release/kumizo stage/
-    - (cd stage && sha256sum aurora aurora-lockscreen kumizo > SHA256SUMS)
-    - tar -czf "aurora-${CI_COMMIT_TAG}-linux-x86_64.tar.gz" -C stage .
-    - sha256sum "aurora-${CI_COMMIT_TAG}-linux-x86_64.tar.gz" > "aurora-${CI_COMMIT_TAG}-linux-x86_64.tar.gz.sha256"
-    # Paquet générique : URL stable et publique pour l'installeur curl.
-    - 'curl --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "aurora-${CI_COMMIT_TAG}-linux-x86_64.tar.gz" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/aurora/${CI_COMMIT_TAG}/aurora-${CI_COMMIT_TAG}-linux-x86_64.tar.gz"'
-    - 'curl --fail --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file "aurora-${CI_COMMIT_TAG}-linux-x86_64.tar.gz.sha256" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/aurora/${CI_COMMIT_TAG}/aurora-${CI_COMMIT_TAG}-linux-x86_64.tar.gz.sha256"'
-  artifacts:
-    name: "aurora-${CI_COMMIT_TAG}"
-    paths:
-      - "aurora-${CI_COMMIT_TAG}-linux-x86_64.tar.gz"
-      - "aurora-${CI_COMMIT_TAG}-linux-x86_64.tar.gz.sha256"
-    expire_in: 30 days
-  rules:
-    - if: $CI_COMMIT_TAG
-
-# ---------------------------------------------------------------------------
-# Stage: GitLab Release Publishing
-# ---------------------------------------------------------------------------
-release_job:
-  stage: release
-  image: registry.gitlab.com/gitlab-org/release-cli:latest
-  needs:
-    - job: build_release
-      artifacts: true
-    - job: build_aurora
-      artifacts: true
-  rules:
-    - if: $CI_COMMIT_TAG
-  script:
-    - echo "Publishing official release for tag $CI_COMMIT_TAG"
-  release:
-    name: "Release $CI_COMMIT_TAG"
-    tag_name: "$CI_COMMIT_TAG"
-    description: |
-      ## Kumizo $CI_COMMIT_TAG
-      - Complete Wayland modular shell dressed in risograph style
-      - Neo-brutalist Flexoki palette & tactile physics
-      - Fullscreen Kanban board & Sticky Notes
-      - Integrated PAM lockscreen with wallpaper blur
-      - Fast application launcher & open window switcher
-      - Interactive notifications & persistent clipboard manager
-    assets:
-      links:
-        - name: "kumizo-linux-x86_64.tar.gz"
-          url: "${CI_PROJECT_URL}/-/jobs/${CI_JOB_ID}/artifacts/raw/kumizo-linux-x86_64.tar.gz"
-        - name: "aurora-${CI_COMMIT_TAG}-linux-x86_64.tar.gz"
-          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/aurora/${CI_COMMIT_TAG}/aurora-${CI_COMMIT_TAG}-linux-x86_64.tar.gz"
