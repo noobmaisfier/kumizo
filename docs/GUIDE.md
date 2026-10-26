@@ -251,7 +251,7 @@ Kumizo provides ready-to-use system services (see [`API.md`](./API.md)), includi
 | **Network** | SSID, IP, connection state | Connect/disconnect, IP change |
 | **Bluetooth** | Connected devices, state | Pairing, disconnection |
 | **Mpris** | Title, artist, album, playback status | Player appears/disappears, track change |
-| **Compositor** | Workspaces, active window | Workspace change, focus change |
+| **Compositor** | Workspaces (named/special included), monitors, windows, active window | Workspace change, focus change, monitor hotplug |
 | **Apps** | `.desktop` entries + icons | Rescan (`reload`) |
 | **Notifications** | Toasts, history, DnD | New notification, dismissal |
 | **Tray** | Icons and menus of applications | Icon add/remove |

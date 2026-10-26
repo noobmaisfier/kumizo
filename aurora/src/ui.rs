@@ -23,8 +23,17 @@ pub const RADIUS_PANEL: f32 = 14.;
 
 /// Fond de survol : `raised` à 65 % au lieu d'un aplat. Sur une pastille ou
 /// une carte déjà teintée, le survol se voit sans « sauter » au plein.
+///
+/// À éviter sur une carte posée directement sur une layer surface transparente
+/// (toasts) : l'alpha laisserait voir le bureau au travers. Utiliser
+/// [`hover_bg_solid`] dans ce cas.
 pub fn hover_bg() -> Rgba {
     pal::with_alpha(pal::raised(), 0.65)
+}
+
+/// Fond de survol opaque, pour les cartes flottant sur une fenêtre transparente.
+pub fn hover_bg_solid() -> Rgba {
+    pal::raised()
 }
 
 /// Chiffres tabulaires : l'horloge, les durées et les pourcentages gardent la

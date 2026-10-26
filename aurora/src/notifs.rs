@@ -86,7 +86,10 @@ pub fn card(
         .border_1()
         .border_color(border)
         .cursor_pointer()
-        .hover(|s| s.bg(ui::hover_bg()))
+        // Opaque : les toasts vivent sur une layer surface transparente, un
+        // fond de survol à 65 % laisserait voir le bureau et rendrait le
+        // message illisible.
+        .hover(|s| s.bg(ui::hover_bg_solid()))
         .on_click(move |_, _, cx| {
             n_card.update(cx, |n, _| {
                 n.invoke_action(id, "default");

@@ -133,10 +133,19 @@ impl TopBar {
     // ── Gauche : lanceur · workspaces · fenêtres · titre actif ─────────────
     fn left(&self, cx: &App) -> Div {
         let comp = self.compositor.read(cx);
-        let workspaces: Vec<(i32, String, bool, bool, usize)> = comp
+        let workspaces: Vec<(i32, String, bool, bool, usize, bool)> = comp
             .workspaces()
             .iter()
-            .map(|w| (w.id, w.name.clone(), w.is_active, w.is_urgent, w.window_count))
+            .map(|w| {
+                (
+                    w.id,
+                    w.name.clone(),
+                    w.is_active,
+                    w.is_urgent,
+                    w.window_count,
+                    w.is_special(),
+                )
+            })
             .collect();
         let title = comp.active_window().map(|a| {
             if a.title.is_empty() {
@@ -146,8 +155,9 @@ impl TopBar {
             }
         });
         let mut ws_row = div().flex().flex_row().items_center().gap_1();
-        for (id, name, active, urgent, count) in workspaces {
+        for (id, name, active, urgent, count, special) in workspaces {
             let compositor = self.compositor.clone();
+            let toggle_name = name.clone();
             // Pas de fond plein : l'actif se distingue par la couleur de son
             // icone (l'accent), l'urgence par le rouge, le reste par le texte.
             let fg = if active {
@@ -168,7 +178,16 @@ impl TopBar {
                     .font_weight(FontWeight::NORMAL)
                     .hover(|s| s.bg(pal::raised()))
                     .on_click(move |_, _, cx| {
-                        compositor.update(cx, |c, _| c.switch_workspace(id));
+                        compositor.update(cx, |c, _| {
+                            // A special (scratchpad) workspace is shown *on top*
+                            // of the regular one: clicking it toggles visibility,
+                            // while a normal workspace is simply focused.
+                            if special {
+                                let _ = c.toggle_special_workspace(&toggle_name);
+                            } else {
+                                c.switch_workspace(id);
+                            }
+                        });
                     })
                     .child(if (1..=10).contains(&id) {
                         ui::glyph(WS_ICONS[(id - 1) as usize], 13., fg)

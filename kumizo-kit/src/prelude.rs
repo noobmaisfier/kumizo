@@ -19,7 +19,9 @@ pub use crate::services::{
 pub use crate::ui::{TextAction, TextBuffer, TextStyle, text_area, text_input};
 
 // Compositor Integration
-pub use crate::compositor::{ActiveWindow, Compositor, CompositorKind, Workspace};
+pub use crate::compositor::{
+    ActiveWindow, AppWindow, Compositor, CompositorKind, Monitor, Workspace,
+};
 
 // Essential GPUI types for fluent UI composition
 pub use gpui::{

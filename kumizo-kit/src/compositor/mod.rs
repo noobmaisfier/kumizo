@@ -20,7 +20,7 @@ pub mod sway;
 pub mod types;
 
 pub use compositor::Compositor;
-pub use hyprland::HyprlandIpc;
+pub use hyprland::{HyprlandIpc, HyprlandStatus};
 pub use niri::NiriIpc;
 pub use sway::SwayIpc;
-pub use types::{ActiveWindow, CompositorEvent, CompositorKind, Workspace};
+pub use types::{ActiveWindow, AppWindow, CompositorEvent, CompositorKind, Monitor, Workspace};

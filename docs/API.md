@@ -319,10 +319,34 @@ impl Bluetooth {
 
 ### Compositor (`kumizo_kit::compositor`)
 
+Detects Hyprland, Sway (and i3) or Niri automatically. Hyprland instances using
+the Lua config provider (0.55+) are driven through its Lua dispatcher API
+(`hl.dsp.*`); instances still on `hyprlang` use the legacy dispatchers. The
+active style is read from `j/status` (`configProvider`) with a `j/version`
+fallback. Commands are sent without a trailing newline and the write half is
+shut down, exactly like `hyprctl`.
+
 ```rust
 pub struct Compositor;
 pub enum CompositorKind { Sway, Hyprland, Niri, Fallback }
-pub struct Workspace { pub id: i32, pub name: String, pub is_active: bool, pub is_urgent: bool, pub window_count: usize, pub monitor: String }
+
+pub struct Workspace {
+    pub id: i32,
+    pub name: String,
+    pub address: String,     // backend selector: "3", "web", "special:magic", "name:special:x"
+    pub is_active: bool,
+    pub is_urgent: bool,
+    pub window_count: usize,
+    pub monitor: String,
+}
+pub struct Monitor {
+    pub id: i64, pub name: String, pub description: String,
+    pub width: i32, pub height: i32, pub refresh_rate: f64,
+    pub x: i32, pub y: i32, pub scale: f64,
+    pub focused: bool, pub disabled: bool,
+    pub active_workspace: String, pub active_workspace_name: String,
+    pub special_workspace: Option<String>, pub special_workspace_name: Option<String>,
+}
 pub struct AppWindow { pub id: i64, pub title: String, pub class: String, pub workspace_id: i32, pub workspace_name: String, pub is_focused: bool }
 pub struct ActiveWindow { pub title: String, pub class: String, pub workspace_id: i32 }
 
@@ -335,13 +359,46 @@ impl Compositor {
     pub fn kind(&self) -> CompositorKind;
     pub fn workspaces(&self) -> &[Workspace];
     pub fn active_workspace_id(&self) -> i32;
+    pub fn active_workspace(&self) -> Option<&Workspace>;
+    pub fn active_workspace_is_special(&self) -> bool;
     pub fn active_window(&self) -> Option<&ActiveWindow>;
     pub fn windows(&self) -> &[AppWindow];
+    pub fn monitors(&self) -> &[Monitor];
+    pub fn focused_monitor(&self) -> Option<&Monitor>;
+
     pub fn switch_workspace(&mut self, id: i32);
-    pub fn focus_window(&self, con_id: i64); // Sway only
-    pub fn close_window(&self);              // active window, Hyprland only
+    pub fn try_switch_workspace(&mut self, id: i32) -> anyhow::Result<()>;
+    pub fn switch_workspace_address(&mut self, address: &str) -> anyhow::Result<()>;
+    pub fn focus_window(&self, con_id: i64);            // Hyprland address, Sway node, Niri id
+    pub fn try_focus_window(&self, con_id: i64) -> anyhow::Result<()>;
+    pub fn close_window(&self);                          // active window
+    pub fn close_window_id(&self, con_id: i64);
+    pub fn toggle_floating(&self, con_id: Option<i64>) -> anyhow::Result<()>;
+    pub fn toggle_fullscreen(&self, con_id: Option<i64>) -> anyhow::Result<()>;
+    pub fn move_window_to_workspace(&self, con_id: Option<i64>, workspace: &str, follow: bool) -> anyhow::Result<()>;
+    pub fn focus_monitor(&self, name: &str) -> anyhow::Result<()>;
+    pub fn toggle_special_workspace(&self, name: &str) -> anyhow::Result<()>; // Hyprland only
+    pub fn reload_config(&self) -> anyhow::Result<()>;
 }
 ```
+
+`Workspace::id` is a UI handle. Numbered workspaces keep the compositor number;
+named and special workspaces get a stable negative id. Always pass
+`Workspace::address` (via `switch_workspace(id)`, which resolves it) rather than
+the raw id when talking to the compositor: Hyprland needs `3`, `web` or
+`special:magic`, and a named workspace called `special:x` is stored as
+`name:special:x` so it is not confused with the real special workspace.
+`Workspace::is_special()` reports Hyprland scratchpads.
+
+Events covered: workspace create/destroy/rename/move, monitor hotplug, window
+open/close/move/title/focus, floating/fullscreen/pin/minimize changes, urgency
+and config reload. State-changing events trigger an authoritative re-query
+instead of replaying deltas, and the event socket reconnects with exponential
+backoff with a full resync after every reconnect.
+
+`kumizo service compositor <action> [payload]` accepts: `switch_workspace`,
+`focus_window`, `close_window`, `toggle_floating`, `toggle_fullscreen`,
+`move_window`, `focus_monitor`, `toggle_special`, `reload_config`.
 
 ### Apps
 
