@@ -33,6 +33,20 @@ exec ~/.local/bin/aurora
 
 Check: `kumizo ping` → `PONG`.
 
+## Copy it as a starting point
+
+This folder is a **self-contained Cargo package**: its manifest has no `path`
+dependency and no `workspace = true` inheritance. Copy it anywhere and build:
+
+```bash
+cp -r aurora ~/my-shell
+cd ~/my-shell
+cargo build --release
+```
+
+It pulls `kumizo-kit` from crates.io (inside the Kumizo repo a `[patch]` swaps
+it for the local SDK). Nothing else from the repository is required.
+
 ## Build from the repository
 
 ```bash

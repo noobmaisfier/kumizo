@@ -64,3 +64,10 @@ resvg = "0.46.0"
 # Internal: the SDK is the only shared crate, so the CLI and the shell pull the
 # same source through crates.io once published.
 kumizo-kit = { version = "0.11.1", path = "kumizo-kit", default-features = false }
+
+# `aurora/` declares `kumizo-kit = "0.11.1"` (no `path`) on purpose, so the
+# folder can be copied out of this repo and still build. Inside the workspace,
+# this patch redirects that registry requirement to the local SDK: one source,
+# one copy, and aurora keeps exercising the in-tree `kumizo-kit`.
+[patch.crates-io]
+kumizo-kit = { path = "kumizo-kit" }

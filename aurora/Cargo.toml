@@ -1,10 +1,24 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Ce manifeste est VOLONTAIREMENT autonome.
+#
+# Aurora est un *exemple* : on doit pouvoir copier ce dossier n'importe où
+# (`cp -r aurora ~/my-shell`) et lancer `cargo build` sans rien d'autre du dépôt.
+# Donc AUCUN héritage de workspace ici (`version.workspace = true`, `workspace =
+# true`, chemin `../kumizo-kit`…) : tout est écrit explicitement.
+#
+# Le `kumizo-kit` local n'est utilisé *que* dans ce dépôt, via le `[patch]` du
+# Cargo.toml racine. Une copie sortie du dépôt tire `kumizo-kit` de crates.io.
+# En contrepartie : garder `version` alignée sur `[workspace.package]`.
+# ─────────────────────────────────────────────────────────────────────────────
+
 [package]
 name = "kumizo-aurora"
-version.workspace = true
-edition.workspace = true
-authors.workspace = true
-license.workspace = true
-repository.workspace = true
+version = "0.11.1"
+edition = "2021"
+authors = ["Kumizo Contributors"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/noobmaisfier/kumizo"
+readme = "README.md"
 description = "Aurora shell: floating bar, control center, launcher, tasks, power, notifs, toasts, OSD, pomodoro"
 keywords = ["wayland", "shell", "status-bar", "gpui"]
 categories = ["gui"]
@@ -18,12 +32,12 @@ name = "aurora-lockscreen"
 path = "src/lockscreen.rs"
 
 [dependencies]
-kumizo-kit = { workspace = true, features = ["app", "layer-shell"] }
-gpui = { workspace = true }
-async-io = { workspace = true }
-libc = { workspace = true }
-image = { workspace = true, features = ["jpeg", "webp"] }
-smallvec = { workspace = true }
+kumizo-kit = { version = "0.11.1", default-features = false, features = ["app", "layer-shell"] }
+gpui = { package = "gpui-pre", version = "=0.3.9", default-features = true }
+async-io = "2.3"
+libc = "0.2"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+smallvec = "1"
 # Pas de moteur audio ici : le shell ne lit que les médias MPRIS (navigateur,
 # lecteur externe…). Un lecteur local vit dans son propre process et se
 # publie en MPRIS — le shell reste ainsi MIT OR Apache-2.0.
