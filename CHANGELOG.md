@@ -3,6 +3,57 @@
 Notable changes to the packages published from this repository:
 `kumizo-kit` (SDK), `kumizo` (CLI) and `kumizo-aurora` (reference shell).
 
+## 0.12.0 — 2026-10-26
+
+### Fixed
+
+- **Hyprland works again.** Commands were terminated with a newline, which
+  Hyprland never answers; they are now framed exactly like `hyprctl` (no
+  newline, write side shut down, reply read to EOF, 5 s timeout).
+- **Hyprland Lua dispatchers.** The service reads `j/status` (`configProvider`)
+  and falls back to `j/version`; when the instance uses the Lua config provider
+  it emits `hl.dsp.focus/window.close/window.float/window.fullscreen/window.move`
+  and `hl.dsp.workspace.toggle_special` instead of the removed `hyprlang`
+  syntax. Instances still on `hyprlang` keep working through the legacy
+  dispatchers.
+- **Named and special workspaces.** `j/workspaces` reports named workspaces as
+  `web` and special ones as `special:magic`, with no numeric id. They now get a
+  stable negative id, keep their real selector in the new `Workspace::address`,
+  and `switch_workspace(id)` resolves it. A named workspace whose own name
+  starts with `special:` is stored as `name:special:x`, so it is not mistaken
+  for the actual scratchpad.
+- **Hyprland windows, monitors and actions.** `j/clients`, `j/monitors` and
+  `j/activewindow` are fetched at startup and on events; `focus_window`,
+  `close_window`, floating, fullscreen, move-to-workspace, focus-monitor,
+  special-workspace toggle and reload are implemented instead of silently
+  doing nothing.
+- **Event coverage and reconnection.** All current socket2 events are handled
+  (workspace v1/v2, create/destroy/rename/move, focusedmon, activespecial,
+  monitor hotplug, open/close/move window, activewindow, title, floating,
+  fullscreen, pin, minimized, kill, urgent, config reload). State is replaced
+  from authoritative JSON queries rather than replaying deltas, and the event
+  socket reconnects with exponential backoff and a full resync.
+- **Sway/Niri parity.** Sway named workspaces (`num = -1`) get stable negative
+  ids and windows map to them; Sway/Niri gain window lists, focus/close/floating/
+  fullscreen/move/focus-monitor/reload actions, monitor lists and reconnect
+  handling. Niri uses the stable workspace `id` (not the positional `idx`) and
+  handles `ConfigLoaded`/workspace events for output changes.
+- **Notification hover opacity.** The shared hover colour is `raised` at 65 %
+  alpha; applied to a toast card that lives on a transparent layer surface it
+  made the card see-through on hover, with the message barely readable. Cards
+  now use `ui::hover_bg_solid()` (opaque).
+
+### Added
+
+- `Workspace::address`, `Workspace::is_special`, public `Monitor`,
+  `CompositorEvent::{WindowFocusCleared, WindowUrgent, MonitorsChanged}`, and
+  `Compositor::{active_workspace, active_workspace_is_special, monitors,
+  focused_monitor, switch_workspace_address, try_* , close_window_id,
+  toggle_floating, toggle_fullscreen, move_window_to_workspace, focus_monitor,
+  toggle_special_workspace, reload_config}`.
+- `Compositor` accepts `kumizo service compositor <action>` IPC commands for all
+  of the above.
+
 ## 0.11.1 — 2026-10-25
 
 Documentation-only release: no API, behaviour or dependency change, drop-in
