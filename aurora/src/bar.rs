@@ -130,7 +130,7 @@ impl TopBar {
         }
     }
 
-    // ── Gauche : lanceur · workspaces · fenêtres · titre actif ─────────────
+    // ── Gauche : lanceur · workspaces ──────────────────────────────────────
     fn left(&self, cx: &App) -> Div {
         let comp = self.compositor.read(cx);
         let workspaces: Vec<(i32, String, bool, bool, usize, bool)> = comp
@@ -147,13 +147,6 @@ impl TopBar {
                 )
             })
             .collect();
-        let title = comp.active_window().map(|a| {
-            if a.title.is_empty() {
-                a.class.clone()
-            } else {
-                a.title.clone()
-            }
-        });
         let mut ws_row = div().flex().flex_row().items_center().gap_1();
         for (id, name, active, urgent, count, special) in workspaces {
             let compositor = self.compositor.clone();
@@ -236,18 +229,7 @@ impl TopBar {
                 )
         };
 
-        let mut main = pill().child(ws_row);
-        if let Some(t) = title {
-            main = main.child(
-                div()
-                    .min_w_0()
-                    .max_w(px(300.))
-                    .truncate()
-                    .text_sm()
-                    .text_color(pal::muted())
-                    .child(t),
-            );
-        }
+        let main = pill().child(ws_row);
         div()
             .flex()
             .flex_row()

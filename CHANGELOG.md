@@ -43,6 +43,12 @@ Notable changes to the packages published from this repository:
   made the card see-through on hover, with the message barely readable. Cards
   now use `ui::hover_bg_solid()` (opaque).
 
+### Changed
+
+- **Aurora bar.** The bar no longer shows the active window title; the left
+  pill only lists the workspaces. The active window is still exposed by the
+  `Compositor` service and used by the task switcher.
+
 ### Added
 
 - `Workspace::address`, `Workspace::is_special`, public `Monitor`,
