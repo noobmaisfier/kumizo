@@ -1,7 +1,7 @@
-//! Lanceur d'applications : saisie au clavier, recherche floue via `Apps::search`.
+//! Application launcher: keyboard input, fuzzy search via `Apps::search`.
 //!
-//! Kumizo n'a pas de champ texte natif : la saisie est gérée à la main
-//! depuis `KeyDownEvent` (touche + `key_char`).
+//! Kumizo has no native text field: input is handled manually
+//! from `KeyDownEvent` (key + `key_char`).
 
 use gpui::prelude::*;
 use gpui::{
@@ -108,7 +108,7 @@ impl Render for AppLauncher {
         }
         let scroll = self.scroll.clone();
 
-        // Champ de saisie : texte + faux curseur (▏)
+        // Input field: text + fake cursor (▏)
         let input = div()
             .flex()
             .flex_row()
@@ -123,15 +123,15 @@ impl Render for AppLauncher {
                 div()
                     .flex_1()
                     .text_color(pal::muted())
-                    .child("Rechercher une application…")
+                    .child("Search for an application…")
             } else {
                 div()
                     .flex_1()
                     .text_color(pal::text())
                     .child(format!("{}▏", self.query))
             })
-            // Rescan .desktop : les applis installées après le boot
-            // apparaissent sans redémarrer le shell (cf. mu-rescan).
+            // Rescan .desktop: apps installed after boot
+            // appear without restarting the shell (see mu-rescan).
             .child(
                 ui::btn("lc-reload")
                     .w(px(30.))
@@ -145,8 +145,8 @@ impl Render for AppLauncher {
                     .child(ui::glyph(icons::REBOOT, 12., pal::muted())),
             );
 
-        // La liste EST le conteneur scrollé : les lignes sont ses enfants
-        // directs pour que `scroll_to_item(i)` tombe sur la bonne.
+        // The list IS the scrolled container: its rows are direct children
+        // so that `scroll_to_item(i)` lands on the right one.
         let mut list = div()
             .id("lc-scroll")
             .flex()
@@ -162,7 +162,7 @@ impl Render for AppLauncher {
                     .px_3()
                     .py_3()
                     .text_color(pal::muted())
-                    .child("Aucun résultat"),
+                    .child("No results"),
             );
         }
         for (i, app) in results.iter().enumerate() {
@@ -249,9 +249,9 @@ impl Render for AppLauncher {
                     .overflow_hidden()
                     .child(input)
                     .child(list)
-                    // Glissement de 7 px vers le haut en ~140 ms. La fenêtre
-                    // est déjà fondue par `WindowShell` (`wk-open`) ; on
-                    // ajoute le mouvement sans doubler le fade.
+                    // Slide 7 px up in ~140 ms. The window is already
+                    // faded in by `WindowShell` (`wk-open`); we add the
+                    // motion without doubling the fade.
                     .with_animation(
                         "lc-open",
                         Animation::new(std::time::Duration::from_millis(140))

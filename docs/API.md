@@ -846,6 +846,6 @@ Workspace dependencies are pinned: `gpui-pre =0.3.9`, `gpui-pre-platform =0.3.9`
 
 | Kumizo | GPUI | Rust MSRV | Wayland |
 |---|---|---|---|
-| `0.11.x` | `=0.3.9` | stable (testé avec 1.99) | layer-shell, wlr-foreign-toplevel |
+| `0.11.x` | `=0.3.9` | stable (tested with 1.99) | layer-shell, wlr-foreign-toplevel |
 
 > GPUI is **pinned** (`=`). Any update is a documented minor event in `CHANGELOG.md`. Breaking GPUI changes are absorbed in `kumizo_kit::ext` only.

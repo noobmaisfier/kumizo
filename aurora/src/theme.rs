@@ -1,8 +1,8 @@
-//! Thèmes prédéfinis + palette « à chaud ».
+//! Predefined themes + "hot" palette.
 //!
-//! Le thème courant est un simple index atomique : tous les windows du shell
-//! vivent dans le même process, donc `theme::set(i, cx)` + `refresh_windows()`
-//! restyle toute l'interface instantanément. Le choix est mémorisé dans
+//! The current theme is a simple atomic index: all shell windows live in the
+//! same process, so `theme::set(i, cx)` + `refresh_windows()` restyles the
+//! whole interface instantly. The choice is memorized in
 //! `~/.config/aurora/theme`.
 
 use std::path::PathBuf;
@@ -20,7 +20,7 @@ pub struct Theme {
     pub muted: u32,
     pub accent: u32,
     pub accent2: u32,
-    /// Couleur du texte posé SUR un fond `accent`.
+    /// Color of the text placed ON an `accent` background.
     pub on_accent: u32,
     pub ok: u32,
     pub warn: u32,
@@ -82,7 +82,7 @@ fn config_path() -> Option<PathBuf> {
     Some(PathBuf::from(home).join(".config/aurora/theme"))
 }
 
-/// À appeler une fois au démarrage : relit le thème mémorisé.
+/// To be called once at startup: reloads the memorized theme.
 pub fn init() {
     let saved = config_path()
         .and_then(|p| std::fs::read_to_string(p).ok())
@@ -100,8 +100,8 @@ pub fn current() -> &'static Theme {
     &THEMES[current_index()]
 }
 
-/// Vrai si le fond du thème est clair. Sert aux rares endroits où il faut
-/// adapter le contraste (icônes de tray monochromes, par exemple).
+/// True if the theme background is light. Used in the few places where
+/// contrast must be adapted (monochrome tray icons, for example).
 pub fn is_light() -> bool {
     let c = current().bg;
     let r = ((c >> 16) & 0xff) as f32;
@@ -110,9 +110,9 @@ pub fn is_light() -> bool {
     0.2126 * r + 0.7152 * g + 0.0722 * b > 127.5
 }
 
-/// Clés `change-theme` des thèmes appliqués à tout le système (sway, foot,
-/// yazi, vim, gtk, herdr, puis aurora par IPC). Les thèmes absents de cette
-/// table ne changent qu'aurora : le script ne sait pas les décliner.
+/// `change-theme` keys for themes applied to the whole system (sway, foot,
+/// yazi, vim, gtk, herdr, then aurora via IPC). Themes absent from this
+/// table only change aurora: the script does not know how to derive them.
 const SYSTEM_KEYS: [(&str, &str); 7] = [
     ("flexoki-light", "Flexoki Light"),
     ("mocha", "Catppuccin Mocha"),
@@ -123,7 +123,7 @@ const SYSTEM_KEYS: [(&str, &str); 7] = [
     ("gruvbox-dark", "Gruvbox"),
 ];
 
-/// Clé `change-theme` d'un thème, si le script sait l'appliquer au système.
+/// `change-theme` key of a theme, if the script knows how to apply it to the system.
 pub fn system_key(index: usize) -> Option<&'static str> {
     let name = THEMES.get(index)?.name;
     SYSTEM_KEYS
@@ -132,7 +132,7 @@ pub fn system_key(index: usize) -> Option<&'static str> {
         .map(|(k, _)| *k)
 }
 
-/// Thèmes système dans l'ordre du script, avec leur index dans `THEMES`.
+/// System themes in script order, with their index in `THEMES`.
 pub fn system_themes() -> impl Iterator<Item = (usize, &'static str)> {
     SYSTEM_KEYS.iter().filter_map(|(key, name)| {
         THEMES
@@ -142,8 +142,8 @@ pub fn system_themes() -> impl Iterator<Item = (usize, &'static str)> {
     })
 }
 
-/// Applique un thème à tout le système via `~/.local/bin/change-theme`.
-/// Le script rebascule ensuite aurora par IPC (`kumizo service theme set`).
+/// Applies a theme to the whole system via `~/.local/bin/change-theme`.
+/// The script then switches aurora back via IPC (`kumizo service theme set`).
 pub fn apply_system(key: &str) {
     let Some(home) = std::env::var_os("HOME") else {
         return;
@@ -157,9 +157,9 @@ pub fn apply_system(key: &str) {
     }
 }
 
-/// Résout une cible CLI (« Flexoki Light » ou un index « 3 ») en index de
-/// thème. Les noms sont comparés sans tenir compte de la casse ; un index
-/// numérique est accepté tel quel (`set` borne ensuite).
+/// Resolves a CLI target ("Flexoki Light" or an index "3") into a theme
+/// index. Names are compared case-insensitively; a numeric index is accepted
+/// as-is (`set` bounds it afterwards).
 pub fn resolve(target: &str) -> Option<usize> {
     let t = target.trim();
     if let Ok(i) = t.parse::<usize>() {
@@ -168,7 +168,7 @@ pub fn resolve(target: &str) -> Option<usize> {
     THEMES.iter().position(|th| th.name.eq_ignore_ascii_case(t))
 }
 
-/// Change de thème, le mémorise, et redessine toutes les fenêtres.
+/// Changes the theme, memorizes it, and redraws all windows.
 pub fn set(index: usize, cx: &mut App) {
     let index = index.min(THEMES.len() - 1);
     CURRENT.store(index, Ordering::Relaxed);
@@ -181,7 +181,7 @@ pub fn set(index: usize, cx: &mut App) {
     cx.refresh_windows();
 }
 
-/// Tokens sémantiques : `pal::accent()`, `pal::surface()`, …
+/// Semantic tokens: `pal::accent()`, `pal::surface()`, …
 pub mod pal {
     use gpui::{rgb, Rgba};
 
@@ -206,7 +206,7 @@ pub mod pal {
     }
 }
 
-/// Couleur brute d'un thème (pour les pastilles du sélecteur).
+/// Raw color of a theme (for the selector's swatches).
 pub fn swatch(hex: u32) -> Rgba {
     rgb(hex)
 }

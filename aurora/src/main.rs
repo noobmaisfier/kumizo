@@ -1,19 +1,19 @@
-//! Aurora — shell Wayland complet sur Kumizo (un seul process, un seul GPU).
+//! Aurora — full Wayland shell on Kumizo (single process, single GPU).
 //!
-//! Fenêtres (ids préfixés `aurora-`, pilotables via `kumizo toggle <id>`) :
-//!   aurora-bar       barre flottante (toujours visible)
-//!   aurora-launcher  lanceur d'apps            (plein écran, clavier exclusif)
-//!   aurora-themes    sélecteur de thème        (plein écran, clavier exclusif)
-//!   aurora-tasks     fenêtres ouvertes         (plein écran, clavier exclusif)
-//!   aurora-power     menu d'alimentation       (plein écran, clavier exclusif)
-//!   aurora-control   centre de contrôle        (plein écran transparent, panneau à droite)
-//!   aurora-notifs    historique notifications  (plein écran transparent, panneau à droite)
-//!   aurora-toasts    popups de notification    (coin haut-droit, ouvert par la barre)
-//!   aurora-osd       volume / luminosité       (bas-centre, ouvert par la barre)
+//! Windows (ids prefixed `aurora-`, controllable via `kumizo toggle <id>`):
+//!   aurora-bar       floating bar (always visible)
+//!   aurora-launcher  app launcher            (fullscreen, exclusive keyboard)
+//!   aurora-themes    theme selector          (fullscreen, exclusive keyboard)
+//!   aurora-tasks     open windows            (fullscreen, exclusive keyboard)
+//!   aurora-power     power menu              (fullscreen, exclusive keyboard)
+//!   aurora-control   control center          (transparent fullscreen, panel on the right)
+//!   aurora-notifs    notification history   (transparent fullscreen, panel on the right)
+//!   aurora-toasts    notification popups     (top-right corner, opened by the bar)
+//!   aurora-osd       volume / brightness     (bottom-center, opened by the bar)
 //!
-//! Pas de lecteur de musique : le shell affiche et pilote les médias
-//! *distants* (navigateur, etc.) via MPRIS. Un lecteur local vit dans son
-//! propre process (`kumizo-music`) et se publie lui aussi en MPRIS.
+//! No music player: the shell displays and controls *remote* media
+//! (browser, etc.) via MPRIS. A local player lives in its own
+//! process (`kumizo-music`) and publishes itself via MPRIS as well.
 
 mod bar;
 mod clipboard;
@@ -36,7 +36,7 @@ use kumizo_kit::prelude::*;
 
 use ui::ids;
 
-/// Surface plein écran transparente/semi-opaque au-dessus de tout.
+/// Transparent/semi-opaque fullscreen surface above everything.
 fn fullscreen(id: &'static str, namespace: &'static str, keyboard: KeyboardInteractivity) -> LayerWindow {
     LayerWindow::new(id)
         .layer(Layer::Overlay)
@@ -52,7 +52,7 @@ fn main() {
     theme::init();
 
     Kumizo::new()
-        // ── Services (uniquement ceux que les vues consomment) ──────────────
+        // ── Services (only those consumed by the views) ──────────────────────
         .service::<Clock>()
         .service::<Battery>()
         .service::<Memory>()
@@ -67,7 +67,7 @@ fn main() {
         .service::<Tray>()
         .service::<Notifications>()
         .service::<theme_ctl::Theme>()
-        // ── Barre ───────────────────────────────────────────────────────────
+        // ── Bar ──────────────────────────────────────────────────────────────
         .window(
             LayerWindow::new(ids::BAR)
                 .layer(Layer::Top)
@@ -79,7 +79,7 @@ fn main() {
                 .namespace("aurora-bar"),
             |cx: &mut gpui::App| cx.new(bar::TopBar::new),
         )
-        // ── Panneaux latéraux (fond transparent cliquable pour fermer) ──────
+        // ── Side panels (transparent clickable background to close) ──────────
         .window(
             fullscreen(ids::CONTROL, "aurora-control", KeyboardInteractivity::OnDemand),
             |cx: &mut gpui::App| cx.new(control::ControlCenter::new),
@@ -88,7 +88,7 @@ fn main() {
             fullscreen(ids::NOTIFS, "aurora-notifs", KeyboardInteractivity::OnDemand),
             |cx: &mut gpui::App| cx.new(notifs::NotificationCenter::new),
         )
-        // ── Modales plein écran ─────────────────────────────────────────────
+        // ── Fullscreen modals ────────────────────────────────────────────────
         .window(
             fullscreen(ids::LAUNCHER, "aurora-launcher", KeyboardInteractivity::Exclusive),
             |cx: &mut gpui::App| cx.new(launcher::AppLauncher::new),
@@ -109,7 +109,7 @@ fn main() {
             fullscreen(ids::CLIPBOARD, "aurora-clipboard", KeyboardInteractivity::Exclusive),
             |cx: &mut gpui::App| cx.new(clipboard::ClipboardPanel::new),
         )
-        // ── Toasts (ouverts/fermés par la barre selon `toasts()`) ───────────
+        // ── Toasts (opened/closed by the bar according to `toasts()`) ───────
         .window(
             LayerWindow::new(ids::TOASTS)
                 .layer(Layer::Overlay)
@@ -123,7 +123,7 @@ fn main() {
                 .namespace("aurora-toasts"),
             |cx: &mut gpui::App| cx.new(toasts::NotificationToasts::new),
         )
-        // ── OSD volume / luminosité (ouvert par la barre) ───────────────────
+        // ── Volume / brightness OSD (opened by the bar) ─────────────────────
         .window(
             LayerWindow::new(ids::OSD)
                 .layer(Layer::Overlay)

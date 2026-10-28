@@ -1,8 +1,8 @@
-//! Menu d'alimentation plein écran.
+//! Full-screen power menu.
 //!
-//! Clavier : ←/→ ou Tab pour choisir, Entrée pour valider, L/O/S/R/P en
-//! raccourci direct, Échap pour annuler. Les actions destructrices
-//! (déconnexion, redémarrage, extinction) demandent une 2ᵉ validation.
+//! Keyboard: ←/→ or Tab to choose, Enter to confirm, L/O/S/R/P as
+//! direct shortcuts, Escape to cancel. Destructive actions
+//! (logout, reboot, shutdown) require a second confirmation.
 
 use gpui::prelude::*;
 use gpui::{div, px, ClickEvent, Context, FocusHandle, FontWeight, KeyDownEvent, Window};
@@ -32,11 +32,11 @@ struct Entry {
 }
 
 const ENTRIES: [Entry; 5] = [
-    Entry { action: Action::Lock, glyph: icons::LOCK, label: "Verrouiller", key: "l", confirm: false },
-    Entry { action: Action::Logout, glyph: icons::LOGOUT, label: "Déconnexion", key: "o", confirm: true },
-    Entry { action: Action::Suspend, glyph: icons::MOON, label: "Veille", key: "s", confirm: false },
-    Entry { action: Action::Reboot, glyph: icons::REBOOT, label: "Redémarrer", key: "r", confirm: true },
-    Entry { action: Action::Shutdown, glyph: icons::POWER, label: "Éteindre", key: "p", confirm: true },
+    Entry { action: Action::Lock, glyph: icons::LOCK, label: "Lock", key: "l", confirm: false },
+    Entry { action: Action::Logout, glyph: icons::LOGOUT, label: "Logout", key: "o", confirm: true },
+    Entry { action: Action::Suspend, glyph: icons::MOON, label: "Suspend", key: "s", confirm: false },
+    Entry { action: Action::Reboot, glyph: icons::REBOOT, label: "Reboot", key: "r", confirm: true },
+    Entry { action: Action::Shutdown, glyph: icons::POWER, label: "Shutdown", key: "p", confirm: true },
 ];
 
 fn logout() {
@@ -51,7 +51,7 @@ fn logout() {
 
 fn perform(action: Action) {
     match action {
-        // Binaire séparé, fourni par ce projet (cf. src/bin/lockscreen.rs)
+        // Separate binary, provided by this project (see src/bin/lockscreen.rs)
         Action::Lock => ui::run("aurora-lockscreen", &[]),
         Action::Logout => logout(),
         Action::Suspend => ui::run("systemctl", &["suspend"]),
@@ -184,7 +184,7 @@ impl Render for PowerMenu {
                             .text_sm()
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(fg)
-                            .child(if armed { "Confirmer ?" } else { e.label }),
+                            .child(if armed { "Confirm?" } else { e.label }),
                     )
                     .child(
                         div()
@@ -222,7 +222,7 @@ impl Render for PowerMenu {
                         div()
                             .text_xs()
                             .text_color(pal::muted())
-                            .child("←/→ choisir · Entrée valider · Échap annuler"),
+                            .child("←/→ choose · Enter confirm · Escape cancel"),
                     ),
             )
     }

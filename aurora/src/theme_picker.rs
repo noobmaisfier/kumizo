@@ -1,8 +1,8 @@
-//! Sélecteur de thème (Super+T).
+//! Theme picker (Super+T).
 //!
-//! Ne montre que les thèmes que `change-theme` sait appliquer à **tout** le
-//! système (sway, foot, yazi, vim, gtk, herdr, aurora). La sélection lance le
-//! script, qui rebascule aurora par IPC — la fenêtre se ferme aussitôt.
+//! Only shows themes that `change-theme` knows how to apply to **everything** in
+//! the system (sway, foot, yazi, vim, gtk, herdr, aurora). Selecting launches the
+//! script, which switches aurora back via IPC — the window closes immediately.
 
 use gpui::prelude::*;
 use gpui::{
@@ -19,7 +19,7 @@ use crate::{
 pub struct ThemePicker {
     selected: usize,
     focus: FocusHandle,
-    /// Offset conservé entre deux rendus ; `scroll_to_item` suit le clavier.
+    /// Offset kept between two renders; `scroll_to_item` follows the keyboard.
     scroll: ScrollHandle,
 }
 
@@ -75,7 +75,7 @@ impl ThemePicker {
 impl Render for ThemePicker {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if !self.focus.is_focused(window) {
-            // (Ré)ouverture : la sélection part du thème courant.
+            // (Re)opening: selection starts from the current theme.
             let themes = Self::themes();
             let current = theme::current_index();
             if let Some(pos) = themes.iter().position(|(i, _)| *i == current) {
@@ -174,8 +174,8 @@ impl Render for ThemePicker {
                             .text_color(pal::text())
                             .child(th.name),
                     )
-                    // Coche du thème appliqué (le script met à jour aurora
-                    // par IPC, donc `current` bouge réellement).
+                    // Check mark of the applied theme (the script updates aurora
+                    // via IPC, so `current` actually moves).
                     .children(is_current.then(|| ui::glyph(icons::CHECK, 13., pal::accent()))),
             );
         }
@@ -214,7 +214,7 @@ impl Render for ThemePicker {
                                 div()
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .text_color(pal::text())
-                                    .child("Thème"),
+                                    .child("Theme"),
                             )
                             .child(
                                 div()
@@ -223,7 +223,7 @@ impl Render for ThemePicker {
                                     .justify_end()
                                     .text_xs()
                                     .text_color(pal::muted())
-                                    .child("Entrée applique · Échap ferme"),
+                                    .child("Enter applies · Esc closes"),
                             ),
                     )
                     .child(list),

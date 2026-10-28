@@ -1,7 +1,7 @@
-//! Service `theme` — pilote le thème d'aurora depuis la ligne de commande.
+//! `theme` service — drives the aurora theme from the command line.
 //!
-//! Le thème est un état global (`theme::CURRENT`) ; ce service ne fait que
-//! l'exposer aux actions IPC de `kumizo` :
+//! The theme is a global state (`theme::CURRENT`); this service only exposes
+//! it to `kumizo`'s IPC actions:
 //!
 //! ```text
 //! kumizo service theme set "Flexoki Light"
@@ -10,16 +10,16 @@
 //! kumizo service theme prev
 //! ```
 //!
-//! C'est possible parce que `Service::ipc_action` reçoit désormais un
-//! `&mut Context<Self>` qui déréférence vers `App`, donc on peut appeler
-//! `theme::set(index, cx)` (qui repaint toutes les fenêtres).
+//! This works because `Service::ipc_action` now receives a
+//! `&mut Context<Self>` that dereferences to `App`, so we can call
+//! `theme::set(index, cx)` (which repaints all windows).
 
 use kumizo_kit::prelude::*;
 
 use crate::theme;
 
-/// Le nom du type détermine le nom CLI : `short_service_name` prend le dernier
-/// segment du chemin, en minuscules. `Theme` → `kumizo service theme …`.
+/// The type name determines the CLI name: `short_service_name` takes the last
+/// path segment, lowercased. `Theme` → `kumizo service theme …`.
 pub struct Theme;
 
 impl Service for Theme {

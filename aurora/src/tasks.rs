@@ -1,5 +1,5 @@
-//! Sélecteur de fenêtres ouvertes (Sway / Hyprland via le service Compositor).
-//! Clavier : flèches / Tab, Entrée pour focaliser, Échap pour fermer.
+//! Open window selector (Sway / Hyprland via the Compositor service).
+//! Keyboard: arrows / Tab, Enter to focus, Escape to close.
 
 use gpui::prelude::*;
 use gpui::{
@@ -117,7 +117,7 @@ impl Render for TaskSwitcher {
                     .child(
                         div()
                             .text_color(pal::muted())
-                            .child("Aucune fenêtre ouverte"),
+                            .child("No open windows"),
                     ),
             );
         }
@@ -182,16 +182,16 @@ impl Render for TaskSwitcher {
                                     .flex_1()
                                     .min_w_0()
                                     .truncate()
-                                    .child(format!("{} · espace {}", r.class, r.workspace)),
+                                    .child(format!("{} · workspace {}", r.class, r.workspace)),
                             )
-                            // L'état « actif » est dit en texte, pas seulement en couleur.
+                            // The "active" state is expressed as text, not only by color.
                             .children(r.focused.then(|| {
                                 div()
                                     .px_2()
                                     .rounded_full()
                                     .bg(pal::accent())
                                     .text_color(pal::on_accent())
-                                    .child("actif")
+                                    .child("active")
                             })),
                     ),
             );
@@ -217,14 +217,14 @@ impl Render for TaskSwitcher {
                             .text_size(px(22.))
                             .font_weight(FontWeight::BOLD)
                             .text_color(pal::text())
-                            .child("Fenêtres"),
+                            .child("Windows"),
                     )
                     .child(grid)
                     .child(
                         div()
                             .text_xs()
                             .text_color(pal::muted())
-                            .child("←/→ choisir · Entrée focaliser · Échap fermer"),
+                            .child("←/→ choose · Enter focus · Escape close"),
                     ),
             )
     }

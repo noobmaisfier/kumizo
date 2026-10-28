@@ -1,7 +1,7 @@
-//! Pomodoro : modèle partagé (barre + centre de contrôle).
+//! Pomodoro: shared model (bar + control center).
 //!
-//! Zéro CPU au repos : la tâche de tick (1 Hz) n'existe QUE quand le minuteur
-//! tourne. Un jeton de génération annule proprement les anciennes tâches.
+//! Zero CPU at rest: the tick task (1 Hz) only exists while the timer is
+//! running. A generation token cleanly cancels older tasks.
 
 use std::time::Duration;
 
@@ -12,7 +12,7 @@ use crate::{theme::pal, ui};
 const FOCUS_SECS: u32 = 25 * 60;
 const SHORT_SECS: u32 = 5 * 60;
 const LONG_SECS: u32 = 15 * 60;
-/// Une pause longue toutes les N sessions de focus.
+/// A long break every N focus sessions.
 const LONG_EVERY: u32 = 4;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -34,8 +34,8 @@ impl Phase {
     pub fn label(self) -> &'static str {
         match self {
             Phase::Focus => "Focus",
-            Phase::ShortBreak => "Pause courte",
-            Phase::LongBreak => "Pause longue",
+            Phase::ShortBreak => "Short break",
+            Phase::LongBreak => "Long break",
         }
     }
 
@@ -52,7 +52,7 @@ pub struct Pomodoro {
     pub phase: Phase,
     pub remaining: u32,
     pub running: bool,
-    /// Sessions de focus terminées.
+    /// Completed focus sessions.
     pub sessions: u32,
     generation: u64,
 }
@@ -72,12 +72,12 @@ impl Pomodoro {
         format!("{:02}:{:02}", self.remaining / 60, self.remaining % 60)
     }
 
-    /// 0.0 (début) → 1.0 (fin de phase).
+    /// 0.0 (start) -> 1.0 (end of phase).
     pub fn progress(&self) -> f32 {
         1.0 - self.remaining as f32 / self.phase.secs() as f32
     }
 
-    /// Nombre de pastilles pleines dans le cycle courant (0..=4).
+    /// Number of filled dots in the current cycle (0..=4).
     pub fn cycle_done(&self) -> u32 {
         if self.sessions > 0 && self.sessions % LONG_EVERY == 0 {
             LONG_EVERY
@@ -102,7 +102,7 @@ impl Pomodoro {
         cx.notify();
     }
 
-    /// Termine la phase en cours et passe à la suivante (sans notification).
+    /// Ends the current phase and moves to the next (without notification).
     pub fn skip(&mut self, cx: &mut Context<Self>) {
         self.advance(false);
         cx.notify();
@@ -155,11 +155,11 @@ impl Pomodoro {
 
         if announce {
             let (title, body) = match next {
-                Phase::Focus => ("Retour au focus", "La pause est terminée."),
-                Phase::ShortBreak => ("Pause courte", "Bien joué — 5 minutes pour respirer."),
-                Phase::LongBreak => ("Pause longue", "Cycle terminé — 15 minutes de repos."),
+                Phase::Focus => ("Back to focus", "Break is over."),
+                Phase::ShortBreak => ("Short break", "Well done — 5 minutes to breathe."),
+                Phase::LongBreak => ("Long break", "Cycle complete — 15 minutes of rest."),
             };
-            // Passe par le serveur de notifications du shell lui-même.
+            // Goes through the shell's own notification server.
             ui::run("notify-send", &["-a", "Aurora Pomodoro", title, body]);
             ui::run(
                 "paplay",
@@ -169,7 +169,7 @@ impl Pomodoro {
     }
 }
 
-// ── Handle global (une seule instance pour toutes les fenêtres) ─────────────
+// ── Global handle (single instance for all windows) ────────────────────────
 struct PomodoroGlobal(Entity<Pomodoro>);
 impl Global for PomodoroGlobal {}
 

@@ -1,15 +1,15 @@
-//! aurora-lockscreen — binaire SÉPARÉ du shell (cf. §11 du guide Kumizo).
+//! aurora-lockscreen — SEPARATE binary from the shell (cf. §11 of the Kumizo guide).
 //!
-//! * `.ipc(false)` : aucun socket, aucun contrôle distant, aucun conflit avec le shell.
-//! * Plein écran `Overlay` + clavier `Exclusive`.
-//! * Mot de passe vérifié par PAM (service `login`) sur l'executor d'arrière-plan.
-//! * Aucun code ni service partagé avec le shell : la mini-palette et l'horloge
-//!   sont volontairement dupliquées.
+//! * `.ipc(false)` : no socket, no remote control, no conflict with the shell.
+//! * Fullscreen `Overlay` + `Exclusive` keyboard.
+//! * Password verified by PAM (service `login`) on the background executor.
+//! * No code or service shared with the shell: the mini-palette and the clock
+//!   are deliberately duplicated.
 //!
-//! ⚠ Limite de conception : c'est une surface layer-shell, PAS le protocole
-//! `ext-session-lock`. Un compositeur peut encore réagir à des raccourcis
-//! système (changement de TTY, etc.). Pour un verrouillage « de sécurité »
-//! strict, préfère un locker basé sur ext-session-lock.
+//! ⚠ Design limit: this is a layer-shell surface, NOT the `ext-session-lock`
+//! protocol. A compositor may still react to system shortcuts (TTY switch,
+//! etc.). For strict "security" locking, prefer a locker based on
+//! ext-session-lock.
 
 use std::ffi::CString;
 use std::os::raw::{c_char, c_int, c_void};
@@ -27,8 +27,8 @@ use image::{Frame, ImageBuffer};
 use kumizo_kit::prelude::*;
 use smallvec::smallvec;
 
-// ── Mini-palette (dupliquée, lit le thème choisi dans le shell) ─────────────
-//                 nom                bg        text      muted     accent    danger
+// ── Mini-palette (duplicated, reads the theme chosen in the shell) ─────────────
+//                 name                bg        text      muted     accent    danger
 const PALETTES: [(&str, u32, u32, u32, u32, u32); 11] = [
     ("Aurora",           0x0b0e14, 0xe6edf7, 0x6b7794, 0x00e8c6, 0xff5c7a),
     ("Flexoki Light",    0xfffcf0, 0x100f0f, 0x6f6e69, 0x205ea6, 0xaf3029),
@@ -68,15 +68,15 @@ fn colors() -> Colors {
     }
 }
 
-/// Chiffres tabulaires, comme l'horloge de la barre : les minutes ne font
-/// plus danser la largeur du bloc.
+/// Tabular figures, like the bar clock: minutes no longer make the block width
+/// dance.
 fn clock_features() -> FontFeatures {
     FontFeatures(Arc::new(vec![("tnum".to_string(), 1)]))
 }
 
-/// Fond d'écran courant, demandé à awww (même pool que le thème appliqué).
-/// On étend le PATH à la main : le lockscreen est lancé par sway avant que
-/// `~/.local/bin` ne soit forcément présent dans l'environnement.
+/// Current wallpaper, fetched from awww (same pool as the applied theme).
+/// We extend PATH by hand: the lockscreen is launched by sway before
+/// `~/.local/bin` is necessarily present in the environment.
 fn wallpaper_path() -> Option<PathBuf> {
     let home = std::env::var_os("HOME")?;
     let mut dirs = vec![
@@ -107,15 +107,15 @@ fn wallpaper_path() -> Option<PathBuf> {
     path.is_file().then_some(path)
 }
 
-/// Vrai si le fond du thème est sombre (même critère que le shell).
+/// True if the theme background is dark (same criterion as the shell).
 fn is_dark(c: Rgba) -> bool {
     0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b < 0.5
 }
 
-/// Décode le fond d'écran, le réduit fortement puis le remonte : un flou
-/// « cheap » mais stable, sans traîner un filtre gaussien sur 4K.
-/// Sur thème sombre, l'image est aussi assombrie et légèrement désaturée
-/// (« Doux ») : on garde les formes sans avoir à monter le voile.
+/// Decode the wallpaper, shrink it strongly then upscale it again: a "cheap"
+/// but stable blur, without dragging a gaussian filter over 4K.
+/// On a dark theme, the image is also darkened and slightly desaturated
+/// ("Soft"): we keep the shapes without having to raise the veil.
 fn wallpaper(dark: bool) -> Option<Arc<RenderImage>> {
     let path = wallpaper_path()?;
     let img = image::open(&path).ok()?;
@@ -142,7 +142,7 @@ fn wallpaper(dark: bool) -> Option<Arc<RenderImage>> {
     };
     let blurred = image::imageops::resize(&small, tw, th, image::imageops::FilterType::Triangle);
 
-    // GPUI attend du BGRA (même conversion que `load_png` dans `kumizo_kit::services`).
+    // GPUI expects BGRA (same conversion as `load_png` in `kumizo_kit::services`).
     let mut raw = blurred.into_raw();
     for px in raw.chunks_exact_mut(4) {
         px.swap(0, 2);
@@ -151,8 +151,8 @@ fn wallpaper(dark: bool) -> Option<Arc<RenderImage>> {
     Some(Arc::new(RenderImage::new(smallvec![Frame::new(buf)])))
 }
 
-/// Multiplie la luminosité et rapproche les couleurs du gris : assombrit
-/// sans écraser le point noir, contrairement à un voile plat.
+/// Multiply brightness and bring colors closer to gray: darken
+/// without crushing the black point, unlike a flat veil.
 fn grade(mut img: image::RgbaImage, brightness: f32, saturation: f32) -> image::RgbaImage {
     for p in img.pixels_mut() {
         let [r, g, b, a] = p.0;
@@ -168,7 +168,7 @@ fn grade(mut img: image::RgbaImage, brightness: f32, saturation: f32) -> image::
     img
 }
 
-// ── PAM (FFI brut, libpam) ──────────────────────────────────────────────────
+// ── PAM (raw FFI, libpam) ──────────────────────────────────────────────────
 #[repr(C)]
 struct PamMessage {
     msg_style: c_int,
@@ -210,8 +210,8 @@ extern "C" fn conversation(
     resp: *mut *mut PamResponse,
     appdata: *mut c_void,
 ) -> c_int {
-    // SAFETY: PAM fournit `n` messages valides ; `appdata` pointe vers le CString
-    // du mot de passe, qui vit jusqu'à `pam_end` dans `pam_check`.
+    // SAFETY: PAM provides `n` valid messages; `appdata` points to the CString
+    // of the password, which lives until `pam_end` in `pam_check`.
     unsafe {
         let password = appdata as *const c_char;
         let replies =
@@ -232,7 +232,7 @@ extern "C" fn conversation(
 
 fn wipe(bytes: &mut [u8]) {
     for b in bytes.iter_mut() {
-        // SAFETY: écriture volatile sur un octet valide (empêche l'optimisation).
+        // SAFETY: volatile write on a valid byte (prevents optimization).
         unsafe { std::ptr::write_volatile(b, 0) };
     }
 }
@@ -251,7 +251,7 @@ fn pam_check(user: &str, password: Vec<u8>) -> bool {
     };
     let mut handle: *mut c_void = std::ptr::null_mut();
 
-    // SAFETY: tous les pointeurs restent valides jusqu'à `pam_end`.
+    // SAFETY: all pointers remain valid until `pam_end`.
     let ok = unsafe {
         if pam_start(service.as_ptr(), user_c.as_ptr(), &conv, &mut handle) != PAM_SUCCESS {
             false
@@ -266,7 +266,7 @@ fn pam_check(user: &str, password: Vec<u8>) -> bool {
     ok
 }
 
-// ── Vue ─────────────────────────────────────────────────────────────────────
+// ── View ─────────────────────────────────────────────────────────────────────
 struct Lock {
     clock: Entity<Clock>,
     user: String,
@@ -282,7 +282,7 @@ impl Lock {
     fn new(cx: &mut Context<Self>) -> Self {
         let user = std::env::var("USER")
             .or_else(|_| std::env::var("LOGNAME"))
-            .unwrap_or_else(|_| "utilisateur".into());
+            .unwrap_or_else(|_| "user".into());
         let colors = colors();
         let wallpaper = wallpaper(is_dark(colors.bg));
         Self {
@@ -308,7 +308,7 @@ impl Lock {
         cx.notify();
 
         cx.spawn(async move |this, cx| {
-            // Jamais sur le thread UI : PAM peut bloquer plusieurs secondes.
+            // Never on the UI thread: PAM may block for several seconds.
             let ok = cx
                 .background_executor()
                 .spawn(async move { pam_check(&user, pw) })
@@ -316,7 +316,7 @@ impl Lock {
             if ok {
                 std::process::exit(0);
             }
-            // Petite pause anti-rafale avant de ré-autoriser la saisie.
+            // Short anti-burst pause before re-enabling input.
             async_io::Timer::after(Duration::from_millis(400)).await;
             let _ = this.update(cx, |lock, cx| {
                 lock.busy = false;
@@ -370,11 +370,11 @@ impl Render for Lock {
 
         let dots = "•".repeat(self.password.chars().count());
         let (status, status_color) = if self.busy {
-            ("Vérification…", c.muted)
+            ("Verifying…", c.muted)
         } else if self.error {
-            ("Mot de passe incorrect", c.danger)
+            ("Incorrect password", c.danger)
         } else {
-            ("Tape ton mot de passe puis Entrée", c.muted)
+            ("Type your password then Enter", c.muted)
         };
 
         let mut root = div()
@@ -389,10 +389,10 @@ impl Render for Lock {
             .justify_center()
             .gap_4();
 
-        // Fond : le wallpaper courant (pool du thème) flouté, voilé par un
-        // dégradé de la couleur `bg` pour garder l'horloge lisible. Sur thème
-        // sombre, l'image est déjà assombrie (« Doux ») : le voile peut donc
-        // rester léger et laisser respirer le wallpaper.
+        // Background: the current wallpaper (theme pool) blurred, veiled by a
+        // gradient of the `bg` color to keep the clock readable. On a dark
+        // theme, the image is already darkened ("Soft"): the veil can therefore
+        // stay light and let the wallpaper breathe.
         if let Some(wall) = self.wallpaper.clone() {
             let (top, bottom) = if is_dark(c.bg) {
                 (0.15, 0.40)

@@ -1,5 +1,5 @@
-//! Glyphes Nerd Font (plage Font Awesome 4.7, présente dans TOUTES les Nerd Fonts).
-//! Pas de Nerd Font ? Remplace ces constantes par des emoji/symboles Unicode.
+//! Nerd Font glyphs (Font Awesome 4.7 range, present in ALL Nerd Fonts).
+//! No Nerd Font? Replace these constants with emoji/Unicode symbols.
 #![allow(dead_code)]
 
 pub const SEARCH: &str = "\u{f002}";

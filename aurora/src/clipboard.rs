@@ -1,7 +1,7 @@
-//! Presse-papier : historique, recherche et recopie via le service `Clipboard`.
+//! Clipboard: history, search and recopy via the `Clipboard` service.
 //!
-//! Kumizo n'a pas de champ texte natif : la saisie est gérée à la main
-//! depuis `KeyDownEvent` (touche + `key_char`), comme le launcher.
+//! Kumizo has no native text field: input is handled manually
+//! from `KeyDownEvent` (key + `key_char`), like the launcher.
 
 use gpui::prelude::*;
 use gpui::{
@@ -21,7 +21,7 @@ pub struct ClipboardPanel {
     query: String,
     selected: usize,
     focus: FocusHandle,
-    /// Idem launcher : offset persistant + suivi clavier one-shot.
+    /// Same as launcher: persistent offset + one-shot keyboard tracking.
     scroll: ScrollHandle,
 }
 
@@ -125,7 +125,7 @@ impl Render for ClipboardPanel {
         }
         let scroll = self.scroll.clone();
 
-        // Champ de saisie : texte + faux curseur (▏)
+        // Input field: text + fake cursor (▏)
         let clear = self.clipboard.clone();
         let input = div()
             .flex()
@@ -141,7 +141,7 @@ impl Render for ClipboardPanel {
                 div()
                     .flex_1()
                     .text_color(pal::muted())
-                    .child("Rechercher dans le presse-papier…")
+                    .child("Search clipboard…")
             } else {
                 div()
                     .flex_1()
@@ -166,11 +166,11 @@ impl Render for ClipboardPanel {
                                 cx.notify();
                             });
                         })
-                        .child(div().text_xs().text_color(pal::muted()).child("Vider")),
+                        .child(div().text_xs().text_color(pal::muted()).child("Clear")),
                 )
             });
 
-        // Lignes en enfants directs : `scroll_to_item(i)` tombe juste.
+        // Direct child rows: `scroll_to_item(i)` lands exactly.
         let mut list = div()
             .id("clip-scroll")
             .flex()
@@ -186,7 +186,7 @@ impl Render for ClipboardPanel {
                     .px_3()
                     .py_3()
                     .text_color(pal::muted())
-                    .child("Rien dans le presse-papier pour l'instant."),
+                    .child("Nothing in clipboard yet."),
             );
         }
         for (i, item) in results.iter().enumerate() {
@@ -249,7 +249,7 @@ impl Render for ClipboardPanel {
                                     .text_xs()
                                     .text_color(pal::muted())
                                     .child(format!(
-                                        "{lines} ligne{}, {chars} car.",
+                                        "{lines} line{}, {chars} char.",
                                         if lines > 1 { "s" } else { "" }
                                     )),
                             ),

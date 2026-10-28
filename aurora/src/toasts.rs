@@ -1,4 +1,4 @@
-//! Toasts : popups éphémères en haut à droite (fenêtre ouverte/fermée par la barre).
+//! Toasts: ephemeral popups in the top-right corner (window opened/closed by the bar).
 
 use gpui::prelude::*;
 use gpui::{div, Context, Entity, Window};

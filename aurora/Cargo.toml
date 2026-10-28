@@ -1,14 +1,15 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Ce manifeste est VOLONTAIREMENT autonome.
+# This manifest is DELIBERATELY standalone.
 #
-# Aurora est un *exemple* : on doit pouvoir copier ce dossier n'importe où
-# (`cp -r aurora ~/my-shell`) et lancer `cargo build` sans rien d'autre du dépôt.
-# Donc AUCUN héritage de workspace ici (`version.workspace = true`, `workspace =
-# true`, chemin `../kumizo-kit`…) : tout est écrit explicitement.
+# Aurora is an *example*: you must be able to copy this folder anywhere
+# (`cp -r aurora ~/my-shell`) and run `cargo build` without anything else from
+# the repository. So NO workspace inheritance here (`version.workspace = true`,
+# `workspace = true`, `../kumizo-kit` path…): everything is written explicitly.
 #
-# Le `kumizo-kit` local n'est utilisé *que* dans ce dépôt, via le `[patch]` du
-# Cargo.toml racine. Une copie sortie du dépôt tire `kumizo-kit` de crates.io.
-# En contrepartie : garder `version` alignée sur `[workspace.package]`.
+# The local `kumizo-kit` is used *only* inside this repository, via the
+# `[patch]` in the root Cargo.toml. A copy taken out of the repository pulls
+# `kumizo-kit` from crates.io. In return: keep `version` aligned with
+# `[workspace.package]`.
 # ─────────────────────────────────────────────────────────────────────────────
 
 [package]
@@ -38,6 +39,6 @@ async-io = "2.3"
 libc = "0.2"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 smallvec = "1"
-# Pas de moteur audio ici : le shell ne lit que les médias MPRIS (navigateur,
-# lecteur externe…). Un lecteur local vit dans son propre process et se
-# publie en MPRIS — le shell reste ainsi MIT OR Apache-2.0.
+# No audio engine here: the shell only reads MPRIS media (browser,
+# external player…). A local player lives in its own process and publishes
+# itself via MPRIS — keeping the shell MIT OR Apache-2.0.

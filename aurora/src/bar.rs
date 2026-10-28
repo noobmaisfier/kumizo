@@ -1,7 +1,7 @@
-//! Barre du haut : trois îlots flottants (gauche / centre / droite).
+//! Top bar: three floating islands (left / center / right).
 //!
-//! C'est aussi le « chef d'orchestre » toujours vivant : elle observe audio,
-//! luminosité et notifications pour déclencher l'OSD et les toasts.
+//! It is also the always-alive "conductor": it watches audio,
+//! brightness and notifications to trigger the OSD and toasts.
 
 use gpui::prelude::*;
 use gpui::{div, px, App, Context, Div, Entity, FontWeight, Window};
@@ -15,9 +15,9 @@ use crate::{
     ui::{self, btn, ids, pill},
 };
 
-/// Icônes Nerd Font des workspaces 1-10 (reprises du waybar de
-/// l'utilisateur) : la barre montre des glyphes, pas des chiffres.
-/// Hors 1-10, le nom du workspace s'affiche en texte (repli).
+/// Nerd Font icons for workspaces 1-10 (taken from the user's waybar):
+/// the bar shows glyphs, not numbers. Outside 1-10, the workspace name is
+/// shown as text (fallback).
 const WS_ICONS: [&str; 10] = [
     "\u{f018d}", // 1
     "\u{f0239}", // 2
@@ -61,8 +61,8 @@ impl TopBar {
         let mpris = cx.service::<Mpris>();
 
         cx.observe(&pomodoro, |_, _, cx| cx.notify()).detach();
-        // Le pill média se réveille quand le lecteur change de titre/état
-        // (événements MPRIS via `playerctl --follow`, zéro CPU au repos).
+        // The media pill wakes up when the player changes title/state
+        // (MPRIS events via `playerctl --follow`, zero CPU at rest).
         cx.observe(&mpris, |_, _, cx| cx.notify()).detach();
 
         let last_vol = {
@@ -71,7 +71,7 @@ impl TopBar {
         };
         let last_bri = brightness.read(cx).percent();
 
-        // Volume → OSD
+        // Volume -> OSD
         cx.observe(&audio, |this, audio, cx| {
             let now = {
                 let a = audio.read(cx);
@@ -85,7 +85,7 @@ impl TopBar {
         })
         .detach();
 
-        // Luminosité → OSD
+        // Brightness -> OSD
         cx.observe(&brightness, |this, b, cx| {
             let v = b.read(cx).percent();
             if v != this.last_bri {
@@ -96,7 +96,7 @@ impl TopBar {
         })
         .detach();
 
-        // Notifications → toasts (la fenêtre n'est ouverte que s'il y en a)
+        // Notifications -> toasts (window is opened only if there are any)
         cx.observe(&notifs, |this, n, cx| {
             let any = !n.read(cx).toasts().is_empty();
             if any != this.toasts_open {
@@ -130,7 +130,7 @@ impl TopBar {
         }
     }
 
-    // ── Gauche : lanceur · workspaces ──────────────────────────────────────
+    // ── Left : launcher · workspaces ──────────────────────────────────────
     fn left(&self, cx: &App) -> Div {
         let comp = self.compositor.read(cx);
         let workspaces: Vec<(i32, String, bool, bool, usize, bool)> = comp
@@ -151,8 +151,8 @@ impl TopBar {
         for (id, name, active, urgent, count, special) in workspaces {
             let compositor = self.compositor.clone();
             let toggle_name = name.clone();
-            // Pas de fond plein : l'actif se distingue par la couleur de son
-            // icone (l'accent), l'urgence par le rouge, le reste par le texte.
+            // No full background: the active one stands out by its icon color
+            // (accent), urgency by red, the rest by text.
             let fg = if active {
                 pal::accent()
             } else if urgent {
@@ -190,9 +190,9 @@ impl TopBar {
             );
         }
 
-        // Pomodoro : pastille **séparée**, à droite de l'îlot des workspaces.
-        // L'anneau remplace le glyphe : progression de la phase, couleur du
-        // cycle, durée restante à droite.
+        // Pomodoro: **separate** pill, to the right of the workspaces island.
+        // The ring replaces the glyph: phase progress, cycle color,
+        // remaining time on the right.
         let pomodoro_pill = {
             let p = self.pomodoro.read(cx);
             let color = p.phase.color();
@@ -239,10 +239,10 @@ impl TopBar {
             .child(pomodoro_pill)
     }
 
-    // ── Centre : horloge · média ───────────────────────────────────────────
-    /// Pastille média : **MPRIS uniquement** (navigateur, lecteur externe…).
-    /// Le shell ne parle plus à un lecteur intégré : un seul indicateur, un
-    /// seul jeu de boutons, celui du lecteur que MPRIS désigne.
+    // ── Center : clock · media ───────────────────────────────────────────
+    /// Media pill: **MPRIS only** (browser, external player...).
+    /// The shell no longer talks to an integrated player: a single indicator,
+    /// a single set of buttons, those of the player MPRIS designates.
     fn media_pill(&self, cx: &App) -> Div {
         let m = self.mpris.read(cx);
         let label = m.title().map(|_| m.display_label());
@@ -299,8 +299,8 @@ impl TopBar {
     }
 
     fn center(&self, cx: &App) -> Div {
-        // Heure seule : la date alourdit la barre (la pastille horloge
-        // ouvre toujours le centre de notifications).
+        // Time only: the date clutters the bar (the clock pill always opens
+        // the notifications center).
         let clock = self.clock.read(cx);
         let time = clock.time_hm().to_string();
 
@@ -326,14 +326,14 @@ impl TopBar {
             .child(self.media_pill(cx))
     }
 
-    // ── Droite : tray · système · notifications ────────────────────────────
+    // ── Right : tray · system · notifications ────────────────────────────
     fn right(&self, cx: &App) -> Div {
         let mut row = div().flex().flex_row().items_center().gap_2();
 
-        // Tray. Certaines apps (Free Download Manager) fournissent un logo
-        // monochrome blanc, invisible sur un thème clair. On pose alors une
-        // pastille `muted` derrière l'icône ; sur thème sombre le logo blanc
-        // se détache déjà, la pastille serait superflue.
+        // Tray. Some apps (Free Download Manager) provide a monochrome white
+        // logo, invisible on a light theme. We then put a `muted` pill behind
+        // the icon; on a dark theme the white logo already stands out, the pill
+        // would be redundant.
         let tray_svc = self.tray.read(cx);
         let entries = tray_svc.items();
         if !entries.is_empty() {
@@ -345,8 +345,8 @@ impl TopBar {
                 let icon = match e.icon.clone() {
                     Some(img) => gpui::img(img).w(px(16.)).h(px(16.)).into_any_element(),
                     None => {
-                        // Sans pastille, le glyphe de secours suit `muted` ;
-                        // avec, il doit trancher sur le fond `muted`.
+                        // Without a pill, the fallback glyph follows `muted`;
+                        // with one, it must stand out on the `muted` background.
                         let color = if chip { pal::surface() } else { pal::muted() };
                         ui::glyph(icons::WINDOWS, 13., color).into_any_element()
                     }
@@ -376,7 +376,7 @@ impl TopBar {
             row = row.child(tray_row);
         }
 
-        // Cluster système
+        // System cluster
         let net = self.network.read(cx);
         let (wifi_on, radio, wifi_avail) =
             (net.is_connected(), net.wifi_enabled(), net.has_radio());
@@ -401,9 +401,9 @@ impl TopBar {
         } else {
             pal::text()
         };
-        // La RAM n'est rouge que sous forte pression : le cache compte
-        // comme « utilisé », on ne veut pas crier trop tôt. L'icone reste
-        // verte tant que tout va bien ; la valeur suit le seuil.
+        // RAM is only red under heavy pressure: cache counts as "used", so we
+        // don't want to shout too early. The icon stays green as long as
+        // everything is fine; the value follows the threshold.
         let ram_color = if mem_pct >= 90 {
             pal::danger()
         } else if mem_pct >= 75 {
@@ -420,8 +420,8 @@ impl TopBar {
         };
 
         let mut sys = div().flex().flex_row().items_center().gap_3();
-        // Comme le Bluetooth : caché si pas de radio, accent si actif.
-        // Le Wi-Fi garde un état de plus (connecté vs allumé-hors-ligne).
+        // Like Bluetooth: hidden if no radio, accent if active.
+        // Wi-Fi has one more state (connected vs on-but-offline).
         if wifi_avail {
             sys = sys.child(ui::glyph(
                 icons::WIFI,
@@ -463,12 +463,12 @@ impl TopBar {
                         if muted { pal::muted() } else { pal::accent2() },
                     ))
                     .child(div().text_xs().child(if muted {
-                        "muet".to_string()
+                        "muted".to_string()
                     } else {
                         format!("{vol}%")
                     })),
             )
-            // Luminosité : juste après le volume (même forme de cellule).
+            // Brightness: right after volume (same cell shape).
             .child(
                 div()
                     .flex()
@@ -477,8 +477,8 @@ impl TopBar {
                     .child(ui::glyph(bri_icon, 14., pal::warn()))
                     .child(div().text_xs().child(format!("{bri_pct}%"))),
             )
-            // RAM : juste avant la batterie (usage/total en Gio, coloré sous
-            // pression mémoire).
+            // RAM: right before battery (usage/total in GiB, colored under
+            // memory pressure).
             .child(
                 div()
                     .flex()

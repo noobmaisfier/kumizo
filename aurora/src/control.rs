@@ -1,5 +1,5 @@
-//! Centre de contrôle : tuiles rapides, volume, luminosité, Bluetooth,
-//! pomodoro, média et sélecteur de thème (changement à chaud).
+//! Control center: quick tiles, volume, brightness, Bluetooth,
+//! pomodoro, media and theme selector (hot-swap).
 
 use gpui::prelude::*;
 use gpui::{
@@ -24,14 +24,14 @@ pub struct ControlCenter {
     mpris: Entity<Mpris>,
     notifs: Entity<Notifications>,
     pomodoro: Entity<Pomodoro>,
-    /// SSID en cours de saisie mot de passe (`None` = pas de saisie).
+    /// SSID currently being entered as password (`None` = no entry).
     wifi_pw_for: Option<String>,
-    /// Champ mot de passe (masqué, headless `kumizo_kit::ui`).
+    /// Password field (masked, headless `kumizo_kit::ui`).
     wifi_pw: Entity<TextBuffer>,
     focus: FocusHandle,
 }
 
-/// Tuile rapide. Le hover est posé ICI, une seule fois : les appelants n'y touchent pas.
+/// Quick tile. Hover is set HERE, once: callers don't touch it.
 fn tile(id: &'static str, g: &'static str, title: &str, sub: String, on: bool) -> Stateful<Div> {
     let (bg, fg) = if on {
         (pal::accent(), pal::on_accent())
@@ -102,14 +102,14 @@ impl ControlCenter {
             wifi_pw_for: None,
             wifi_pw: cx.new(|_| {
                 let mut b = TextBuffer::masked();
-                b.set_max_chars(63); // PSK WPA : 8..63 caractères
+                b.set_max_chars(63); // WPA PSK: 8..63 characters
                 b
             }),
             focus: cx.focus_handle(),
         }
     }
 
-    // ── Tuiles rapides ─────────────────────────────────────────────────────
+    // ── Quick tiles ─────────────────────────────────────────────────────
     fn toggles(&self, cx: &mut Context<Self>) -> Div {
         let net = self.network.read(cx);
         let (wifi_on, ssid) = (net.is_connected(), net.ssid().map(str::to_string));
@@ -127,14 +127,14 @@ impl ControlCenter {
             icons::WIFI,
             "Wi-Fi",
             if !avail {
-                "Indisponible".into()
+                "Unavailable".into()
             } else if !radio {
-                "Désactivé".into()
+                "Disabled".into()
             } else if wifi_on {
                 let sig = signal.map(|s| format!(" · {s}%")).unwrap_or_default();
-                format!("{}{sig}", ssid.unwrap_or_else(|| "connecté".into()))
+                format!("{}{sig}", ssid.unwrap_or_else(|| "connected".into()))
             } else {
-                "Hors ligne".into()
+                "Offline".into()
             },
             radio,
         )
@@ -153,13 +153,13 @@ impl ControlCenter {
             icons::BLUETOOTH,
             "Bluetooth",
             if !bt_avail {
-                "Indisponible".into()
+                "Unavailable".into()
             } else if !bt_on {
-                "Désactivé".into()
+                "Disabled".into()
             } else if bt_count > 0 {
-                format!("{bt_count} connecté(s)")
+                format!("{bt_count} connected")
             } else {
-                "Activé".into()
+                "Enabled".into()
             },
             bt_on,
         )
@@ -170,8 +170,8 @@ impl ControlCenter {
         let mute = tile(
             "cc-mute",
             ui::vol_glyph(a.volume(), muted),
-            "Son",
-            if muted { "Muet".into() } else { "Actif".into() },
+            "Sound",
+            if muted { "Muted".into() } else { "Active".into() },
             !muted,
         )
         .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
@@ -181,8 +181,8 @@ impl ControlCenter {
         let dnd_tile = tile(
             "cc-dnd",
             if dnd { icons::BELL_OFF } else { icons::BELL },
-            "Silence",
-            if dnd { "Activé".into() } else { "Désactivé".into() },
+            "Do not disturb",
+            if dnd { "Enabled".into() } else { "Disabled".into() },
             dnd,
         )
         .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
@@ -269,7 +269,7 @@ impl ControlCenter {
         card().child(vol_row).child(bri_row)
     }
 
-    // ── Bluetooth : appareils ──────────────────────────────────────────────
+    // ── Bluetooth: devices ──────────────────────────────────────────────
     fn bluetooth_card(&self, cx: &mut Context<Self>) -> Option<Div> {
         let bt = self.bluetooth.read(cx);
         if !bt.is_available() || !bt.is_powered() {
@@ -287,7 +287,7 @@ impl ControlCenter {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                 this.bluetooth.update(cx, |b, _| b.toggle_scan());
             }))
-            .child(if scanning { "Recherche…" } else { "Rechercher" });
+            .child(if scanning { "Searching…" } else { "Search" });
 
         let mut list = div().flex().flex_col().gap_1();
         if devices.is_empty() {
@@ -295,14 +295,14 @@ impl ControlCenter {
                 div()
                     .text_sm()
                     .text_color(pal::muted())
-                    .child("Aucun appareil — lance une recherche."),
+                    .child("No device — start a search."),
             );
         }
         for (i, d) in devices.iter().enumerate() {
             let connected = d.connected;
             let name = d.name.clone();
-            // `path` possédé : le closure `on_click` est `'static`, il ne
-            // peut pas emprunter le garde `bt`.
+            // `path` owned: the `on_click` closure is `'static`, it cannot
+            // borrow the `bt` guard.
             let path = d.path.clone();
             list = list.child(
                 div()
@@ -317,8 +317,8 @@ impl ControlCenter {
                     .cursor_pointer()
                     .hover(|s| s.bg(ui::hover_bg()))
                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                        // Clone par clic : le listener est `Fn`, `path`
-                        // ne peut pas être déplacé hors du closure.
+                        // Clone per click: the listener is `Fn`, `path`
+                        // cannot be moved out of the closure.
                         let p = path.clone();
                         this.bluetooth.update(cx, |b, _| {
                             b.toggle_device_connection(p, connected)
@@ -342,7 +342,7 @@ impl ControlCenter {
                         div()
                             .text_xs()
                             .text_color(if connected { pal::accent() } else { pal::muted() })
-                            .child(if connected { "Connecté" } else { "Appairé" }),
+                            .child(if connected { "Connected" } else { "Paired" }),
                     ),
             );
         }
@@ -354,14 +354,14 @@ impl ControlCenter {
                         .flex()
                         .flex_row()
                         .items_center()
-                        .child(div().flex_1().child(section_title("Appareils Bluetooth")))
+                        .child(div().flex_1().child(section_title("Bluetooth devices")))
                         .child(scan),
                 )
                 .child(list),
         )
     }
 
-    // ── Wi-Fi : réseaux ──────────────────────────────────────────────────
+    // ── Wi-Fi: networks ──────────────────────────────────────────────────
     fn wifi_submit_pw(&mut self, cx: &mut Context<Self>) {
         if let Some(ssid) = self.wifi_pw_for.clone() {
             let pw = self.wifi_pw.read(cx).value().to_string();
@@ -387,8 +387,8 @@ impl ControlCenter {
             let net = self.network.read(cx);
             (net.wifi_enabled(), net.networks().to_vec())
         };
-        // Comme le Bluetooth : éteint = pas de carte du tout. L'interrupteur
-        // est la tuile, pas un bouton dans la carte.
+        // Like Bluetooth: off = no card at all. The toggle is the tile,
+        // not a button inside the card.
         if !enabled {
             return None;
         }
@@ -402,7 +402,7 @@ impl ControlCenter {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                 this.network.update(cx, |n, _| n.request_scan());
             }))
-            .child("Analyser");
+            .child("Scan");
 
         let mut list = div().flex().flex_col().gap_1();
         if networks.is_empty() {
@@ -410,7 +410,7 @@ impl ControlCenter {
                 div()
                     .text_sm()
                     .text_color(pal::muted())
-                    .child("Aucun réseau — lance une analyse."),
+                    .child("No network — start a scan."),
             );
         }
         for (i, n) in networks.iter().enumerate() {
@@ -435,9 +435,9 @@ impl ControlCenter {
                             n.disconnect();
                         });
                     } else if secured {
-                        // Réseau connu (secret déjà chez iwd/NM) ? `connect`
-                        // réussit sans mot de passe ; sinon on ouvre la ligne
-                        // de saisie. Marche sur les deux backends.
+                        // Known network (secret already at iwd/NM)? `connect`
+                        // succeeds without a password; otherwise open the
+                        // input line. Works on both backends.
                         let ok = this
                             .network
                             .update(cx, |n, _| n.connect(&click_ssid));
@@ -480,7 +480,7 @@ impl ControlCenter {
                     div()
                         .text_xs()
                         .text_color(pal::accent())
-                        .child("Connecté"),
+                        .child("Connected"),
                 );
             }
             list = list.child(row);
@@ -505,7 +505,7 @@ impl ControlCenter {
                         "cc-wifi-pw",
                         &self.wifi_pw,
                         style,
-                        "Mot de passe…",
+                        "Password…",
                         cx,
                     )))
                     .child(
@@ -533,7 +533,7 @@ impl ControlCenter {
                         .flex_row()
                         .items_center()
                         .gap_2()
-                        .child(div().flex_1().child(section_title("Réseaux Wi-Fi")))
+                        .child(div().flex_1().child(section_title("Wi-Fi networks")))
                         .child(scan),
                 )
                 .child(list),
@@ -584,7 +584,7 @@ impl ControlCenter {
                 12.,
                 pal::on_accent(),
             ))
-            .child(if running { "Pause" } else { "Démarrer" });
+            .child(if running { "Pause" } else { "Start" });
 
         let reset = btn("cc-pomo-reset")
             .h(px(36.))
@@ -608,7 +608,7 @@ impl ControlCenter {
                 pm_skip.update(cx, |p, cx| p.skip(cx));
             })
             .child(ui::glyph(icons::NEXT, 12., pal::muted()))
-            .child("Passer");
+            .child("Skip");
 
         card()
             .gap_3()
@@ -669,7 +669,7 @@ impl ControlCenter {
             )
     }
 
-    // ── Média ──────────────────────────────────────────────────────────────
+    // ── Media ──────────────────────────────────────────────────────────────
     fn media_card(&self, cx: &mut Context<Self>) -> Option<Div> {
         let m = self.mpris.read(cx);
         let title = m.title().map(str::to_string)?;
@@ -739,7 +739,7 @@ impl ControlCenter {
         )
     }
 
-    // ── Thèmes ─────────────────────────────────────────────────────────────
+    // ── Themes ─────────────────────────────────────────────────────────────
     fn themes_card(&self) -> Div {
         let current = theme::current_index();
         let mut grid = div().flex().flex_row().flex_wrap().gap_2();
@@ -765,8 +765,8 @@ impl ControlCenter {
                     })
                     .hover(|s| s.opacity(0.8))
                     .on_click(move |_, _, cx| {
-                        // Thème système : passer par `change-theme` pour que
-                        // sway/foot/yazi/vim/herdr suivent ; sinon aurora seul.
+                        // System theme: go through `change-theme` so that
+                        // sway/foot/yazi/vim/herdr follow; otherwise aurora only.
                         if let Some(key) = theme::system_key(i) {
                             theme::apply_system(key);
                         } else {
@@ -796,7 +796,7 @@ impl ControlCenter {
                     .items_center()
                     .gap_2()
                     .child(ui::glyph(icons::BRUSH, 12., pal::muted()))
-                    .child(section_title("Thème"))
+                    .child(section_title("Theme"))
                     .child(
                         div()
                             .flex_1()
@@ -811,7 +811,7 @@ impl ControlCenter {
             .child(grid)
     }
 
-    // ── En-tête : batterie ─────────────────────────────────────────────────
+    // ── Header: battery ─────────────────────────────────────────────────────
     fn header(&self, cx: &mut Context<Self>) -> Div {
         let b = self.battery.read(cx);
         let (pct, charging) = (b.percent(), b.is_charging());
@@ -831,7 +831,7 @@ impl ControlCenter {
                     .flex_1()
                     .text_color(pal::text())
                     .font_weight(FontWeight::BOLD)
-                    .child("Centre de contrôle"),
+                    .child("Control center"),
             )
             .child(
                 div()
@@ -842,7 +842,7 @@ impl ControlCenter {
                     .child(ui::glyph(ui::bat_glyph(pct), 14., color))
                     .child(div().text_sm().text_color(color).child(format!(
                         "{pct}%{}",
-                        if charging { " · en charge" } else { "" }
+                        if charging { " · charging" } else { "" }
                     ))),
             )
     }
@@ -854,8 +854,8 @@ impl Render for ControlCenter {
             window.focus(&self.focus, cx);
         }
 
-        // Responsive: le panneau ne dépasse jamais le viewport, le contenu
-        // en trop scrolle dans `#cc-scroll` (58px de décalage haut + marges).
+        // Responsive: the panel never exceeds the viewport, extra content
+        // scrolls inside `#cc-scroll` (58px top offset + margins).
         let panel_max_h = window.viewport_size().height - px(82.);
         let content = div()
             .flex()
@@ -873,8 +873,8 @@ impl Render for ControlCenter {
         ui::backdrop("cc-bg", ids::CONTROL, 0.0)
             .track_focus(&self.focus)
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
-                // Saisie mot de passe Wi-Fi : le champ capte tout, Entrée
-                // valide, Échap annule la saisie (pas la fenêtre).
+                // Wi-Fi password entry: the field captures everything, Enter
+                // submits, Escape cancels entry (not the window).
                 if this.wifi_pw_for.is_some() {
                     match this.wifi_pw.update(cx, |b, _| b.handle_key(ev)) {
                         TextAction::Submit => this.wifi_submit_pw(cx),

@@ -1,4 +1,4 @@
-//! Centre de notifications (historique consultable) + carte partagée avec les toasts.
+//! Notification center (consultable history) + card shared with toasts.
 
 use gpui::prelude::*;
 use gpui::{
@@ -13,8 +13,8 @@ use crate::{
     ui::{self, btn, ids},
 };
 
-/// Carte de notification. `history = true` : la croix supprime de l'historique ;
-/// sinon elle ferme seulement le toast (l'historique est conservé).
+/// Notification card. `history = true`: the cross removes from history;
+/// otherwise it only closes the toast (history is preserved).
 pub fn card(
     prefix: &'static str,
     n: &Notification,
@@ -86,9 +86,9 @@ pub fn card(
         .border_1()
         .border_color(border)
         .cursor_pointer()
-        // Opaque : les toasts vivent sur une layer surface transparente, un
-        // fond de survol à 65 % laisserait voir le bureau et rendrait le
-        // message illisible.
+        // Opaque: toasts live on a transparent surface layer, a 65% hover
+        // background would let the desktop show through and make the message
+        // unreadable.
         .hover(|s| s.bg(ui::hover_bg_solid()))
         .on_click(move |_, _, cx| {
             n_card.update(cx, |n, _| {
@@ -116,7 +116,7 @@ pub fn card(
         );
     }
 
-    // L'action "default" est exclue : c'est le clic sur la carte.
+    // The "default" action is excluded: it is the click on the card.
     let actions: Vec<(String, String)> = n
         .actions
         .iter()
@@ -145,7 +145,7 @@ pub fn card(
     col
 }
 
-// ── Panneau ─────────────────────────────────────────────────────────────────
+// ── Panel ─────────────────────────────────────────────────────────────────
 pub struct NotificationCenter {
     notifs: Entity<Notifications>,
     focus: FocusHandle,
@@ -185,7 +185,7 @@ impl Render for NotificationCenter {
                 11.,
                 if dnd { pal::on_accent() } else { pal::text() },
             ))
-            .child(if dnd { "Silence activé" } else { "Ne pas déranger" });
+            .child(if dnd { "Silence on" } else { "Do not disturb" });
 
         let clear_btn = btn("nc-clear")
             .px_3()
@@ -197,10 +197,10 @@ impl Render for NotificationCenter {
                 this.notifs.update(cx, |n, _| n.clear_history());
             }))
             .child(ui::glyph(icons::TRASH, 11., pal::muted()))
-            .child("Tout effacer");
+            .child("Clear all");
 
         let mut list = div().flex().flex_col().gap_2();
-        // Responsive: voir control.rs — même calcul, même raison.
+        // Responsive: see control.rs — same calculation, same reason.
         let panel_max_h = window.viewport_size().height - px(82.);
         if items.is_empty() {
             list = list.child(
@@ -211,7 +211,7 @@ impl Render for NotificationCenter {
                     .items_center()
                     .gap_2()
                     .child(ui::glyph(icons::BELL, 28., pal::raised()))
-                    .child(div().text_color(pal::muted()).child("Rien à signaler")),
+                    .child(div().text_color(pal::muted()).child("Nothing to report")),
             );
         } else {
             for item in items {

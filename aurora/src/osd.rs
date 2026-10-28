@@ -1,9 +1,9 @@
-//! OSD volume / luminosité.
+//! OSD volume / brightness.
 //!
-//! Le déclenchement vit dans la BARRE (toujours vivante) et non dans la vue
-//! OSD : une fenêtre `start_hidden` peut ne pas exister avant sa première
-//! ouverture, donc elle ne pourrait pas observer les services à temps.
-//! La barre écrit dans `OsdState` (entité globale) ; la vue OSD l'affiche.
+//! Triggering lives in the BAR (always alive), not in the OSD view: a
+//! `start_hidden` window may not exist before its first opening, so it could
+//! not observe services in time. The bar writes into `OsdState` (global
+//! entity); the OSD view displays it.
 
 use std::time::Duration;
 
@@ -47,7 +47,7 @@ impl OsdState {
         self.value = value;
         self.muted = muted;
         self.visible = true;
-        // Jeton de génération : seul le DERNIER timer a le droit de masquer.
+        // Generation token: only the LAST timer is allowed to hide.
         self.generation = self.generation.wrapping_add(1);
         let current_gen = self.generation;
 
@@ -103,7 +103,7 @@ impl Render for Osd {
             OsdKind::Volume => (
                 ui::vol_glyph(s.value, s.muted),
                 if s.muted {
-                    "Muet".to_string()
+                    "Muted".to_string()
                 } else {
                     format!("{}%", s.value)
                 },
