@@ -485,10 +485,16 @@ impl Service for Compositor {
             }
             comp.active_workspace_id =
                 reported_active_workspace_id(&comp.workspaces).unwrap_or(comp.active_workspace_id);
-            if let Ok(windows) = niri.fetch_windows() {
+            if let Ok(windows) = niri.fetch_windows_default() {
+                comp.apply_windows(windows);
+            } else if let Ok(windows) = niri.fetch_windows(&comp.workspaces) {
+                comp.apply_windows(windows);
+            } else if let Ok(windows) = niri.fetch_windows(&[]) {
                 comp.apply_windows(windows);
             }
-            if let Ok(monitors) = niri.fetch_monitors() {
+            if let Ok(monitors) = niri.fetch_monitors(&[]) {
+                comp.monitors = monitors;
+            } else if let Ok(monitors) = niri.fetch_monitors_default() {
                 comp.monitors = monitors;
             }
             let _ = niri.start_event_loop(tx);
@@ -579,6 +585,76 @@ impl Service for Compositor {
                         }
                         CompositorEvent::WindowUrgent(id) => {
                             comp.mark_window_urgent(id);
+                            cx.notify();
+                        }
+                        CompositorEvent::WindowOpenedOrChanged(window) => {
+                            if let Some(existing) = comp.windows.iter_mut().find(|w| w.id == window.id) {
+                                *existing = window.clone();
+                            } else {
+                                comp.windows.push(window.clone());
+                            }
+                            if window.is_focused {
+                                comp.active_window = Some(ActiveWindow {
+                                    title: window.title.clone(),
+                                    class: window.class.clone(),
+                                    workspace_id: window.workspace_id,
+                                });
+                                if window.workspace_id != 0 {
+                                    comp.clear_workspace_urgency(window.workspace_id);
+                                }
+                            }
+                            // Recompute window counts
+                            let mut counts = vec![0usize; comp.workspaces.len()];
+                            for w in &comp.windows {
+                                if let Some(index) = comp
+                                    .workspaces
+                                    .iter()
+                                    .position(|ws| ws.id != 0 && ws.id == w.workspace_id)
+                                    .or_else(|| {
+                                        if w.workspace_name.is_empty() {
+                                            return None;
+                                        }
+                                        comp.workspaces.iter().position(|ws| {
+                                            ws.address == w.workspace_name
+                                                || ws.name == w.workspace_name
+                                        })
+                                    })
+                                {
+                                    counts[index] += 1;
+                                }
+                            }
+                            for (workspace, count) in comp.workspaces.iter_mut().zip(counts) {
+                                workspace.window_count = count;
+                            }
+                            cx.notify();
+                        }
+                        CompositorEvent::WindowClosed(id) => {
+                            comp.windows.retain(|w| w.id != id);
+                            if let Some(active) = comp.active_window.as_ref() {
+                                // If active window was closed, we don't know new focus yet; events will update
+                            }
+                            let mut counts = vec![0usize; comp.workspaces.len()];
+                            for w in &comp.windows {
+                                if let Some(index) = comp
+                                    .workspaces
+                                    .iter()
+                                    .position(|ws| ws.id != 0 && ws.id == w.workspace_id)
+                                    .or_else(|| {
+                                        if w.workspace_name.is_empty() {
+                                            return None;
+                                        }
+                                        comp.workspaces.iter().position(|ws| {
+                                            ws.address == w.workspace_name
+                                                || ws.name == w.workspace_name
+                                        })
+                                    })
+                                {
+                                    counts[index] += 1;
+                                }
+                            }
+                            for (workspace, count) in comp.workspaces.iter_mut().zip(counts) {
+                                workspace.window_count = count;
+                            }
                             cx.notify();
                         }
                         CompositorEvent::WindowsChanged(windows) => {

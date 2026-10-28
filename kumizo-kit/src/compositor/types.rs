@@ -182,6 +182,10 @@ pub enum CompositorEvent {
     WindowUrgent(i64),
     /// Open windows list changed (opened, closed, renamed, focused).
     WindowsChanged(Vec<AppWindow>),
+    /// A single window opened or changed.
+    WindowOpenedOrChanged(AppWindow),
+    /// A window was closed.
+    WindowClosed(i64),
     /// Monitor list changed (output added, removed or reconfigured).
     MonitorsChanged(Vec<Monitor>),
 }

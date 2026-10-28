@@ -17,6 +17,7 @@ anyhow = { workspace = true, optional = true }
 tracing = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, optional = true }
 async-channel = { workspace = true, optional = true }
+niri-ipc = { version = "25.5", optional = true }
 
 zbus = { workspace = true, optional = true }
 async-io = { workspace = true, optional = true }
@@ -105,6 +106,7 @@ compositor = [
     "dep:serde_json",
     "dep:tracing",
     "dep:thiserror",
+    "dep:niri-ipc",
 ]
 
 # Minimal Linux-PAM password check (`pam::verify`).

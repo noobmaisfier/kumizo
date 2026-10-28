@@ -1,222 +1,191 @@
-use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
-use std::process::{Command, Stdio};
+//! Niri compositor backend — direct IPC over `$NIRI_SOCKET`.
 
-use anyhow::{bail, Context, Result};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+    thread,
+    time::{Duration, Instant},
+};
 
-use crate::compositor::types::{ActiveWindow, AppWindow, CompositorEvent, Monitor, Workspace};
+use anyhow::{Context, Result};
+use niri_ipc::{
+    socket::Socket, Action, Event, Reply, Request, Response, WorkspaceReferenceArg,
+};
 
-/// Niri scrollable tiling Wayland compositor IPC client.
-///
-/// Niri exposes commands through its `niri msg` CLI rather than a raw socket
-/// protocol, so this backend shells out to it. Detection still uses
-/// `NIRI_SOCKET` so a stale CLI cannot claim a different compositor.
-pub struct NiriIpc;
+use crate::compositor::types::{
+    ActiveWindow, AppWindow, CompositorEvent, Monitor, Workspace,
+};
+
+pub struct NiriIpc {
+    socket_path: PathBuf,
+    cmd_socket: Arc<Mutex<Option<Socket>>>,
+}
 
 impl NiriIpc {
-    /// Detect if running under Niri.
     pub fn try_new() -> Option<Self> {
-        let sock = std::env::var("NIRI_SOCKET").ok()?;
-        PathBuf::from(sock).exists().then_some(Self)
+        let raw = std::env::var_os("NIRI_SOCKET")?;
+        let path = PathBuf::from(raw);
+        if !path.exists() {
+            return None;
+        }
+        Some(Self {
+            socket_path: path,
+            cmd_socket: Arc::new(Mutex::new(None)),
+        })
     }
 
-    /// Build a client from the event listener (the socket was already valid).
-    fn current() -> Self {
-        Self
+    pub fn socket_path(&self) -> &Path {
+        &self.socket_path
     }
 
-    fn command(&self, args: &[&str]) -> Result<Vec<u8>> {
-        let output = Command::new("niri")
-            .args(args)
-            .output()
-            .with_context(|| format!("run `niri {}`", args.join(" ")))?;
+    fn send_request(&self, request: Request) -> Result<Response> {
+        let mut guard = self.cmd_socket.lock().unwrap();
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!(
-                "`niri {}` failed: {}",
-                args.join(" "),
-                stderr.trim()
-            );
+        if let Some(sock) = guard.as_mut() {
+            match sock.send(request.clone()) {
+                Ok(reply) => {
+                    let reply: Reply = reply;
+                    return reply.map_err(|e| anyhow::anyhow!("Niri error: {e}"));
+                }
+                Err(_) => *guard = None,
+            }
         }
 
-        Ok(output.stdout)
+        let mut sock = Socket::connect_to(&self.socket_path)
+            .context("connect to Niri command socket")?;
+        let reply: Reply = sock.send(request).context("Niri socket send")?;
+        *guard = Some(sock);
+        reply.map_err(|e| anyhow::anyhow!("Niri error: {e}"))
     }
 
-    fn action(&self, args: &[&str]) -> Result<()> {
-        let mut full = vec!["msg", "action"];
-        full.extend_from_slice(args);
-        self.command(&full).map(|_| ())
+    fn send_action(&self, action: Action) -> Result<()> {
+        match self.send_request(Request::Action(action))? {
+            Response::Handled => Ok(()),
+            other => anyhow::bail!("unexpected action reply: {other:?}"),
+        }
     }
 
-    /// Switch workspace using `niri msg action focus-workspace <idx-or-name>`.
     pub fn switch_workspace(&self, idx: i32) -> Result<()> {
-        self.switch_workspace_address(&idx.to_string())
+        if idx < 0 {
+            anyhow::bail!("invalid workspace index: {idx}");
+        }
+        self.send_action(Action::FocusWorkspace {
+            reference: WorkspaceReferenceArg::Index(idx as u8),
+        })
     }
 
-    /// Switch to a workspace by index or name.
     pub fn switch_workspace_address(&self, address: &str) -> Result<()> {
-        let address = address.trim();
-        if address.is_empty() {
-            bail!("empty workspace address");
-        }
-        self.action(&["focus-workspace", address])
+        self.send_action(Action::FocusWorkspace {
+            reference: parse_workspace_ref(address),
+        })
     }
 
-    /// Focus a window by its Niri window id.
     pub fn focus_window(&self, id: i64) -> Result<()> {
-        self.action(&["focus-window", "--id", &id.to_string()])
+        self.send_action(Action::FocusWindow { id: id as u64 })
     }
 
-    /// Close the focused window.
     pub fn close_window(&self) -> Result<()> {
-        self.action(&["close-window"])
+        self.send_action(Action::CloseWindow { id: None })
     }
 
-    /// Close a specific window by id.
     pub fn close_window_id(&self, id: i64) -> Result<()> {
-        self.action(&["close-window", "--id", &id.to_string()])
+        self.send_action(Action::CloseWindow { id: Some(id as u64) })
     }
 
-    /// Toggle floating state for a window (or the focused one).
-    pub fn toggle_floating(&self, id: Option<i64>) -> Result<()> {
-        match id {
-            Some(id) => self.action(&["toggle-window-floating", "--id", &id.to_string()]),
-            None => self.action(&["toggle-window-floating"]),
-        }
-    }
-
-    /// Toggle fullscreen for a window (or the focused one).
-    pub fn toggle_fullscreen(&self, id: Option<i64>) -> Result<()> {
-        match id {
-            Some(id) => self.action(&["fullscreen-window", "--id", &id.to_string()]),
-            None => self.action(&["fullscreen-window"]),
-        }
-    }
-
-    /// Move a window to another workspace.
     pub fn move_window_to_workspace(
         &self,
-        id: Option<i64>,
+        window_id: Option<i64>,
         workspace: &str,
         follow: bool,
     ) -> Result<()> {
-        let workspace = workspace.trim();
-        if workspace.is_empty() {
-            bail!("empty workspace address");
-        }
-
-        let id = id.map(|id| id.to_string());
-        let mut args = vec!["move-window-to-workspace"];
-        if let Some(id) = id.as_deref() {
-            args.push("--window-id");
-            args.push(id);
-        }
-        args.push("--focus");
-        args.push(if follow { "true" } else { "false" });
-        args.push(workspace);
-        self.action(&args)
+        self.send_action(Action::MoveWindowToWorkspace {
+            window_id: window_id.map(|i| i as u64),
+            reference: parse_workspace_ref(workspace),
+            focus: follow,
+        })
     }
 
-    /// Focus an output by name.
     pub fn focus_monitor(&self, name: &str) -> Result<()> {
         let name = name.trim();
         if name.is_empty() {
-            bail!("empty monitor name");
+            anyhow::bail!("empty monitor name");
         }
-        self.action(&["focus-monitor", name])
+        self.send_action(Action::FocusMonitor {
+            output: name.to_string(),
+        })
     }
 
-    /// Reload the Niri configuration.
+    pub fn toggle_floating(&self, window_id: Option<i64>) -> Result<()> {
+        self.send_action(Action::ToggleWindowFloating {
+            id: window_id.map(|i| i as u64),
+        })
+    }
+
+    pub fn toggle_fullscreen(&self, window_id: Option<i64>) -> Result<()> {
+        self.send_action(Action::FullscreenWindow {
+            id: window_id.map(|i| i as u64),
+        })
+    }
+
     pub fn reload_config(&self) -> Result<()> {
-        self.action(&["load-config-file"])
+        self.send_action(Action::LoadConfigFile {})
     }
 
-    /// Fetch workspaces via `niri msg -j workspaces`.
     pub fn fetch_workspaces(&self) -> Result<Vec<Workspace>> {
-        let output = self.command(&["msg", "-j", "workspaces"])?;
-
-        #[derive(serde::Deserialize)]
-        struct NiriWs {
-            /// Stable unique id (u64 in niri); narrowed to the SDK's i32 id.
-            id: u64,
-            idx: i32,
-            name: Option<String>,
-            #[serde(default)]
-            is_focused: bool,
-            #[serde(default)]
-            is_urgent: bool,
-            output: Option<String>,
-        }
-
-        let items: Vec<NiriWs> = serde_json::from_slice(&output)?;
-        let workspaces = items
-            .into_iter()
-            .map(|w| {
-                // `id` is the stable unique workspace id and the value carried by
-                // `WorkspaceActivated` events; `idx` is only its position on the
-                // monitor. The SDK exposes an i32 id, so narrow the unique id and
-                // keep the real switch reference (name or index) in `address`.
-                let name = w.name.filter(|name| !name.is_empty());
-                let address = name.clone().unwrap_or_else(|| w.idx.to_string());
-                Workspace {
-                    id: w.id as i32,
-                    address: address.clone(),
-                    name: name.unwrap_or(address),
-                    // The SDK exposes one globally focused workspace; niri's
-                    // `is_active` is per-output, while `is_focused` is global.
-                    is_active: w.is_focused,
-                    is_urgent: w.is_urgent,
-                    window_count: 0,
-                    monitor: w.output.unwrap_or_else(|| "default".into()),
-                }
-            })
-            .collect();
-
-        Ok(workspaces)
+        let reply = self.send_request(Request::Workspaces)?;
+        let raw = match reply {
+            Response::Workspaces(ws) => ws,
+            other => anyhow::bail!("unexpected Workspaces reply: {other:?}"),
+        };
+        Ok(raw.into_iter().map(workspace_from_niri).collect())
     }
 
-    /// Fetch open windows via `niri msg -j windows`.
-    pub fn fetch_windows(&self) -> Result<Vec<AppWindow>> {
-        let output = self.command(&["msg", "-j", "windows"])?;
-
-        #[derive(serde::Deserialize)]
-        struct NiriWindow {
-            id: i64,
-            #[serde(default)]
-            title: Option<String>,
-            #[serde(default)]
-            app_id: Option<String>,
-            #[serde(default)]
-            workspace_id: Option<i64>,
-            #[serde(default)]
-            is_focused: bool,
-        }
-
-        let items: Vec<NiriWindow> = serde_json::from_slice(&output)?;
-        Ok(items
+    pub fn fetch_windows(&self, workspaces: &[Workspace]) -> Result<Vec<AppWindow>> {
+        let reply = self.send_request(Request::Windows)?;
+        let raw = match reply {
+            Response::Windows(ws) => ws,
+            other => anyhow::bail!("unexpected Windows reply: {other:?}"),
+        };
+        let names: HashMap<i32, &str> =
+            workspaces.iter().map(|w| (w.id, w.name.as_str())).collect();
+        Ok(raw
             .into_iter()
-            .map(|window| {
-                let workspace_id = window.workspace_id.unwrap_or(0) as i32;
-                AppWindow {
-                    id: window.id,
-                    title: window.title.unwrap_or_default(),
-                    class: window.app_id.unwrap_or_default(),
-                    workspace_id,
-                    workspace_name: if workspace_id == 0 {
-                        String::new()
-                    } else {
-                        workspace_id.to_string()
-                    },
-                    is_focused: window.is_focused,
-                }
-            })
+            .map(|w| window_from_niri(w, &names))
             .collect())
     }
 
-    /// Fetch the focused window, or `None` when no window has focus.
+    pub fn fetch_windows_default(&self) -> Result<Vec<AppWindow>> {
+        let workspaces = self.fetch_workspaces().unwrap_or_default();
+        self.fetch_windows(&workspaces)
+    }
+
+    pub fn fetch_monitors(&self, workspaces: &[Workspace]) -> Result<Vec<Monitor>> {
+        let active_by_output: HashMap<String, (u64, String)> = workspaces
+            .iter()
+            .filter(|w| w.is_active && !w.monitor.is_empty())
+            .map(|w| (w.monitor.clone(), (w.id as u64, w.name.clone())))
+            .collect();
+
+        let reply = self.send_request(Request::Outputs)?;
+        let outputs = match reply {
+            Response::Outputs(map) => map,
+            other => anyhow::bail!("unexpected Outputs reply: {other:?}"),
+        };
+
+        Ok(outputs
+            .into_values()
+            .map(|o| monitor_from_niri(o, &active_by_output))
+            .collect())
+    }
+
+    pub fn fetch_monitors_default(&self) -> Result<Vec<Monitor>> {
+        let workspaces = self.fetch_workspaces().unwrap_or_default();
+        self.fetch_monitors(&workspaces)
+    }
+
     pub fn fetch_active_window(&self) -> Result<Option<ActiveWindow>> {
-        Ok(self.fetch_windows()?.into_iter().find_map(|window| {
+        Ok(self.fetch_windows_default()?.into_iter().find_map(|window| {
             window.is_focused.then_some(ActiveWindow {
                 title: window.title,
                 class: window.class,
@@ -225,257 +194,288 @@ impl NiriIpc {
         }))
     }
 
-    /// Fetch outputs via `niri msg -j outputs`.
-    pub fn fetch_monitors(&self) -> Result<Vec<Monitor>> {
-        use serde::Deserialize;
-
-        #[derive(Deserialize)]
-        struct Logical {
-            #[serde(default)]
-            x: i32,
-            #[serde(default)]
-            y: i32,
-            #[serde(default)]
-            width: i32,
-            #[serde(default)]
-            height: i32,
-            #[serde(default)]
-            scale: f64,
-        }
-
-        #[derive(Deserialize)]
-        struct Mode {
-            #[serde(default)]
-            width: i32,
-            #[serde(default)]
-            height: i32,
-            #[serde(default)]
-            refresh_rate: u32,
-        }
-
-        #[derive(Deserialize)]
-        struct Output {
-            #[serde(default)]
-            name: String,
-            #[serde(default)]
-            make: String,
-            #[serde(default)]
-            model: String,
-            #[serde(default)]
-            serial: Option<String>,
-            #[serde(default)]
-            modes: Vec<Mode>,
-            #[serde(default)]
-            current_mode: Option<usize>,
-            #[serde(default)]
-            logical: Option<Logical>,
-        }
-
-        let output = self.command(&["msg", "-j", "outputs"])?;
-        let outputs: std::collections::HashMap<String, Output> = serde_json::from_slice(&output)?;
-        let focused_output = self
-            .command(&["msg", "-j", "focused-output"])
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<Option<Output>>(&bytes).ok())
-            .flatten()
-            .map(|output| output.name);
-
-        Ok(outputs
-            .into_values()
-            .map(|output| {
-                let logical = output.logical.as_ref();
-                let mode = output
-                    .current_mode
-                    .and_then(|index| output.modes.get(index))
-                    .or_else(|| output.modes.first());
-                let description = format!("{} {}", output.make, output.model)
-                    .trim()
-                    .to_string();
-                let description = match output.serial {
-                    Some(serial) if !serial.trim().is_empty() => {
-                        format!("{description} ({serial})")
-                    }
-                    _ => description,
-                };
-
-                Monitor {
-                    id: 0,
-                    name: output.name.clone(),
-                    description,
-                    width: logical
-                        .map(|logical| logical.width)
-                        .or_else(|| mode.map(|mode| mode.width))
-                        .unwrap_or(0),
-                    height: logical
-                        .map(|logical| logical.height)
-                        .or_else(|| mode.map(|mode| mode.height))
-                        .unwrap_or(0),
-                    refresh_rate: mode
-                        .map(|mode| {
-                            if mode.refresh_rate > 1_000 {
-                                f64::from(mode.refresh_rate) / 1000.0
-                            } else {
-                                f64::from(mode.refresh_rate)
-                            }
-                        })
-                        .unwrap_or(0.0),
-                    x: logical.map(|logical| logical.x).unwrap_or(0),
-                    y: logical.map(|logical| logical.y).unwrap_or(0),
-                    scale: logical
-                        .map(|logical| logical.scale)
-                        .filter(|scale| *scale > 0.0)
-                        .unwrap_or(1.0),
-                    focused: focused_output.as_deref() == Some(output.name.as_str()),
-                    disabled: output.current_mode.is_none(),
-                    active_workspace: String::new(),
-                    active_workspace_name: String::new(),
-                    special_workspace: None,
-                    special_workspace_name: None,
-                }
-            })
-            .collect())
+    pub fn fetch_state(&self) -> Result<(Vec<Workspace>, Vec<AppWindow>, Vec<Monitor>)> {
+        let mut workspaces = self.fetch_workspaces()?;
+        let windows = self.fetch_windows(&workspaces)?;
+        merge_window_counts(&mut workspaces, &windows);
+        let monitors = self.fetch_monitors(&workspaces)?;
+        Ok((workspaces, windows, monitors))
     }
 
-    /// Start listening for Niri event stream `niri msg -j event-stream`.
-    ///
-    /// Niri sends complete snapshots (`WorkspacesChanged`, `WindowsChanged`) for
-    /// structural changes and small deltas for focus. State-changing events
-    /// trigger a fresh query, for the same reason the other backends do: a
-    /// missed event must not leave a stale list behind.
     pub fn start_event_loop(&self, tx: async_channel::Sender<CompositorEvent>) -> Result<()> {
-        std::thread::Builder::new()
+        let socket_path = self.socket_path.clone();
+        let state_fetcher = NiriIpc {
+            socket_path: socket_path.clone(),
+            cmd_socket: self.cmd_socket.clone(),
+        };
+
+        thread::Builder::new()
             .name("kumizo-niri-events".into())
             .spawn(move || {
-                let mut backoff = std::time::Duration::from_millis(500);
+                let mut backoff = Duration::from_millis(500);
+                let mut current_workspaces: Vec<Workspace> = Vec::new();
+                let mut current_windows: Vec<AppWindow> = Vec::new();
 
                 loop {
                     if tx.is_closed() {
-                        break;
+                        return;
                     }
 
-                    let started = std::time::Instant::now();
-                    let mut child = match Command::new("niri")
-                        .args(["msg", "-j", "event-stream"])
-                        .stdout(Stdio::piped())
-                        .stderr(Stdio::null())
-                        .spawn()
-                    {
-                        Ok(child) => child,
+                    if let Ok((ws, wins, monitors)) = state_fetcher.fetch_state() {
+                        current_workspaces = ws.clone();
+                        current_windows = wins.clone();
+                        let _ = tx.send_blocking(CompositorEvent::WorkspacesChanged(ws));
+                        let _ = tx.send_blocking(CompositorEvent::WindowsChanged(wins));
+                        let _ = tx.send_blocking(CompositorEvent::MonitorsChanged(monitors));
+                    }
+
+                    let started = Instant::now();
+
+                    let mut sock = match Socket::connect_to(&socket_path) {
+                        Ok(s) => s,
                         Err(_) => {
-                            std::thread::sleep(backoff);
-                            backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
+                            thread::sleep(backoff);
+                            backoff = (backoff * 2).min(Duration::from_secs(30));
                             continue;
                         }
                     };
+                    if sock.send(Request::EventStream).is_err() {
+                        thread::sleep(backoff);
+                        backoff = (backoff * 2).min(Duration::from_secs(30));
+                        continue;
+                    }
 
-                    if let Some(stdout) = child.stdout.take() {
-                        let reader = BufReader::new(stdout);
-                        for line in reader.lines() {
-                            if tx.is_closed() {
-                                break;
+                    let mut read_event = sock.read_events();
+                    loop {
+                        if tx.is_closed() {
+                            return;
+                        }
+                        match read_event() {
+                            Ok(event) => {
+                                dispatch_event(
+                                    event,
+                                    &state_fetcher,
+                                    &tx,
+                                    &mut current_workspaces,
+                                    &mut current_windows,
+                                );
                             }
-                            let Ok(line) = line else { break };
-                            let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) else {
-                                continue;
-                            };
-                            let Some((event, data)) = value.as_object().and_then(|object| {
-                                object.iter().next().map(|(key, value)| (key.as_str(), value))
-                            }) else {
-                                continue;
-                            };
-
-                            let ipc = NiriIpc::current();
-                            match event {
-                                "WorkspaceActivated" => {
-                                    let focused = data
-                                        .get("focused")
-                                        .and_then(|focused| focused.as_bool())
-                                        .unwrap_or(true);
-                                    if focused {
-                                        if let Some(id) =
-                                            data.get("id").and_then(|id| id.as_i64())
-                                        {
-                                            let _ = tx.send_blocking(
-                                                CompositorEvent::WorkspaceActivated(id as i32),
-                                            );
-                                        }
-                                    }
-                                }
-                                "WorkspaceUrgencyChanged" | "WorkspacesChanged" => {
-                                    if let Ok(workspaces) = ipc.fetch_workspaces() {
-                                        let _ = tx.send_blocking(
-                                            CompositorEvent::WorkspacesChanged(workspaces),
-                                        );
-                                    }
-                                    // Niri has no output-list event, but a
-                                    // workspace change is the closest signal
-                                    // that the output layout may have moved.
-                                    if let Ok(monitors) = ipc.fetch_monitors() {
-                                        let _ = tx.send_blocking(
-                                            CompositorEvent::MonitorsChanged(monitors),
-                                        );
-                                    }
-                                }
-                                "WindowOpenedOrChanged"
-                                | "WindowClosed"
-                                | "WindowFocusChanged"
-                                | "WindowUrgencyChanged"
-                                | "WindowsChanged" => {
-                                    if let Ok(windows) = ipc.fetch_windows() {
-                                        if let Some(focused) =
-                                            windows.iter().find(|window| window.is_focused)
-                                        {
-                                            let _ = tx.send_blocking(
-                                                CompositorEvent::WindowFocused(ActiveWindow {
-                                                    title: focused.title.clone(),
-                                                    class: focused.class.clone(),
-                                                    workspace_id: focused.workspace_id,
-                                                }),
-                                            );
-                                        } else {
-                                            let _ = tx.send_blocking(
-                                                CompositorEvent::WindowFocusCleared,
-                                            );
-                                        }
-                                        let _ =
-                                            tx.send_blocking(CompositorEvent::WindowsChanged(windows));
-                                    }
-                                }
-                                // A config reload may change output configuration
-                                // (niri has no dedicated output event).
-                                "ConfigLoaded" => {
-                                    if let Ok(monitors) = ipc.fetch_monitors() {
-                                        let _ = tx
-                                            .send_blocking(CompositorEvent::MonitorsChanged(monitors));
-                                    }
-                                    if let Ok(workspaces) = ipc.fetch_workspaces() {
-                                        let _ = tx.send_blocking(
-                                            CompositorEvent::WorkspacesChanged(workspaces),
-                                        );
-                                    }
-                                }
-                                _ => {}
-                            }
+                            Err(_) => break,
                         }
                     }
 
-                    let _ = child.wait();
-
-                    if tx.is_closed() {
-                        break;
+                    if started.elapsed() >= Duration::from_secs(10) {
+                        backoff = Duration::from_millis(500);
                     }
-
-                    // Reset the backoff after a healthy connection; otherwise
-                    // keep doubling it so a missing `niri` binary cannot spin.
-                    if started.elapsed() >= std::time::Duration::from_secs(5) {
-                        backoff = std::time::Duration::from_millis(500);
-                    }
-                    std::thread::sleep(backoff);
-                    backoff = (backoff * 2).min(std::time::Duration::from_secs(30));
+                    thread::sleep(backoff);
+                    backoff = (backoff * 2).min(Duration::from_secs(30));
                 }
             })
             .context("spawn Niri event listener")?;
 
         Ok(())
+    }
+}
+
+fn dispatch_event(
+    event: Event,
+    state_fetcher: &NiriIpc,
+    tx: &async_channel::Sender<CompositorEvent>,
+    current_workspaces: &mut Vec<Workspace>,
+    current_windows: &mut Vec<AppWindow>,
+) {
+    match event {
+        Event::WorkspacesChanged { workspaces } => {
+            let mut ws: Vec<Workspace> = workspaces.into_iter().map(workspace_from_niri).collect();
+            merge_window_counts(&mut ws, current_windows);
+            *current_workspaces = ws.clone();
+            let _ = tx.send_blocking(CompositorEvent::WorkspacesChanged(ws));
+        }
+        Event::WorkspaceActivated { id, .. } => {
+            let _ = tx.send_blocking(CompositorEvent::WorkspaceActivated(id as i32));
+        }
+        Event::WindowsChanged { windows } => {
+            let win = rebuild_windows(windows, current_workspaces);
+            *current_windows = win.clone();
+            let _ = tx.send_blocking(CompositorEvent::WindowsChanged(win));
+            push_workspace_counts(tx, current_workspaces, current_windows);
+        }
+        Event::WindowOpenedOrChanged { window } => {
+            let w = {
+                let names: HashMap<i32, &str> = current_workspaces
+                    .iter()
+                    .map(|ws| (ws.id, ws.name.as_str()))
+                    .collect();
+                window_from_niri(window, &names)
+            };
+            if let Some(existing) = current_windows.iter_mut().find(|x| x.id == w.id) {
+                *existing = w.clone();
+            } else {
+                current_windows.push(w.clone());
+            }
+            let _ = tx.send_blocking(CompositorEvent::WindowOpenedOrChanged(w.clone()));
+            let _ = tx.send_blocking(CompositorEvent::WindowsChanged(current_windows.clone()));
+            push_workspace_counts(tx, current_workspaces, current_windows);
+        }
+        Event::WindowClosed { id } => {
+            current_windows.retain(|w| w.id != id as i64);
+            let _ = tx.send_blocking(CompositorEvent::WindowClosed(id as i64));
+            let _ = tx.send_blocking(CompositorEvent::WindowsChanged(current_windows.clone()));
+            push_workspace_counts(tx, current_workspaces, current_windows);
+        }
+        Event::WindowFocusChanged { id } => match id {
+            Some(id) => {
+                for w in current_windows.iter_mut() {
+                    w.is_focused = w.id == id as i64;
+                }
+                if let Some(w) = current_windows.iter().find(|w| w.id == id as i64) {
+                    let active = ActiveWindow {
+                        title: w.title.clone(),
+                        class: w.class.clone(),
+                        workspace_id: w.workspace_id,
+                    };
+                    let _ = tx.send_blocking(CompositorEvent::WindowFocused(active));
+                }
+                let _ = tx.send_blocking(CompositorEvent::WindowsChanged(current_windows.clone()));
+            }
+            None => {
+                for w in current_windows.iter_mut() {
+                    w.is_focused = false;
+                }
+                let _ = tx.send_blocking(CompositorEvent::WindowFocusCleared);
+                let _ = tx.send_blocking(CompositorEvent::WindowsChanged(current_windows.clone()));
+            }
+        },
+        Event::ConfigLoaded { .. } => {
+            if let Ok(monitors) = state_fetcher.fetch_monitors(current_workspaces) {
+                let _ = tx.send_blocking(CompositorEvent::MonitorsChanged(monitors));
+            }
+            if let Ok((ws, wins, _)) = state_fetcher.fetch_state() {
+                *current_workspaces = ws.clone();
+                *current_windows = wins.clone();
+                let _ = tx.send_blocking(CompositorEvent::WorkspacesChanged(ws));
+                let _ = tx.send_blocking(CompositorEvent::WindowsChanged(wins));
+            }
+        }
+        _ => {}
+    }
+}
+
+fn push_workspace_counts(
+    tx: &async_channel::Sender<CompositorEvent>,
+    current_workspaces: &[Workspace],
+    current_windows: &[AppWindow],
+) {
+    let mut ws = current_workspaces.to_vec();
+    merge_window_counts(&mut ws, current_windows);
+    let _ = tx.send_blocking(CompositorEvent::WorkspacesChanged(ws));
+}
+
+fn parse_workspace_ref(s: &str) -> WorkspaceReferenceArg {
+    let s = s.trim();
+    if s.is_empty() {
+        return WorkspaceReferenceArg::Index(1);
+    }
+    if let Ok(idx) = s.parse::<u8>() {
+        WorkspaceReferenceArg::Index(idx)
+    } else {
+        WorkspaceReferenceArg::Name(s.to_string())
+    }
+}
+
+fn workspace_from_niri(w: niri_ipc::Workspace) -> Workspace {
+    let name = w.name.clone().unwrap_or_else(|| w.idx.to_string());
+    Workspace {
+        id: w.id as i32,
+        address: w.idx.to_string(),
+        name,
+        is_active: w.is_active,
+        is_urgent: w.is_urgent,
+        window_count: 0,
+        monitor: w.output.unwrap_or_else(|| "default".into()),
+    }
+}
+
+fn window_from_niri(w: niri_ipc::Window, ws_names: &HashMap<i32, &str>) -> AppWindow {
+    let workspace_id = w.workspace_id.map(|id| id as i32).unwrap_or(0);
+    let workspace_name = ws_names
+        .get(&workspace_id)
+        .copied()
+        .unwrap_or("")
+        .to_string();
+    AppWindow {
+        id: w.id as i64,
+        title: w.title.unwrap_or_default(),
+        class: w.app_id.unwrap_or_default(),
+        workspace_id,
+        workspace_name,
+        is_focused: w.is_focused,
+    }
+}
+
+fn rebuild_windows(
+    windows: Vec<niri_ipc::Window>,
+    workspaces: &[Workspace],
+) -> Vec<AppWindow> {
+    let names: HashMap<i32, &str> =
+        workspaces.iter().map(|w| (w.id, w.name.as_str())).collect();
+    windows
+        .into_iter()
+        .map(|w| window_from_niri(w, &names))
+        .collect()
+}
+
+fn monitor_from_niri(
+    o: niri_ipc::Output,
+    active_by_output: &HashMap<String, (u64, String)>,
+) -> Monitor {
+    let (active_workspace, active_workspace_name) = active_by_output
+        .get(&o.name)
+        .cloned()
+        .unwrap_or((0, String::new()));
+
+    let (width, height, x, y, scale) = o
+        .logical
+        .as_ref()
+        .map(|l| (l.width as i32, l.height as i32, l.x, l.y, l.scale))
+        .unwrap_or((0, 0, 0, 0, 1.0));
+
+    let refresh_rate = o
+        .current_mode
+        .as_ref()
+        .and_then(|idx| o.modes.get(*idx))
+        .map(|m| m.refresh_rate as f64 / 1000.0)
+        .unwrap_or(0.0);
+
+    let description = format!("{} {} {}", o.make, o.model, o.serial.as_deref().unwrap_or(""))
+        .trim()
+        .to_string();
+
+    Monitor {
+        id: 0,
+        name: o.name.clone(),
+        description,
+        width,
+        height,
+        refresh_rate,
+        x,
+        y,
+        scale,
+        focused: false,
+        disabled: o.current_mode.is_none(),
+        active_workspace: active_workspace.to_string(),
+        active_workspace_name,
+        special_workspace: None,
+        special_workspace_name: None,
+    }
+}
+
+pub fn merge_window_counts(workspaces: &mut [Workspace], windows: &[AppWindow]) {
+    let mut counts: HashMap<i32, usize> = HashMap::new();
+    for w in windows {
+        *counts.entry(w.workspace_id).or_default() += 1;
+    }
+    for ws in workspaces {
+        ws.window_count = *counts.get(&ws.id).unwrap_or(&0);
     }
 }
