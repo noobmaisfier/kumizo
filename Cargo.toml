@@ -3,7 +3,7 @@ members = ["kumizo-kit", "kumizo-cli", "aurora"]
 resolver = "2"
 
 [workspace.package]
-version = "0.12.0"
+version = "0.12.1"
 edition = "2021"
 authors = ["Kumizo Contributors"]
 license = "MIT OR Apache-2.0"
@@ -63,9 +63,9 @@ resvg = "0.46.0"
 
 # Internal: the SDK is the only shared crate, so the CLI and the shell pull the
 # same source through crates.io once published.
-kumizo-kit = { version = "0.12.0", path = "kumizo-kit", default-features = false }
+kumizo-kit = { version = "0.12.1", path = "kumizo-kit", default-features = false }
 
-# `aurora/` declares `kumizo-kit = "0.12.0"` (no `path`) on purpose, so the
+# `aurora/` declares `kumizo-kit = "0.12.1"` (no `path`) on purpose, so the
 # folder can be copied out of this repo and still build. Inside the workspace,
 # this patch redirects that registry requirement to the local SDK: one source,
 # one copy, and aurora keeps exercising the in-tree `kumizo-kit`.

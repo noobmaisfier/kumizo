@@ -3,6 +3,18 @@
 Notable changes to the packages published from this repository:
 `kumizo-kit` (SDK), `kumizo` (CLI) and `kumizo-aurora` (reference shell).
 
+
+## 0.12.1 — 2026-10-29
+
+### Changed
+
+- **Niri backend rewritten to use `niri-ipc`.** Replaced shelling out to `niri msg`
+  with direct Unix socket communication via `niri-ipc`. Uses separate command
+  and event sockets (required because Niri stops servicing requests after
+  entering event-stream mode), maintains internal workspace/window state for
+  consistent `window_count` and focus resolution, and performs a full snapshot
+  on reconnect with exponential backoff.
+
 ## 0.12.0 — 2026-10-26
 
 ### Fixed

@@ -14,7 +14,7 @@
 
 [package]
 name = "kumizo-aurora"
-version = "0.12.0"
+version = "0.12.1"
 edition = "2021"
 authors = ["Kumizo Contributors"]
 license = "MIT OR Apache-2.0"
@@ -33,7 +33,7 @@ name = "aurora-lockscreen"
 path = "src/lockscreen.rs"
 
 [dependencies]
-kumizo-kit = { version = "0.12.0", default-features = false, features = ["app", "layer-shell"] }
+kumizo-kit = { version = "0.12.1", default-features = false, features = ["app", "layer-shell"] }
 gpui = { package = "gpui-pre", version = "=0.3.9", default-features = true }
 async-io = "2.3"
 libc = "0.2"
