@@ -41,11 +41,21 @@ Before diving in, be comfortable with:
 - **GPUI basics**: `Entity<T>`, `Context<T>`, `Render`, `View`. If these terms are unfamiliar, read the GPUI documentation first.
 - **Wayland basics**: `layer-shell` (surfaces placed above/below normal windows) and D-Bus (system bus for UPower/BlueZ, session bus for MPRIS and notifications).
 
-**Build requirements**: a Rust stable toolchain, `pkg-config`, and the
-Wayland/font/audio headers — Arch: `wayland libxkbcommon fontconfig alsa-lib`;
-Debian: `libwayland-dev libxkbcommon-dev libfontconfig1-dev libasound2-dev`.
-Add `pam`/`libpam0g-dev` only if you use `kumizo_kit::pam`. On Arch, `cargo
-install kumizo-aurora` compiles the whole GPUI stack (~15 min the first time).
+**Build requirements**: Linux + Wayland, a Rust stable toolchain, `pkg-config`,
+and the Wayland/font headers — Arch: `base-devel` (the libraries ship with any
+Wayland desktop); Debian: `build-essential pkg-config libwayland-dev
+libfontconfig1-dev`. Add `pam`/`libpam0g-dev` only if you use
+`kumizo_kit::pam`.
+
+Start a new shell with the SDK and its pinned GPUI snapshot:
+
+```bash
+cargo new my-shell && cd my-shell
+cargo add kumizo-kit
+cargo add gpui-pre --rename gpui --version "=0.3.9"
+```
+
+The first build compiles the whole GPUI stack (~15 min).
 
 You do **not** need to know low-level Wayland details: Kumizo encapsulates them.
 
