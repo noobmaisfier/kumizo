@@ -5,13 +5,23 @@
 [![GPUI](https://img.shields.io/badge/render-GPUI%20(wgpu)-green.svg)](https://github.com/zed-industries/zed)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-lightgrey.svg)](https://github.com/noobmaisfier/kumizo/blob/main/LICENSE-MIT)
 
-**Kumizo** (`kumizo-kit`) is a pure-Rust SDK for building your own Wayland desktop shell — status bars, docks, launchers, OSDs, popups, panels — as **one single process**, rendered with GPU acceleration (GPUI/wgpu).
+**Kumizo** (`kumizo-kit`) is a pure-Rust SDK for building your own Wayland desktop shell — status bars, docks, launchers, OSDs, popups, panels, lockscreens — as **one single process**, rendered with GPU acceleration (GPUI/wgpu).
 
 - **One process** — one GPU init, one font stack, one socket; every window and widget lives in it. A shell is a single `main()` declaring services and windows once.
 - **GPU-accelerated rendering** — GPUI/wgpu, no web or interpreted layer.
 - **Pure Rust widgets** — a widget is a plain struct implementing `gpui::Render`; total layout freedom, no imposed UI kit.
 - **Zero idle CPU** — services are event-driven (D-Bus signals, compositor sockets); nothing redraws unless `cx.notify()` is called.
 - **Scriptable CLI** — `kumizo ping`, `kumizo toggle <window>`, `kumizo service <name> <action>` drive a running shell over its socket.
+- **Lockscreens too** — the same SDK builds a PAM-backed lockscreen, shipped as its own binary next to the shell.
+
+## Documentation
+
+Two files are all you need to understand Kumizo end to end:
+
+- [`docs/GUIDE.md`](docs/GUIDE.md) — how a shell is assembled: widget recipe, services reference, GPUI pitfalls.
+- [`docs/API.md`](docs/API.md) — the exhaustive public API reference.
+
+Read the guide first, then use the API as the complete reference.
 
 ## Demo
 
