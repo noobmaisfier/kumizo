@@ -1,31 +1,49 @@
 # Aurora — example shell built on `kumizo-kit`
 
-Aurora is a complete Wayland desktop shell and the living proof that
-`kumizo-kit` scales to daily use: bar, launcher, clipboard manager,
-notifications, control center, tasks, pomodoro, OSD, lockscreen — one
-process, GPU-rendered.
+Aurora is a complete Wayland desktop shell : bar, launcher, theme picker, clipboard
+manager, notifications, control center, tasks, pomodoro, OSD, lockscreen —
+one process, GPU-rendered.
 
-> Aurora is an **example**, not the product. The product is the SDK
-> (`kumizo-kit`, see the [repo README](../README.md)). If Aurora suffices
-> for you as-is, install it below; otherwise copy it as a starting point for
-> your own shell.
 
-## Install (no code)
+## Install
+
+There are **no pre-built binaries**. Needs Linux + Wayland (`wlr-layer-shell`;
+Sway, Hyprland or Niri), Rust stable, and:
+
+Arch Linux:
 
 ```bash
-cargo install --locked kumizo-aurora kumizo
+sudo pacman -S --needed base-devel
 ```
 
-This compiles the shell locally from the crates.io sources (GPUI/wgpu, ~15 min
-the first time) and installs `aurora`, `aurora-lockscreen` and the `kumizo` CLI
-into `~/.cargo/bin`. To land in `~/.local/bin` instead (absolute paths used by
-the Sway snippet below):
+Debian / Ubuntu:
 
 ```bash
+sudo apt update
+sudo apt install -y build-essential pkg-config libwayland-dev \
+  libfontconfig1-dev libpam0g-dev
+```
+
+Rust stable, if you do not have it yet:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+```
+
+Runtime: PipeWire (or PulseAudio), `playerctl`, and a Nerd Font
+(`JetBrainsMono Nerd Font`).
+
+Compile from crates.io (~15 min the first time for GPUI/wgpu):
+
+```bash
+# into ~/.cargo/bin
+cargo install --locked kumizo-aurora kumizo
+# or into ~/.local/bin
 cargo install --locked --root "$HOME/.local" kumizo-aurora kumizo
 ```
 
-Then add to your Sway config:
+This installs `aurora`, `aurora-lockscreen` and the `kumizo` CLI. Autostart it
+from your compositor — in Sway:
 
 ```
 exec ~/.local/bin/aurora
@@ -35,40 +53,31 @@ Check: `kumizo ping` → `PONG`.
 
 ## Copy it as a starting point
 
-This folder is a **self-contained Cargo package**: its manifest has no `path`
-dependency and no `workspace = true` inheritance. Copy it anywhere and build:
+`aurora/` is a **self-contained Cargo package**: no `path` dependency, no
+`workspace = true` inheritance. Copy it anywhere and build:
 
 ```bash
 cp -r aurora ~/my-shell
-cd ~/my-shell
-cargo build --release
+cd ~/my-shell && cargo build --release
 ```
 
-It pulls `kumizo-kit` from crates.io (inside the Kumizo repo a `[patch]` swaps
-it for the local SDK). Nothing else from the repository is required.
+It pulls `kumizo-kit` from crates.io (inside this repo a `[patch]` swaps in
+the local SDK). Nothing else from the repository is required.
 
 ## Build from the repository
 
 ```bash
 cargo build --release -p kumizo-aurora -p kumizo
-cp target/release/aurora target/release/aurora-lockscreen target/release/kumizo ~/.local/bin/
+cp target/release/{aurora,aurora-lockscreen,kumizo} ~/.local/bin/
 ```
-
-Requirements: Linux + Wayland (Sway), Rust stable, `pkg-config`, Wayland/font/
-audio headers (Arch: `wayland libxkbcommon fontconfig alsa-lib`; Debian:
-`libwayland-dev libxkbcommon-dev libfontconfig1-dev libasound2-dev`), `libpam`
-(Arch `pam`, Debian `libpam0g-dev`) for the lockscreen, PipeWire/ALSA,
-`playerctl` (MPRIS pill), `JetBrainsMono Nerd Font` (icons).
-
-> There are **no pre-built binaries**: `cargo install` from crates.io (or
-> `cargo build` from this repository) is the only supported install path.
 
 ## What's inside
 
 | File | Window / feature |
 |---|---|
-| `bar.rs` | Top bar (time only) + MPRIS media pill + RAM/volume/battery cluster |
+| `bar.rs` | Top bar: clock, MPRIS media pill, RAM/volume/battery cluster, tray |
 | `launcher.rs` | Fullscreen app launcher with glide scrolling |
+| `theme_picker.rs` | Fullscreen theme picker with live preview |
 | `control.rs` | Control center (audio, bluetooth, network, brightness, DnD) |
 | `clipboard.rs` | Clipboard history manager |
 | `notifs.rs` / `toasts.rs` | Notification history + ephemeral toasts |
@@ -79,26 +88,17 @@ audio headers (Arch: `wayland libxkbcommon fontconfig alsa-lib`; Debian:
 | `theme.rs` / `theme_ctl.rs` | 11 hardcoded themes, `kumizo service theme …` |
 | `lockscreen.rs` | Lockscreen wiring (separate `aurora-lockscreen` binary) |
 
-## Media (MPRIS)
+## Drive it
 
-The shell shows and drives media through **MPRIS** only — whatever player
-answers on the session bus (browser, external player…). The bar's media pill
-shows the title and offers previous / play-pause / next.
-
-There is **no local music player inside the shell**: a local player is its own
-program (`kumizo-music`, separate process, GPL-2.0 because of
-`rockbox-playback`) that publishes itself in MPRIS — the shell then displays
-it like any other player, and stays MIT OR Apache-2.0 itself.
+Media goes through **MPRIS** only: whatever player answers on the session bus
+(browser, external player…). The bar pill shows the title and controls
+previous / play-pause / next.
 
 ```bash
 playerctl -l                 # players on the bus
-playerctl -p kumizo play     # drive one directly
+playerctl -p spotify play    # drive one directly
 kumizo service mpris next    # and through the shell
-```
 
-## Drive it without keys
-
-```bash
 kumizo ping
 kumizo status
 kumizo toggle aurora-launcher

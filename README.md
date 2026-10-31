@@ -126,9 +126,8 @@ class node_cli,node_shell_author toneIndigo
 ## Build your own shell
 
 Requirements: Linux + Wayland, a Rust stable toolchain, `pkg-config`, and the
-Wayland/font/audio development headers — Arch: `wayland libxkbcommon fontconfig
-alsa-lib` (+ `pam` for `kumizo_kit::pam`); Debian: `libwayland-dev
-libxkbcommon-dev libfontconfig1-dev libasound2-dev` (+ `libpam0g-dev`).
+Wayland/font development headers (add PAM for a lockscreen). Copy-paste install
+commands for Arch and Debian are in the [Aurora install section](aurora/README.md#install).
 
 ```bash
 cargo new my-shell && cd my-shell
