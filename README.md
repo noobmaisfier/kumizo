@@ -222,6 +222,10 @@ kumizo service audio toggle_mute  # scriptable, key-free control
 
 IPC is on by default (`.ipc(true)`).
 
+## Contributing
+
+Contributions are welcome — open an issue or send a pull request.
+
 ## License
 
 MIT OR Apache-2.0 (see `LICENSE-MIT`, `LICENSE-APACHE`).
